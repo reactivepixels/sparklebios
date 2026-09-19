@@ -55,12 +55,23 @@ fn preview_renders_pc85_without_touching_state() {
         .env("NO_COLOR", "1")
         .assert()
         .success()
-        .stdout(predicate::str::contains("K OK"))
         .stdout(predicate::str::contains(
             "The UNICORN Personal Computer Basic",
         ))
         .stdout(predicate::str::contains("\x1b").not());
     assert!(!state.path().join("sparklebios").exists());
+}
+
+/// The memory count needs a hardware probe, and only macOS has probes so far.
+#[cfg(target_os = "macos")]
+#[test]
+fn preview_shows_the_memory_count_on_macos() {
+    bios()
+        .args(["boot", "--fast"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("K OK"));
 }
 
 #[test]
