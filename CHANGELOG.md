@@ -19,4 +19,5 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Fast macOS fact probes (processor, memory, disk, system, shell, measured shell start time) that never spawn a process. A whole boot takes about 2.5ms.
 - `bios boot`: the boot mode decision (off, quiet, fast, full), a boot-day streak, the `SPARKLEBIOS_BOOT=0` kill switch, and previews with `--machine`, `--full` and `--fast`.
 - A code of conduct (the Contributor Covenant) and the social preview artwork, with its source.
+- The mark: a pixel unicorn with a gold horn and a six-stripe mane, on the banner, the social preview and as `docs/assets/mark.svg`.
 - `bios init zsh`, `bios machines`, and the machine authoring guide in `docs/machines.md`.

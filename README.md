@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="SparkleBIOS" width="820">
+  <img src="docs/assets/banner.svg" alt="SparkleBIOS" width="860">
 </p>
 
 <p align="center">
