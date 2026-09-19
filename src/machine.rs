@@ -531,11 +531,24 @@ print = "hello"
     }
 
     #[test]
-    fn pc95_has_a_count_and_an_accent_detect() {
+    fn pc95_has_a_count_step() {
         let m = find("pc95", None).unwrap();
         assert!(m.steps.iter().any(
             |s| matches!(s, Step::Count { to, suffix, .. } if to == "{mem.kb}" && suffix == " OK")
         ));
+    }
+
+    #[test]
+    fn parses_an_accent_detect_and_a_badge() {
+        let src = format!(
+            "{}\n[[step]]\ndetect = \"Detecting Horn \"\nresult = \"1 found\"\nstyle = \"accent\"\n",
+            MINIMAL.replace(
+                "[[step]]",
+                "paint = true\nbg = \"#000000\"\nbadge = [\"enchantment\", \"*STAR* ALLY\"]\n[[step]]",
+            )
+        );
+        let m = parse(&src).unwrap();
+        assert_eq!(m.badge, vec!["enchantment", "*STAR* ALLY"]);
         assert!(m.steps.iter().any(|s| matches!(
             s,
             Step::Detect {

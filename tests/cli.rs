@@ -1,8 +1,14 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+/// Every test runs against an empty config and state directory, so the
+/// developer's own `config.toml` can never change which machine boots.
 fn bios() -> Command {
-    Command::cargo_bin("bios").unwrap()
+    let sandbox = std::env::temp_dir().join("sparklebios-test-sandbox");
+    let mut cmd = Command::cargo_bin("bios").unwrap();
+    cmd.env("XDG_CONFIG_HOME", sandbox.join("config"))
+        .env("XDG_STATE_HOME", sandbox.join("state"));
+    cmd
 }
 
 #[test]

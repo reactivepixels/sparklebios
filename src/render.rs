@@ -863,10 +863,25 @@ mod tests {
     }
     #[test]
     fn truecolor_wraps_spans_and_styles_only_the_detect_result() {
-        let m = machine::find("pc95", None).unwrap();
+        let src = r##"
+id = "t4"
+name = "Test"
+cols = 80
+fg = "#AAAAAA"
+bright = "#FFFFFF"
+accent = "#FFFF55"
+[[step]]
+print = "Sparkle Modular BIOS"
+style = "bright"
+[[step]]
+detect = "Detecting Horn"
+result = "1 found"
+style = "accent"
+"##;
+        let m = machine::parse(src).unwrap();
         let out = render_static(
             &m,
-            &Facts::fixture(),
+            &Facts::new(),
             ColorMode::TrueColor,
             0,
             None,
@@ -874,7 +889,7 @@ mod tests {
         );
         assert!(out.contains("\x1b[38;2;255;255;255mSparkle Modular BIOS"));
         assert!(out.contains(
-            "\x1b[38;2;170;170;170mDetecting Horn             ... \x1b[0m\x1b[38;2;255;255;85m1 found"
+            "\x1b[38;2;170;170;170mDetecting Horn... \x1b[0m\x1b[38;2;255;255;85m1 found"
         ));
         assert!(!out.contains("\x1b[1m"));
     }
@@ -1008,7 +1023,7 @@ quip = true
     }
 
     #[test]
-    fn painted_pc95_with_half_blocks_places_the_logo_and_badge() {
+    fn painted_pc95_with_half_blocks_places_the_logo() {
         let m = machine::find("pc95", None).unwrap();
         let out = render_static(
             &m,
@@ -1030,6 +1045,44 @@ quip = true
         let text_col = stripped[1][..byte_col].chars().count();
         assert_eq!(text_col, pad_x + 16);
         assert!(stripped[1].contains("Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally"));
+        assert!(!out.contains("enchantment"));
+    }
+
+    #[test]
+    fn a_painted_machine_places_its_badge_from_the_second_row() {
+        let src = r##"
+id = "tbadgelogo"
+name = "Test"
+cols = 80
+fg = "#AAAAAA"
+bright = "#FFFFFF"
+accent = "#FFFF55"
+bg = "#000000"
+paint = true
+logo = "unicorn"
+badge = ["enchantment", "*STAR* ALLY", "GLITTER SAFE"]
+[[step]]
+print = "Header line"
+[[step]]
+print = "Second line"
+[[step]]
+print = "Third line"
+[[step]]
+print = "Fourth line"
+[[step]]
+print = "Fifth line"
+"##;
+        let m = machine::parse(src).unwrap();
+        let out = render_static(
+            &m,
+            &Facts::new(),
+            ColorMode::TrueColor,
+            0,
+            Some(100),
+            Graphics::HalfBlocks,
+        );
+        let rows: Vec<&str> = out.lines().collect();
+        let stripped: Vec<String> = rows.iter().map(|r| strip_ansi(r)).collect();
         assert!(stripped[2].trim_end().ends_with("enchantment"));
         assert!(stripped[3].trim_end().ends_with("*STAR* ALLY"));
         assert!(stripped[4].trim_end().ends_with("GLITTER SAFE"));

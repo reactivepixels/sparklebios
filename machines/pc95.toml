@@ -9,7 +9,6 @@ paint = true
 pad_x = 2
 pad_y = 1
 logo = "unicorn"
-badge = ["enchantment", "*STAR* ALLY", "GLITTER SAFE"]
 quips = [
   "Turbo button engaged. It does nothing. It never did.",
   "Plug and Pray devices found: 1 unicorn",
@@ -72,7 +71,6 @@ result = "{shell.name}"
 [[step]]
 detect = "Detecting Horn             "
 result = "1 found (7-band, sparkle capable)"
-style = "accent"
 
 [[step]]
 print = ""
