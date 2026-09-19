@@ -1,0 +1,92 @@
+id = "pc95"
+name = "Mid-90s PC POST"
+cols = 80
+fg = "#AAAAAA"
+bright = "#FFFFFF"
+accent = "#FFFF55"
+bg = "#000000"
+quips = [
+  "Turbo button engaged. It does nothing. It never did.",
+  "Plug and Pray devices found: 1 unicorn",
+  "IRQ 7 assigned to: glitter",
+  "Year 2000 compliant. Year 2038 to be advised.",
+  "Math coprocessor present, and quietly judging your arithmetic.",
+  "Parity check passed. The odds were even.",
+  "Shadow RAM enabled. Shadow unicorn also enabled.",
+  "640K ought to be enough for anybody. You have {mem.kb}K. Show-off.",
+  "Floppy drive A: not found. Nobody is surprised.",
+  "{cpu.cores} cores detected. In 1995 that was a server room.",
+  "Booting from {shell.name}. Bold choice.",
+  "Enchantment Star compliant: powered entirely by friendship.",
+  "Warning: horn is not hot-swappable.",
+  "PC speaker not found. Please imagine a beep.",
+]
+
+[[step]]
+print = "     Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally"
+style = "bright"
+
+[[step]]
+print = "     Copyright (C) 1985-{date.year}, Rainbows & Unicorns, Inc."
+style = "bright"
+
+[[step]]
+print = ""
+
+[[step]]
+print = "UNI-440BX ACPI BIOS Revision 1007"
+
+[[step]]
+print = ""
+
+[[step]]
+print = "Main Processor : {cpu.name}, {cpu.cores} cores, 0 horns"
+ms = 120
+
+[[step]]
+count = "Memory Testing : {n}K"
+to = "{mem.kb}"
+suffix = " OK"
+ms = 600
+
+[[step]]
+print = ""
+
+[[step]]
+detect = "Detecting Primary Master   "
+result = "{disk.size_gb}GB, {disk.used_pct}% used"
+
+[[step]]
+detect = "Detecting Operating System "
+result = "{os.name} {os.version}"
+
+[[step]]
+detect = "Detecting Shell            "
+result = "{shell.name}"
+
+[[step]]
+detect = "Detecting Horn             "
+result = "1 found (7-band, sparkle capable)"
+style = "accent"
+
+[[step]]
+print = ""
+
+[[step]]
+quip = true
+
+[[step]]
+print = ""
+
+[[step]]
+print = "Boot streak: {streak.label}. Don't blow it."
+ms = 200
+
+[[step]]
+print = "Shell boot time: {shell.boot_ms}ms"
+
+[[step]]
+print = ""
+
+[[step]]
+print = "{date.bios}-UNI-440BX-RNBW-2A69KU1C-00"

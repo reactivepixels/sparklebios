@@ -1,0 +1,38 @@
+id = "pc85"
+name = "1985 PC/AT style"
+cols = 80
+fg = "#AAAAAA"
+bright = "#FFFFFF"
+accent = "#FFFF55"
+bg = "#000000"
+quips = [
+  "Cassette BASIC loaded. Please do not look for the cassette.",
+  '10 PRINT "RAINBOWS" : 20 GOTO 10',
+  "{disk.free_gb}GB free. In 1985 that was science fiction.",
+  "Drive A: is a state of mind.",
+  "No light pen detected. We checked anyway.",
+]
+
+[[step]]
+count = "{n}K"
+to = "{mem.kb}"
+suffix = " OK"
+ms = 180
+
+[[step]]
+print = ""
+
+[[step]]
+print = "The UNICORN Personal Computer Basic"
+
+[[step]]
+print = "Version C1.85 Copyright Sparkle Corp 1985"
+
+[[step]]
+print = "{disk.free_gb}GB free, 1 horn detected"
+
+[[step]]
+quip = true
+
+[[step]]
+print = "Ok"
