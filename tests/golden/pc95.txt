@@ -1,5 +1,5 @@
-     Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally
-     Copyright (C) 1985-2026, Rainbows & Unicorns, Inc.
+Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally
+Copyright (C) 1985-2026, Rainbows & Unicorns, Inc.
 
 UNI-440BX ACPI BIOS Revision 1007
 

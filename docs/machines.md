@@ -21,7 +21,12 @@ Top level keys:
 | `fg` | string | yes | Normal text colour, `#RRGGBB`, either case |
 | `bright` | string | yes | Bright text colour, `#RRGGBB` |
 | `accent` | string | yes | Accent colour, `#RRGGBB` |
-| `bg` | string | no | Background colour, `#RRGGBB` |
+| `bg` | string | no | Background colour, `#RRGGBB`. Required when `paint` is true |
+| `paint` | boolean | no | Defaults to false. Paints the whole screen as a block of `bg` when the terminal is TrueColor and wide enough |
+| `border` | string | no | Colour, `#RRGGBB`. Draws a frame around a painted screen. Requires `paint` to be true |
+| `pad_x` | integer | no | Defaults to 2. Blank painted columns left and right of the text, 0 to 8 |
+| `pad_y` | integer | no | Defaults to 1. Blank painted rows above and below the text, 0 to 4 |
+| `uppercase` | boolean | no | Defaults to false. Renders every line in upper case, after slot substitution |
 | `quips` | array of strings | no | Defaults to empty. One-line jokes, drawn from at boot |
 | `[[step]]` | array of tables | yes, at least one | The ordered screen content |
 
@@ -57,7 +62,19 @@ A boot picks a starting index into the machine's `quips` array and tries each
 quip in order from there, wrapping around, printing the first one whose slots
 all resolve. If none resolves, the `quip` step is omitted like any other
 line. Across boots the starting index changes, so the same person sees a
-different quip on a later boot rather than the same one every time.
+different quip on a later boot rather than the same one every time. A quip
+whose rendered text is longer than `cols` is treated the same as one whose
+slots do not resolve: it is skipped in favour of the next candidate.
+
+## Painted screens
+
+When `paint` is true, the terminal is TrueColor, and it is wide enough for
+the block, the screen is drawn as a solid `bg` rectangle with the text lines
+inside it, `pad_x` and `pad_y` of blank border around them, and an optional
+frame in the `border` colour. Any line's text is truncated to `cols`
+characters so it always fits the block. When the terminal is not TrueColor,
+is too narrow, or its width is unknown, `paint` is ignored and the screen
+falls back to plain painted-free text.
 
 ## Facts available today
 
@@ -93,6 +110,22 @@ name must match the `id` inside it. A user file whose id matches a built-in
 replaces it; other user files add to the roster. A file that fails to parse or
 fails validation is ignored, not reported, because nothing on the boot path is
 allowed to complain.
+
+## Choosing machines
+
+A real boot's full and fast machines come from
+`~/.config/sparklebios/config.toml` (or under `$XDG_CONFIG_HOME/sparklebios`
+if that variable is set). All keys are optional:
+
+```toml
+full = "pc95"    # machine for the once-a-day full show
+fast = "pc85"    # machine for every other boot
+animate = true   # whether a boot plays as an animated show
+```
+
+A missing, unreadable or invalid config file yields those same defaults, and
+unknown keys are ignored. If the configured `full` or `fast` id does not name
+a known machine, the boot falls back to `pc95` or `pc85` respectively.
 
 ## Trying a machine
 

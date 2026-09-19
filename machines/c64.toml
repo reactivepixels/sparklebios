@@ -1,0 +1,56 @@
+id = "c64"
+name = "1982 8-bit home computer"
+cols = 40
+fg = "#6C5EB5"
+bright = "#FFFFFF"
+accent = "#B8C76F"
+bg = "#352879"
+paint = true
+border = "#6C5EB5"
+pad_x = 0
+pad_y = 1
+uppercase = true
+quips = [
+  "PRESS PLAY ON TAPE. THERE IS NO TAPE.",
+  "{mem.kb}K FOUND. THE MANUAL DISAGREES.",
+  "DATASETTE NOT FOUND. NOBODY MISSES IT.",
+  "10 PRINT CHR$(205.5+RND(1));:GOTO 10",
+  "JOYSTICK PORT 2: ONE UNICORN",
+]
+
+[[step]]
+print = "    **** UNICORN 64 BASIC V2 ****"
+
+[[step]]
+print = ""
+
+[[step]]
+print = " 64K RAM SYSTEM  38911 SPARKLES FREE"
+
+[[step]]
+print = ""
+
+[[step]]
+print = "READY."
+
+[[step]]
+print = "LOAD \"{shell.name}\",8,1"
+ms = 400
+
+[[step]]
+print = ""
+
+[[step]]
+print = "SEARCHING FOR {shell.name}"
+ms = 500
+
+[[step]]
+print = "LOADING"
+ms = 700
+
+[[step]]
+quip = true
+ms = 300
+
+[[step]]
+print = "READY."

@@ -5,6 +5,9 @@ fg = "#AAAAAA"
 bright = "#FFFFFF"
 accent = "#FFFF55"
 bg = "#000000"
+paint = true
+pad_x = 2
+pad_y = 1
 quips = [
   "Cassette BASIC loaded. Please do not look for the cassette.",
   '10 PRINT "RAINBOWS" : 20 GOTO 10',

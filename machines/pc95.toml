@@ -5,6 +5,9 @@ fg = "#AAAAAA"
 bright = "#FFFFFF"
 accent = "#FFFF55"
 bg = "#000000"
+paint = true
+pad_x = 2
+pad_y = 1
 quips = [
   "Turbo button engaged. It does nothing. It never did.",
   "Plug and Pray devices found: 1 unicorn",
@@ -23,11 +26,11 @@ quips = [
 ]
 
 [[step]]
-print = "     Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally"
+print = "Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally"
 style = "bright"
 
 [[step]]
-print = "     Copyright (C) 1985-{date.year}, Rainbows & Unicorns, Inc."
+print = "Copyright (C) 1985-{date.year}, Rainbows & Unicorns, Inc."
 style = "bright"
 
 [[step]]

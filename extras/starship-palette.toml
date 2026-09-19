@@ -1,0 +1,21 @@
+# A starship palette to match the "Rainbows and Unicorns" Ghostty theme.
+#
+# Written for starship's Gruvbox Rainbow preset, which names its colours rather
+# than hard-coding them. Paste this table at the end of ~/.config/starship.toml,
+# then change the preset's `palette = 'gruvbox_dark'` line to:
+#
+#   palette = 'rainbows_and_unicorns'
+#
+# The segments then run orange, yellow, green, blue, purple: the stripes, in order.
+
+[palettes.rainbows_and_unicorns]
+color_fg0 = '#fffdf5'
+color_bg1 = '#23232d'
+color_bg3 = '#7a3a7c'
+color_blue = '#1479be'
+color_aqua = '#3e9a2c'
+color_green = '#62bb47'
+color_orange = '#d9650f'
+color_purple = '#bb62c0'
+color_red = '#e0453f'
+color_yellow = '#c08a00'

@@ -108,7 +108,18 @@ fn machines_lists_the_roster() {
         .assert()
         .success()
         .stdout(predicate::str::contains("pc95"))
-        .stdout(predicate::str::contains("pc85"));
+        .stdout(predicate::str::contains("pc85"))
+        .stdout(predicate::str::contains("c64"));
+}
+
+#[test]
+fn preview_renders_c64() {
+    bios()
+        .args(["boot", "--machine", "c64"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("**** UNICORN 64 BASIC V2 ****"));
 }
 
 #[test]

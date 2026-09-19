@@ -20,4 +20,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `bios boot`: the boot mode decision (off, quiet, fast, full), a boot-day streak, the `SPARKLEBIOS_BOOT=0` kill switch, and previews with `--machine`, `--full` and `--fast`.
 - A code of conduct (the Contributor Covenant) and the social preview artwork, with its source.
 - The mark: a pixel unicorn with a gold horn and a six-stripe mane, on the banner, the social preview and as `docs/assets/mark.svg`.
+- Painted screens: a machine can paint itself as a block of its own background colour, with a border, so a boot looks like a screen and not like text. Falls back to plain text when the terminal is too narrow or has no truecolor.
+- The `c64` machine: forty columns, light blue on blue, one word changed.
+- `~/.config/sparklebios/config.toml` to choose which machine boots.
+- `extras/starship-palette.toml`, a starship palette to match the theme.
 - `bios init zsh`, `bios machines`, and the machine authoring guide in `docs/machines.md`.

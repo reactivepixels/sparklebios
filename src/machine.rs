@@ -44,6 +44,11 @@ pub struct Machine {
     pub bright: String,
     pub accent: String,
     pub bg: Option<String>,
+    pub paint: bool,
+    pub border: Option<String>,
+    pub pad_x: u8,
+    pub pad_y: u8,
+    pub uppercase: bool,
     pub quips: Vec<String>,
     pub steps: Vec<Step>,
 }
@@ -75,9 +80,26 @@ struct RawMachine {
     accent: String,
     bg: Option<String>,
     #[serde(default)]
+    paint: bool,
+    border: Option<String>,
+    #[serde(default = "default_pad_x")]
+    pad_x: u8,
+    #[serde(default = "default_pad_y")]
+    pad_y: u8,
+    #[serde(default)]
+    uppercase: bool,
+    #[serde(default)]
     quips: Vec<String>,
     #[serde(rename = "step", default)]
     steps: Vec<RawStep>,
+}
+
+fn default_pad_x() -> u8 {
+    2
+}
+
+fn default_pad_y() -> u8 {
+    1
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,15 +117,16 @@ struct RawStep {
 
 const PC95_TOML: &str = include_str!("../machines/pc95.toml");
 const PC85_TOML: &str = include_str!("../machines/pc85.toml");
+const C64_TOML: &str = include_str!("../machines/c64.toml");
 
 pub fn parse(src: &str) -> Result<Machine, MachineError> {
     let raw: RawMachine = toml::from_str(src).map_err(|e| MachineError::Parse(e.to_string()))?;
     validate(raw)
 }
 
-/// Built-in machines, in roster order: pc95, pc85. A built-in that fails to parse is skipped.
+/// Built-in machines, in roster order: pc95, pc85, c64. A built-in that fails to parse is skipped.
 pub fn builtins() -> Vec<Machine> {
-    [PC95_TOML, PC85_TOML]
+    [PC95_TOML, PC85_TOML, C64_TOML]
         .into_iter()
         .filter_map(|src| parse(src).ok())
         .collect()
@@ -217,6 +240,33 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
             )));
         }
     }
+    if raw.paint && raw.bg.is_none() {
+        return Err(MachineError::Invalid("paint requires bg to be set".into()));
+    }
+    if let Some(border) = &raw.border {
+        if !raw.paint {
+            return Err(MachineError::Invalid(
+                "border requires paint to be true".into(),
+            ));
+        }
+        if !valid_colour(border) {
+            return Err(MachineError::Invalid(format!(
+                "border {border:?} is not a #RRGGBB colour"
+            )));
+        }
+    }
+    if !(0..=8).contains(&raw.pad_x) {
+        return Err(MachineError::Invalid(format!(
+            "pad_x {} is not between 0 and 8",
+            raw.pad_x
+        )));
+    }
+    if !(0..=4).contains(&raw.pad_y) {
+        return Err(MachineError::Invalid(format!(
+            "pad_y {} is not between 0 and 4",
+            raw.pad_y
+        )));
+    }
     if raw.steps.is_empty() {
         return Err(MachineError::Invalid("machine has no steps".into()));
     }
@@ -295,6 +345,11 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
         bright: raw.bright,
         accent: raw.accent,
         bg: raw.bg,
+        paint: raw.paint,
+        border: raw.border,
+        pad_x: raw.pad_x,
+        pad_y: raw.pad_y,
+        uppercase: raw.uppercase,
         quips: raw.quips,
         steps,
     })
@@ -332,9 +387,79 @@ print = "hello"
     }
 
     #[test]
-    fn builtins_are_pc95_then_pc85() {
+    fn builtins_are_pc95_then_pc85_then_c64() {
         let ids: Vec<String> = builtins().into_iter().map(|m| m.id).collect();
-        assert_eq!(ids, vec!["pc95", "pc85"]);
+        assert_eq!(ids, vec!["pc95", "pc85", "c64"]);
+    }
+
+    #[test]
+    fn defaults_are_unpainted_with_pad_2_and_1() {
+        let m = parse(MINIMAL).unwrap();
+        assert!(!m.paint);
+        assert_eq!(m.border, None);
+        assert_eq!(m.pad_x, 2);
+        assert_eq!(m.pad_y, 1);
+        assert!(!m.uppercase);
+    }
+
+    #[test]
+    fn parses_paint_border_pad_and_uppercase() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\nbg = \"#000000\"\npaint = true\nborder = \"#123456\"\npad_x = 3\npad_y = 4\nuppercase = true\n",
+        );
+        let m = parse(&src).unwrap();
+        assert!(m.paint);
+        assert_eq!(m.border.as_deref(), Some("#123456"));
+        assert_eq!(m.pad_x, 3);
+        assert_eq!(m.pad_y, 4);
+        assert!(m.uppercase);
+    }
+
+    #[test]
+    fn rejects_paint_without_bg() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\npaint = true\n",
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn rejects_border_without_paint() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\nbg = \"#000000\"\nborder = \"#123456\"\n",
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn rejects_pad_x_out_of_range() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\nbg = \"#000000\"\npaint = true\npad_x = 9\n",
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn every_builtin_quip_fits_its_cols_against_fixture_facts() {
+        let facts = crate::facts::Facts::fixture();
+        for m in builtins() {
+            for q in &m.quips {
+                if let Some(rendered) = crate::template::render(q, &facts) {
+                    assert!(
+                        rendered.chars().count() <= m.cols as usize,
+                        "{}: quip {:?} is {} chars, cols is {}",
+                        m.id,
+                        q,
+                        rendered.chars().count(),
+                        m.cols
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -412,7 +537,7 @@ print = "hello"
         let m = find("pc85", Some(dir.path())).unwrap();
         assert_eq!(m.name, "Test");
         let ids: Vec<String> = list(Some(dir.path())).into_iter().map(|m| m.id).collect();
-        assert_eq!(ids, vec!["pc95", "pc85"]);
+        assert_eq!(ids, vec!["pc95", "pc85", "c64"]);
     }
 
     #[test]

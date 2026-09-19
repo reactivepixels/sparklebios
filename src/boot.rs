@@ -51,17 +51,32 @@ pub fn run(args: &BootArgs) {
 }
 
 fn run_preview(args: &BootArgs) {
-    let id = args
-        .machine
-        .as_deref()
-        .unwrap_or(if args.full { "pc95" } else { "pc85" });
     let user_dir = crate::paths::user_machines_dir();
-    let Some(machine) = crate::machine::find(id, user_dir.as_deref()) else {
-        debug(|| format!("bios: unknown machine {id}"));
+    let machine = if let Some(id) = &args.machine {
+        crate::machine::find(id, user_dir.as_deref())
+    } else {
+        let config = crate::config::load(crate::paths::config_dir().as_deref());
+        let id = if args.full {
+            &config.full
+        } else {
+            &config.fast
+        };
+        crate::machine::find(id, user_dir.as_deref()).or_else(|| {
+            crate::machine::find(if args.full { "pc95" } else { "pc85" }, user_dir.as_deref())
+        })
+    };
+    let Some(machine) = machine else {
+        debug(|| "bios: unknown machine".to_string());
         return;
     };
     let facts = crate::facts::gather();
-    let output = crate::render::render_static(&machine, &facts, color_mode(), seed_from_time());
+    let output = crate::render::render_static(
+        &machine,
+        &facts,
+        color_mode(),
+        seed_from_time(),
+        crate::term::cols(1),
+    );
     write_stdout(&output);
 }
 
@@ -91,14 +106,25 @@ fn run_real() {
         return;
     }
 
+    let config = crate::config::load(crate::paths::config_dir().as_deref());
     let id = if decision == BootMode::Full {
-        "pc95"
+        &config.full
     } else {
-        "pc85"
+        &config.fast
     };
     let user_dir = crate::paths::user_machines_dir();
-    let Some(machine) = crate::machine::find(id, user_dir.as_deref()) else {
-        debug(|| format!("bios: unknown machine {id}"));
+    let machine = crate::machine::find(id, user_dir.as_deref()).or_else(|| {
+        crate::machine::find(
+            if decision == BootMode::Full {
+                "pc95"
+            } else {
+                "pc85"
+            },
+            user_dir.as_deref(),
+        )
+    });
+    let Some(machine) = machine else {
+        debug(|| "bios: unknown machine".to_string());
         return;
     };
 
@@ -108,7 +134,13 @@ fn run_real() {
     facts.insert("streak.days", state.streak_days.to_string());
     facts.insert("streak.label", state.streak_label());
 
-    let output = crate::render::render_static(&machine, &facts, color_mode(), seed_from_time());
+    let output = crate::render::render_static(
+        &machine,
+        &facts,
+        color_mode(),
+        seed_from_time(),
+        crate::term::cols(1),
+    );
     write_stdout(&output);
 
     state.last_boot = Some(now);
