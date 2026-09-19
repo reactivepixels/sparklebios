@@ -1,0 +1,38 @@
+# cargo-deny policy. Run locally with: cargo deny check
+#
+# The bans list is principle 7 in executable form: SparkleBIOS has no network
+# code, and no dependency is allowed to bring any in through the back door.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+deny = [
+    { crate = "reqwest", reason = "No network code. In 1985 there was nothing to phone." },
+    { crate = "hyper", reason = "No network code." },
+    { crate = "ureq", reason = "No network code." },
+    { crate = "curl", reason = "No network code." },
+    { crate = "isahc", reason = "No network code." },
+    { crate = "surf", reason = "No network code." },
+    { crate = "attohttpc", reason = "No network code." },
+    { crate = "tokio", reason = "Nothing here is asynchronous enough to need a runtime." },
+    { crate = "openssl", reason = "No network code, so no TLS." },
+    { crate = "rustls", reason = "No network code, so no TLS." },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

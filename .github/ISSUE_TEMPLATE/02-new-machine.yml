@@ -1,0 +1,53 @@
+name: Add my childhood computer
+description: Propose a new boot machine. Accuracy is the whole joke.
+title: "[machine] "
+labels: ["new-machine"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A machine is one TOML file (see `docs/machines.md`). What we need most is an
+        accurate record of what the real screen said, so the one changed word lands.
+        Read `docs/voice.md` before proposing any wording.
+  - type: input
+    id: machine
+    attributes:
+      label: The machine, in descriptive terms
+      description: Era and kind, for example "1982 8-bit home computer with a blue screen".
+    validations:
+      required: true
+  - type: input
+    id: year
+    attributes:
+      label: Year
+    validations:
+      required: true
+  - type: textarea
+    id: screen
+    attributes:
+      label: What the boot screen actually said
+      description: Line by line, spacing included, as faithfully as you can.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Reference
+      description: A photo, an emulator screenshot, or a link to documentation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Your proposed wording (optional)
+      description: Which word would you change, and to what?
+      render: text
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: House rules
+      options:
+        - label: The wording will be original. No real logos, wordmarks or copied copyright strings.
+          required: true
+        - label: I would like to write the TOML myself.

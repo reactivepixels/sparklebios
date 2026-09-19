@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the manual first
+    url: https://github.com/reactivepixels/sparklebios/blob/main/docs/README.md
+    about: Design, voice, machines and theme. Most answers live here, in a binder, on a shelf.
+  - name: Report a security problem privately
+    url: https://github.com/reactivepixels/sparklebios/security/advisories/new
+    about: Anything that could hurt someone's shell or machine. Please do not open a public issue.

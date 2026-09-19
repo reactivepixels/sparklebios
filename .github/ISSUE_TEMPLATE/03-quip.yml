@@ -1,0 +1,35 @@
+name: Submit a quip
+description: One line, deadpan, for a machine's rotation. The bar is high and the pay is nothing.
+title: "[quip] "
+labels: ["quip"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Quips are reviewed like code, against `docs/voice.md`. The short version: the
+        machine never knows it is funny, start from real period detail, and anything
+        that reads like a diagnostic has to be true.
+  - type: input
+    id: quip
+    attributes:
+      label: The quip
+      description: One line. Slots such as `{mem.kb}` or `{cpu.cores}` are allowed.
+    validations:
+      required: true
+  - type: dropdown
+    id: machine
+    attributes:
+      label: Which machine says it
+      options:
+        - pc95
+        - pc85
+        - Another machine (say which below)
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it is true, or why it is obviously fiction
+      description: Rule 3. If a tired person could mistake it for a real fault, it has to be a real fault.
+    validations:
+      required: true

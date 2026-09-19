@@ -1,0 +1,50 @@
+name: "Abort, Retry, Fail?"
+description: Something is broken. A bug report, in the traditional format.
+title: "[fail] "
+labels: ["abort-retry-fail"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. The most serious kind of bug in this project is one
+        that **slows down or breaks a shell**, so if that happened, say so first.
+  - type: checkboxes
+    id: severity
+    attributes:
+      label: Did it slow down or break your shell?
+      description: This jumps the queue. Principle 2 is not a suggestion.
+      options:
+        - label: Yes. My shell was slower, hung, or showed an error I did not ask for.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you did, what you saw. Paste the screen if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug output
+      description: "Run the same thing with `SPARKLEBIOS_DEBUG=1` and paste what it prints."
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Output of `bios --version`"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system, terminal and shell
+      placeholder: "macOS 26.5, Ghostty 1.3, zsh 5.9"
+    validations:
+      required: true

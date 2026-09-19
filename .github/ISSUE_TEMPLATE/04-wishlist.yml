@@ -1,0 +1,27 @@
+name: Wishlist
+description: A feature or change you would like to see.
+title: "[wish] "
+labels: ["wishlist"]
+body:
+  - type: textarea
+    id: wish
+    attributes:
+      label: What you would like
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What it is for
+      description: The problem behind the request. This is the part that decides it.
+    validations:
+      required: true
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Before you send it
+      options:
+        - label: It does not need network access. (Nothing here ever will.)
+          required: true
+        - label: It would not add work to the boot path, or I have said how it stays inside the budget.
+          required: true

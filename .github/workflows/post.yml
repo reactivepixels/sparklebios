@@ -1,0 +1,49 @@
+# POST: power-on self test. Every push boots the project and checks it over.
+name: POST
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-test:
+    name: Self test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Lints
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test
+
+  house-rules:
+    name: House rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No em dashes or en dashes anywhere
+        run: |
+          if grep -rnP '[\x{2014}\x{2013}]' --exclude-dir=.git --exclude-dir=target --exclude=LICENSE-APACHE .; then
+            echo "Found an em dash or en dash. Use a comma, a colon, parentheses, or two sentences."
+            exit 1
+          fi
+      - name: Licences, advisories and the no-network rule
+        uses: EmbarkStudios/cargo-deny-action@v2

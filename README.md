@@ -1,6 +1,21 @@
-# SparkleBIOS
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="SparkleBIOS" width="820">
+</p>
 
-**A 1995 POST screen for your terminal that is secretly a health check.**
+<p align="center">
+  <strong>A 1995 POST screen for your terminal that is secretly a health check.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/reactivepixels/sparklebios/actions/workflows/post.yml"><img src="https://github.com/reactivepixels/sparklebios/actions/workflows/post.yml/badge.svg" alt="POST status"></a>
+  <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-1D9BE3?style=flat-square" alt="License: MIT OR Apache-2.0">
+  <img src="https://img.shields.io/badge/network%20calls-0-62BB47?style=flat-square" alt="Network calls: 0">
+  <img src="https://img.shields.io/badge/horns-1-FCB827?style=flat-square" alt="Horns: 1">
+  <img src="https://img.shields.io/badge/bands-7-BB62C0?style=flat-square" alt="Bands: 7">
+  <img src="https://img.shields.io/badge/est.-1985-E0453F?style=flat-square" alt="Established 1985">
+</p>
+
+# SparkleBIOS
 
 ```
      Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally
@@ -75,7 +90,7 @@ SparkleBIOS is three things that share one binary and one visual language:
 | M7 | More boot machines | planned |
 | M8 | Launch readiness: Linux, bash and fish, `bios fetch`, prebuilt binaries | planned |
 
-Details live in [ROADMAP.md](ROADMAP.md) and the full design in [docs/design.md](docs/design.md).
+Details live in [ROADMAP.md](ROADMAP.md), and the rest of the paperwork is in [the manual](docs/README.md).
 
 ## Add your childhood computer
 
