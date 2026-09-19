@@ -55,3 +55,19 @@ color_orange = '9'
 color_purple = '5'
 color_red = '1'
 color_yellow = '3'
+
+# Paper White is the one exception. Its colours are dark inks, made for text on a
+# light page, so as segment backgrounds they need white text, not black.
+#   palette = 'rainbows_and_unicorns_paper'
+
+[palettes.rainbows_and_unicorns_paper]
+color_fg0 = '15'
+color_bg1 = '8'
+color_bg3 = '7'
+color_blue = '4'
+color_aqua = '2'
+color_green = '10'
+color_orange = '9'
+color_purple = '5'
+color_red = '1'
+color_yellow = '3'
