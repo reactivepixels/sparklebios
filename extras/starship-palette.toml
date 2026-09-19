@@ -19,3 +19,18 @@ color_orange = '#d9650f'
 color_purple = '#bb62c0'
 color_red = '#e0453f'
 color_yellow = '#c08a00'
+
+# The same, for the Mane variant of the theme: the unicorn's own colours.
+#   palette = 'rainbows_and_unicorns_mane'
+
+[palettes.rainbows_and_unicorns_mane]
+color_fg0 = '#ffffff'
+color_bg1 = '#24222e'
+color_bg3 = '#7a2a90'
+color_blue = '#2478c4'
+color_aqua = '#3f9a2a'
+color_green = '#68c44a'
+color_orange = '#d9620f'
+color_purple = '#b866d6'
+color_red = '#eb413a'
+color_yellow = '#bf8a00'

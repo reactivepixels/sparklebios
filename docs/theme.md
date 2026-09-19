@@ -1,7 +1,7 @@
 # The theme: Rainbows and Unicorns
 
 A serious 1985 colour terminal theme for Ghostty. The name is the only joke.
-Four variants share one idea: the rainbow is simply the ANSI colours your tools
+Five variants share one idea: the rainbow is simply the ANSI colours your tools
 were already going to use.
 
 Contrast figures are WCAG ratios against that variant's background.
@@ -106,6 +106,30 @@ rainbow goes pastel because on a blue ground it has to.
 | 5 | magenta | `#F0B0F2` | 13 | magenta | `#F7CFF8` |
 | 6 | cyan | `#8CECE2` | 14 | cyan | `#BCF5EE` |
 | 7 | white | `#DCE6F2` | 15 | white | `#FFFFFF` |
+
+### `rainbows-and-unicorns-mane` (Mane)
+
+The palette of the unicorn itself. Every colour is lifted from the sprite: the six
+bands of the mane, the pink of its ear in bright magenta, the lavender of its
+shading as plain white, the gold of the horn as the cursor. Made to sit under the
+`pc95` boot screen, which paints no background of its own. Opt in; it is not the default.
+
+| Role | Value | | Role | Value |
+|---|---|---|---|---|
+| background | `#14131A` | | foreground | `#E9E7F2` (15.1) |
+| cursor-color | `#FFD65A` | | cursor-text | `#14131A` |
+| selection-background | `#9230AA` | | selection-foreground | `#FFFFFF` |
+
+| # | Normal | Value | # | Bright | Value |
+|---|---|---|---|---|---|
+| 0 | black | `#24222E` | 8 | black | `#6E6A82` |
+| 1 | red | `#EB413A` | 9 | red (orange) | `#FA821E` |
+| 2 | green | `#68C44A` | 10 | green | `#8FDB74` |
+| 3 | yellow | `#FEDE3C` | 11 | yellow | `#FFE978` |
+| 4 | blue | `#3092E2` | 12 | blue | `#62B0F0` |
+| 5 | magenta | `#B866D6` | 13 | magenta (pink) | `#F0A0BE` |
+| 6 | cyan | `#45C8C0` | 14 | cyan | `#7FE0D8` |
+| 7 | white (lavender) | `#C8CAE4` | 15 | white | `#FFFFFF` |
 
 ## Using it
 

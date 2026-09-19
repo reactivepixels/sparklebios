@@ -26,5 +26,6 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Transparent painted screens: a machine with `paint = true` and no `bg` keeps its layout and logo but sits on the terminal's own background. `pc95` and `pc85` now do this, so they belong to whatever theme you run. `c64` keeps its blue.
 - The `c64` machine: forty columns, light blue on blue, one word changed.
 - `bios use <id>` chooses which machine boots, with `--full`, `--fast` and `--reset`. It edits `~/.config/sparklebios/config.toml` for you and leaves every other setting alone.
+- Mane, a fifth theme variant built from the unicorn's own colours, made to sit under `pc95`. Opt in with `theme = rainbows-and-unicorns-mane`.
 - `extras/starship-palette.toml`, a starship palette to match the theme.
 - `bios init zsh`, `bios machines`, and the machine authoring guide in `docs/machines.md`.

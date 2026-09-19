@@ -234,7 +234,7 @@ fn use_then_boot_fast_picks_up_the_chosen_machine() {
 }
 
 #[test]
-fn theme_install_writes_four_files() {
+fn theme_install_writes_every_theme_file() {
     let dir = tempfile::tempdir().unwrap();
     bios()
         .args(["theme", "install", "--dir"])
@@ -247,6 +247,7 @@ fn theme_install_writes_four_files() {
         "rainbows-and-unicorns-paper",
         "rainbows-and-unicorns-ega",
         "rainbows-and-unicorns-workbench",
+        "rainbows-and-unicorns-mane",
     ] {
         assert!(dir.path().join(name).is_file(), "{name} missing");
     }

@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-pub const THEMES: [(&str, &str); 4] = [
+pub const THEMES: [(&str, &str); 5] = [
     (
         "rainbows-and-unicorns",
         include_str!("../themes/rainbows-and-unicorns"),
@@ -19,9 +19,13 @@ pub const THEMES: [(&str, &str); 4] = [
         "rainbows-and-unicorns-workbench",
         include_str!("../themes/rainbows-and-unicorns-workbench"),
     ),
+    (
+        "rainbows-and-unicorns-mane",
+        include_str!("../themes/rainbows-and-unicorns-mane"),
+    ),
 ];
 
-/// Writes all four files into `dir`, creating it. Returns the paths written.
+/// Writes all five files into `dir`, creating it. Returns the paths written.
 pub fn install(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     std::fs::create_dir_all(dir)?;
     let mut paths = Vec::with_capacity(THEMES.len());

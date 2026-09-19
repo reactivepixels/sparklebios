@@ -71,7 +71,7 @@ SparkleBIOS is three things that share one binary and one visual language:
 |---|---|
 | **The BIOS** | A POST screen on every new tab that is really a health check. Several boot machines, from a mid-90s PC to an 8-bit home computer. `bios setup` is a blue BIOS setup utility, because of course it is. |
 | **neigh** | A rainbow pipe with era palettes: `make \| neigh`. Bands, dither and raster bars, never gradients, because 1985 had sixteen colours on a good day. |
-| **The theme** | "Rainbows and Unicorns", a serious 1985 Ghostty theme. The name is the only joke in it. |
+| **The theme** | "Rainbows and Unicorns", a serious 1985 Ghostty theme in five variants. The name is the only joke in it. |
 
 ## The jokes are true
 
