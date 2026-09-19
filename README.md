@@ -37,9 +37,25 @@ Press F1 to continue
 Boot time: 412ms
 ```
 
-> **Status: pre-alpha.** The design is finished and the code has just started.
-> There is nothing to install yet. The screen above is a design mock.
-> Watch the repo to see it boot.
+> **Status: pre-alpha.** Milestones M0 and M1 work from source: the theme, the hook, and two static boot screens. The animated show and the health checks come next, and the screen above previews where it is headed.
+
+## Install from source
+
+```
+cargo install --git https://github.com/reactivepixels/sparklebios
+```
+
+Then add this line to the END of your `~/.zshrc`:
+
+```
+command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
+```
+
+Open a new tab. It boots.
+
+For the theme: `bios theme install`, then follow the four lines it prints.
+
+To try it without touching your shell: `bios boot --full`
 
 ## What it is
 
@@ -80,8 +96,8 @@ SparkleBIOS is three things that share one binary and one visual language:
 
 | # | Milestone | Status |
 |---|---|---|
-| M0 | The theme: four Ghostty theme files | in progress |
-| M1 | BIOS skeleton: shell hook, boot modes, static POST screens | in progress |
+| M0 | The theme: four Ghostty theme files | done |
+| M1 | BIOS skeleton: shell hook, boot modes, static POST screens | done |
 | M2 | The show: animation, skip keys, typeahead preserved, beeps, shutdown screen | planned |
 | M3 | Health checks with machine-voiced warnings | planned |
 | M4 | neigh | planned |
@@ -97,13 +113,15 @@ Details live in [ROADMAP.md](ROADMAP.md), and the rest of the paperwork is in [t
 A boot machine is a single TOML file: some geometry, some colours, an ordered
 list of steps, and how that machine phrases bad news. If the computer you grew
 up with is not on the list, it should be. See [CONTRIBUTING.md](CONTRIBUTING.md).
-The format lands with M1; until then, open an issue and tell us which machine
-and what its boot screen said.
+The format is documented in [docs/machines.md](docs/machines.md). If you would
+rather not write TOML, open an issue and tell us which machine and what its boot
+screen said.
 
 ## Questions people ask
 
-**Will it slow my shell?** It has a time budget, the budget is tested, and the
-numbers will be published here with every release.
+**Will it slow my shell?** It has a time budget and the budget is tested. Measured
+on an Apple M3 Pro: 2.5ms for a whole boot, process start included. It spawns
+nothing and waits for nothing.
 
 **Does it phone home?** No. See principle 7. In 1985 there was nothing to phone.
 

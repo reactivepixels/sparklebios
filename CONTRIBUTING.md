@@ -18,9 +18,9 @@ SparkleBIOS is pre-alpha. The most useful things right now:
 ## Adding a boot machine
 
 A machine is one TOML file in `machines/`: geometry, colours, an ordered list of
-steps, and a table of how that machine phrases each finding. The schema is
-defined in M1 and documented in `docs/machines.md` when it lands. Until then,
-issues are better than pull requests for new machines.
+steps, and a pool of rotating quips. The schema is documented in
+[docs/machines.md](docs/machines.md). Preview yours with
+`bios boot --machine <id>`, and paste the output into the pull request.
 
 ## Development
 

@@ -14,3 +14,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The crate scaffold: the `bios` binary, its command surface, the zsh hook, and a panic policy that never lets an error reach your terminal.
 - POST, the continuous integration workflow, which is exactly what it sounds like.
 - A dependency policy that bans network crates outright.
+- The "Rainbows and Unicorns" Ghostty theme in four variants, with a test that fails if the files and `docs/theme.md` ever disagree. Install with `bios theme install`.
+- Two boot machines, `pc95` and `pc85`, as TOML data, each with a pool of rotating quips.
+- Fast macOS fact probes (processor, memory, disk, system, shell, measured shell start time) that never spawn a process. A whole boot takes about 2.5ms.
+- `bios boot`: the boot mode decision (off, quiet, fast, full), a boot-day streak, the `SPARKLEBIOS_BOOT=0` kill switch, and previews with `--machine`, `--full` and `--fast`.
+- `bios init zsh`, `bios machines`, and the machine authoring guide in `docs/machines.md`.

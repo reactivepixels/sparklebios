@@ -61,25 +61,24 @@ different quip on a later boot rather than the same one every time.
 
 ## Facts available today
 
-These are the fact keys a machine's templates can reference. They match the
-keys set by `Facts::fixture()` in `src/facts/mod.rs`:
-
-- `cpu.name`
-- `cpu.cores`
-- `mem.kb`
-- `disk.size_gb`
-- `disk.free_gb`
-- `disk.used_pct`
-- `os.name`
-- `os.version`
-- `host.name`
-- `shell.name`
-- `shell.boot_ms`
-- `date.bios`
-- `date.year`
-- `date.today`
-- `streak.days`
-- `streak.label`
+| Key | What it is | Example |
+|---|---|---|
+| `cpu.name` | Processor name, as the system reports it | `Apple M4 Pro` |
+| `cpu.cores` | Logical core count | `14` |
+| `mem.kb` | Installed memory in kilobytes, the unit a memory count deserves | `37748736` |
+| `disk.size_gb` | Size of the volume holding your home directory, in decimal GB | `994` |
+| `disk.free_gb` | Free space on that volume | `212` |
+| `disk.used_pct` | How full it is, as a whole number | `78` |
+| `os.name` | Operating system | `macOS` |
+| `os.version` | Its version | `26.5` |
+| `host.name` | Host name, without a trailing `.local` | `unicorn` |
+| `shell.name` | The shell that is booting | `zsh` |
+| `shell.boot_ms` | How long the shell took to start, measured. Absent when the shell has been running for more than a minute | `412` |
+| `date.bios` | Today, the way a BIOS writes it | `09/19/2026` |
+| `date.year` | The year | `2026` |
+| `date.today` | Today in ISO form | `2026-09-19` |
+| `streak.days` | Consecutive days with a boot. Absent in previews | `12` |
+| `streak.label` | The same, ready to print | `12 days` |
 
 A fact that has not been gathered on a given boot is simply absent, and any
 line referencing it is omitted under the rule above.
@@ -89,10 +88,21 @@ line referencing it is omitted under the rule above.
 Built-in machines live in this repository's `machines/` directory and are
 compiled into the `bios` binary. A user may add their own by placing a file
 at `~/.config/sparklebios/machines/<id>.toml` (or under
-`$XDG_CONFIG_HOME/sparklebios/machines` if that variable is set). A user
-file whose id matches a built-in replaces it; other user files add to the
-roster. A file that fails to parse or fails validation is ignored, not
-reported.
+`$XDG_CONFIG_HOME/sparklebios/machines` if that variable is set). The file
+name must match the `id` inside it. A user file whose id matches a built-in
+replaces it; other user files add to the roster. A file that fails to parse or
+fails validation is ignored, not reported, because nothing on the boot path is
+allowed to complain.
+
+## Trying a machine
+
+```
+bios machines                    # the roster
+bios boot --machine pc95         # preview one, without touching any state
+NO_COLOR=1 bios boot --full      # the same, as plain text for pasting into an issue
+```
+
+A preview never reads or writes the streak, so the streak line is absent.
 
 ## Originality
 

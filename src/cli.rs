@@ -25,7 +25,7 @@ enum Command {
         shell: InitShell,
     },
     /// Print the boot screen.
-    Boot(BootArgs),
+    Boot(BootCliArgs),
     /// List the available machines.
     Machines,
     /// Theme related commands.
@@ -42,7 +42,7 @@ enum InitShell {
 }
 
 #[derive(Debug, Args)]
-struct BootArgs {
+struct BootCliArgs {
     /// The machine id to boot.
     #[arg(long)]
     machine: Option<String>,
@@ -52,6 +52,16 @@ struct BootArgs {
     /// Force a fast boot.
     #[arg(long)]
     fast: bool,
+}
+
+impl From<BootCliArgs> for crate::boot::BootArgs {
+    fn from(args: BootCliArgs) -> Self {
+        crate::boot::BootArgs {
+            machine: args.machine,
+            full: args.full,
+            fast: args.fast,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -74,10 +84,37 @@ pub fn run() -> i32 {
             print!("{}", shell::ZSH_HOOK);
             0
         }
-        Command::Boot(_args) => 0,
-        Command::Machines => 0,
+        Command::Boot(args) => {
+            crate::boot::run(&args.into());
+            0
+        }
+        Command::Machines => {
+            for machine in crate::machine::list(crate::paths::user_machines_dir().as_deref()) {
+                println!("{:<8}{}", machine.id, machine.name);
+            }
+            0
+        }
         Command::Theme {
-            command: ThemeCommand::Install { dir: _ },
-        } => 0,
+            command: ThemeCommand::Install { dir },
+        } => install_theme(dir),
     }
+}
+
+fn install_theme(dir: Option<PathBuf>) -> i32 {
+    let Some(dir) = dir.or_else(crate::paths::ghostty_themes_dir) else {
+        eprintln!("bios: cannot find a themes directory, pass --dir");
+        return 1;
+    };
+    let Ok(paths) = crate::theme::install(&dir) else {
+        return 0;
+    };
+    for path in paths {
+        println!("{}", path.display());
+    }
+    println!("Add to your Ghostty config:");
+    println!("  theme = dark:rainbows-and-unicorns,light:rainbows-and-unicorns-paper");
+    println!("  cursor-style = block");
+    println!("  cursor-style-blink = true");
+    println!("  bold-is-bright = false");
+    0
 }
