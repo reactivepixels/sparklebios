@@ -44,6 +44,24 @@ impl Facts {
     }
 }
 
+/// All fast facts. Each probe fails silently by leaving its keys absent.
+pub fn gather() -> Facts {
+    let mut facts = Facts::new();
+
+    let now = crate::clock::now_unix();
+    let (year, month, day) = crate::clock::local_ymd(now as i64);
+    facts.insert("date.today", format!("{year:04}-{month:02}-{day:02}"));
+    facts.insert("date.bios", format!("{month:02}/{day:02}/{year:04}"));
+    facts.insert("date.year", format!("{year:04}"));
+
+    #[cfg(target_os = "macos")]
+    macos::probe(&mut facts);
+    #[cfg(not(target_os = "macos"))]
+    other::probe(&mut facts);
+
+    facts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -53,5 +71,38 @@ mod tests {
         let f = Facts::fixture();
         assert_eq!(f.get("mem.kb"), Some("37748736"));
         assert_eq!(f.get("nope"), None);
+    }
+
+    #[test]
+    fn gather_always_sets_the_date_facts() {
+        let f = gather();
+        assert_eq!(f.get("date.today").unwrap().len(), 10);
+        assert_eq!(f.get("date.bios").unwrap().len(), 10);
+        assert_eq!(f.get("date.year").unwrap().len(), 4);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn gather_reads_real_hardware_on_macos() {
+        let f = gather();
+        assert!(f.get("mem.kb").unwrap().parse::<u64>().unwrap() > 1_000_000);
+        assert!(f.get("cpu.cores").unwrap().parse::<u32>().unwrap() >= 1);
+        assert!(!f.get("cpu.name").unwrap().is_empty());
+        assert!(f.get("disk.used_pct").unwrap().parse::<u32>().unwrap() <= 100);
+        assert!(f.get("disk.size_gb").unwrap().parse::<u64>().unwrap() > 0);
+        assert_eq!(f.get("os.name"), Some("macOS"));
+        assert!(!f.get("shell.name").unwrap().starts_with('-'));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn gather_is_fast() {
+        let t = std::time::Instant::now();
+        let _ = gather();
+        assert!(
+            t.elapsed().as_millis() < 50,
+            "gather took {:?}",
+            t.elapsed()
+        );
     }
 }
