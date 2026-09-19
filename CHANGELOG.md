@@ -22,6 +22,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The mark: a pixel unicorn with a gold horn and a six-stripe mane, on the banner, the social preview and as `docs/assets/mark.svg`.
 - Painted screens: a machine can paint itself as a block of its own background colour, with a border, so a boot looks like a screen and not like text. Falls back to plain text when the terminal is too narrow or has no truecolor.
 - The unicorn, in the terminal: real pixels through the kitty graphics protocol where the terminal supports it (Ghostty, kitty), half-block characters everywhere else. `pc95` gains its logo and a compliance badge.
+- The show: the POST now plays. The memory count ticks up, each device is detected in turn, and any key skips to the end. Keys typed during the show are handed back to the prompt, and the terminal is never left in raw mode. `--no-animate`, `SPARKLEBIOS_ANIMATE=0` or `animate = false` turn it off.
 - The `c64` machine: forty columns, light blue on blue, one word changed.
 - `~/.config/sparklebios/config.toml` to choose which machine boots.
 - `extras/starship-palette.toml`, a starship palette to match the theme.

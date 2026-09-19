@@ -20,7 +20,8 @@ fn init_zsh_prints_the_hook() {
         .args(["init", "zsh"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("bios boot"))
+        .stdout(predicate::str::contains("bios boot --hook"))
+        .stdout(predicate::str::contains("print -z"))
         .stdout(predicate::str::contains("SPARKLEBIOS_BOOTED"));
 }
 
@@ -120,6 +121,27 @@ fn preview_renders_c64() {
         .assert()
         .success()
         .stdout(predicate::str::contains("**** UNICORN 64 BASIC V2 ****"));
+}
+
+#[test]
+fn hook_prints_nothing_to_stdout_and_exits_zero() {
+    let state = tempfile::tempdir().unwrap();
+    bios()
+        .args(["boot", "--hook"])
+        .env("XDG_STATE_HOME", state.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout("");
+}
+
+#[test]
+fn no_animate_flag_is_accepted() {
+    bios()
+        .args(["boot", "--fast", "--no-animate"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success();
 }
 
 #[test]

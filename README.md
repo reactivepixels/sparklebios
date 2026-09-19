@@ -37,7 +37,7 @@ Press F1 to continue
 Boot time: 412ms
 ```
 
-> **Status: pre-alpha.** Milestones M0 and M1 work from source: the theme, the hook, and two static boot screens. The animated show and the health checks come next, and the screen above previews where it is headed.
+> **Status: pre-alpha.** Milestones M0 to M2 work from source: the theme, the hook, three painted boot machines, the unicorn, and the animated show. The health checks come next, and the screen above previews where they are headed.
 
 ## Install from source
 
@@ -98,7 +98,7 @@ SparkleBIOS is three things that share one binary and one visual language:
 |---|---|---|
 | M0 | The theme: four Ghostty theme files | done |
 | M1 | BIOS skeleton: shell hook, boot modes, static POST screens | done |
-| M2 | The show: animation, skip keys, typeahead preserved, beeps, shutdown screen | planned |
+| M2 | The look and the show: painted screens, the unicorn, the `c64` machine, animation, skip keys, typeahead preserved | done |
 | M3 | Health checks with machine-voiced warnings | planned |
 | M4 | neigh | planned |
 | M5 | `bios setup` | planned |
@@ -128,6 +128,8 @@ nothing and waits for nothing.
 **How do I turn it off?** `SPARKLEBIOS_BOOT=0`, or remove one line from your
 shell config. The hook is guarded, so uninstalling the binary cannot break
 your shell either.
+
+**Can I skip the show?** Press any key. Whatever you typed is waiting on your prompt when it ends.
 
 ## System requirements
 

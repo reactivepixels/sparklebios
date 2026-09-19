@@ -7,7 +7,7 @@ this is in [docs/design.md](docs/design.md).
 |---|---|---|
 | M0 | **Theme** | Four Ghostty theme files (`rainbows-and-unicorns`, `-paper`, `-ega`, `-workbench`) load in stock Ghostty; the README shows the config lines; where embedded Ghostty engines load themes from is documented |
 | M1 | **BIOS skeleton** | `bios init zsh` hook, boot-mode decision, fast facts, `pc95` and `pc85` rendered statically, kill switch, time budgets met |
-| M2 | **The show** | Timeline player, Esc to skip, DEL for setup, typeahead preserved, once-a-day full show, beep codes, shutdown screen |
+| M2 | **The look and the show** | Painted screens with borders, the unicorn logo and badge, the `c64` machine, the timeline player, any key to skip, typeahead preserved, once-a-day full show. Beep codes and the shutdown screen moved to M3 |
 | M3 | **Health checks** | Check engine, fact cache with detached refresh, machine-voiced findings, the F1 line |
 | M4 | **neigh** | All palettes and modes, banner, rule, gallop; BIOS banners painted by neigh |
 | M5 | **Setup** | The BIOS setup TUI edits the config file; DEL during boot opens it; beige fail-safe defaults |

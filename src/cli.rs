@@ -52,6 +52,13 @@ struct BootCliArgs {
     /// Force a fast boot.
     #[arg(long)]
     fast: bool,
+    /// Play the show against /dev/tty and print only the bytes typed during it. Used by the
+    /// shell hook; not meant to be run by hand.
+    #[arg(long)]
+    hook: bool,
+    /// Skip the animated show, even where a terminal and the config would otherwise play it.
+    #[arg(long)]
+    no_animate: bool,
 }
 
 impl From<BootCliArgs> for crate::boot::BootArgs {
@@ -60,6 +67,8 @@ impl From<BootCliArgs> for crate::boot::BootArgs {
             machine: args.machine,
             full: args.full,
             fast: args.fast,
+            hook: args.hook,
+            no_animate: args.no_animate,
         }
     }
 }

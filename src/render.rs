@@ -197,6 +197,168 @@ pub fn layout(machine: &Machine, facts: &Facts, seed: u64) -> Vec<Vec<Span>> {
     collapse_blank_lines(lines)
 }
 
+/// How a step's row changes over the course of the animated show (`show.rs`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnimatedKind {
+    /// Appears once, already in its final state: a `Print` or `Quip` step.
+    Instant,
+    /// Appears first as `label_spans` (the label plus `"... "`), then is redrawn with the final
+    /// state (the label plus the result): a `Detect` step.
+    Detect { label_spans: Vec<Span> },
+    /// Counts up through `frames` before settling on the final state: a `Count` step. Empty
+    /// when the target does not parse as a number, in which case the step behaves like
+    /// `Instant`.
+    Count { frames: Vec<Vec<Span>> },
+}
+
+/// One step, resolved for the animated show: its final spans (`spans`, identical to what
+/// `layout` produces for the same step), how long to hold on it in milliseconds before speed is
+/// applied (`ms`), and how it gets there (`kind`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnimatedStep {
+    pub ms: u64,
+    pub spans: Vec<Span>,
+    pub kind: AnimatedKind,
+}
+
+/// Roughly how many redraws a `Count` step plays out over its `ms`: the growing frames plus the
+/// final, suffixed value.
+const COUNT_FRAMES: u64 = 24;
+
+/// Resolves a single step for the animated show, or None to omit it. Mirrors `layout_step`
+/// exactly for the final state (`AnimatedStep::spans`), so `layout` and `animated_layout` always
+/// agree on which lines are visible and what they finally say.
+fn animate_step(machine: &Machine, facts: &Facts, seed: u64, step: &Step) -> Option<AnimatedStep> {
+    match step {
+        Step::Print { text, style, ms } => {
+            let text = template::render(text, facts)?;
+            let spans = if text.is_empty() {
+                vec![]
+            } else {
+                vec![Span {
+                    text: apply_case(machine, text),
+                    style: *style,
+                }]
+            };
+            Some(AnimatedStep {
+                ms: *ms,
+                spans,
+                kind: AnimatedKind::Instant,
+            })
+        }
+        Step::Quip { style, ms } => {
+            let quip = resolve_quip(machine, facts, seed)?;
+            let spans = vec![Span {
+                text: apply_case(machine, quip),
+                style: *style,
+            }];
+            Some(AnimatedStep {
+                ms: *ms,
+                spans,
+                kind: AnimatedKind::Instant,
+            })
+        }
+        Step::Detect {
+            label,
+            result,
+            style,
+            ms,
+        } => {
+            let result = template::render(result, facts)?;
+            let label_text = apply_case(machine, format!("{label}... "));
+            let label_spans = vec![Span {
+                text: label_text.clone(),
+                style: Style::Normal,
+            }];
+            let spans = vec![
+                Span {
+                    text: label_text,
+                    style: Style::Normal,
+                },
+                Span {
+                    text: apply_case(machine, result),
+                    style: *style,
+                },
+            ];
+            Some(AnimatedStep {
+                ms: *ms,
+                spans,
+                kind: AnimatedKind::Detect { label_spans },
+            })
+        }
+        Step::Count {
+            template: tmpl,
+            to,
+            suffix,
+            ms,
+        } => {
+            let n = template::render(to, facts)?;
+            let filled = tmpl.replacen("{n}", &n, 1);
+            let mut line = template::render(&filled, facts)?;
+            line.push_str(suffix);
+            let spans = if line.is_empty() {
+                vec![]
+            } else {
+                vec![Span {
+                    text: apply_case(machine, line),
+                    style: Style::Normal,
+                }]
+            };
+            let frames = n.parse::<u64>().ok().map_or_else(Vec::new, |target| {
+                (0..COUNT_FRAMES - 1)
+                    .filter_map(|k| {
+                        let value = target * k / COUNT_FRAMES;
+                        let filled = tmpl.replacen("{n}", &value.to_string(), 1);
+                        let line = template::render(&filled, facts)?;
+                        Some(if line.is_empty() {
+                            vec![]
+                        } else {
+                            vec![Span {
+                                text: apply_case(machine, line),
+                                style: Style::Normal,
+                            }]
+                        })
+                    })
+                    .collect()
+            });
+            Some(AnimatedStep {
+                ms: *ms,
+                spans,
+                kind: AnimatedKind::Count { frames },
+            })
+        }
+    }
+}
+
+/// Never two blank lines in a row, and never a leading or trailing blank line: the same rule
+/// `collapse_blank_lines` applies to `layout`, applied here to each step's final spans.
+fn collapse_blank_animated(steps: Vec<AnimatedStep>) -> Vec<AnimatedStep> {
+    let mut collapsed: Vec<AnimatedStep> = Vec::with_capacity(steps.len());
+    for step in steps {
+        let previous_is_blank = collapsed.last().map(|s| is_blank(&s.spans)).unwrap_or(true);
+        if is_blank(&step.spans) && previous_is_blank {
+            continue;
+        }
+        collapsed.push(step);
+    }
+    while collapsed.last().is_some_and(|s| is_blank(&s.spans)) {
+        collapsed.pop();
+    }
+    collapsed
+}
+
+/// The machine's steps resolved for the animated show: one `AnimatedStep` per visible logical
+/// line, in the same order and under the same omission and blank-collapsing rules as `layout`,
+/// whose final `spans` always agree with it.
+pub fn animated_layout(machine: &Machine, facts: &Facts, seed: u64) -> Vec<AnimatedStep> {
+    let steps: Vec<AnimatedStep> = machine
+        .steps
+        .iter()
+        .filter_map(|step| animate_step(machine, facts, seed, step))
+        .collect();
+    collapse_blank_animated(steps)
+}
+
 /// The plain rendering: every span painted in place, one line per row.
 fn render_plain(machine: &Machine, mode: ColorMode, lines: &[Vec<Span>]) -> String {
     let mut out = String::new();
@@ -219,9 +381,9 @@ fn bg_block(rgb: (u8, u8, u8), width: usize) -> String {
 }
 
 /// One row of a painted block, built from a logical line's spans: border pillars, background
-/// padding, an optional logo box, the line's text (truncated to its budget, shrunk further to
-/// leave room for a badge when one applies) filled out with background, the badge itself, the
-/// padding and pillars mirrored, then a trailing reset.
+/// padding, an optional logo box, the line's text (never truncated to make room for a badge)
+/// filled out with background, the badge itself, the padding and pillars mirrored, then a
+/// trailing reset.
 ///
 /// `logo` is `Some((cell, kitty_escape))` for the first 7 text rows of a machine with a unicorn
 /// logo: `cell` is the pre-rendered 14-cell half-block row for that sprite row (absent in Kitty
@@ -229,9 +391,8 @@ fn bg_block(rgb: (u8, u8, u8), width: usize) -> String {
 /// present only on the row that must emit it (the first text row, once).
 ///
 /// `badge`, when present, is right-aligned inside the `cols` text area, in the accent colour.
-/// The text budget shrinks by the badge's width plus a 2 cell gap, so the badge never lands
-/// within 2 cells of text; if the badge is too wide to reserve that room at all (rare, only on
-/// very narrow machines), it is dropped instead and the row's text keeps its full budget.
+/// The row's own text is drawn at its full width first; if it ends within 2 cells of where the
+/// badge would start, the badge is dropped for this row instead of the text being cut short.
 #[allow(clippy::too_many_arguments)]
 fn painted_row(
     machine: &Machine,
@@ -262,15 +423,7 @@ fn painted_row(
         row.push_str(&bg_block(bg, 2));
     }
     let shift_offset = if shift { 16 } else { 0 };
-    let normal_budget = cols.saturating_sub(shift_offset);
-    let badge_len = badge.map(|b| b.chars().count()).unwrap_or(0);
-    let reserved = badge_len + 2;
-    let show_badge = badge.is_some() && reserved <= normal_budget;
-    let text_budget = if show_badge {
-        normal_budget - reserved
-    } else {
-        normal_budget
-    };
+    let text_budget = cols.saturating_sub(shift_offset);
 
     let mut used = 0usize;
     for span in spans {
@@ -289,9 +442,11 @@ fn painted_row(
     }
 
     let text_end = shift_offset + used;
+    let badge_len = badge.map(|b| b.chars().count()).unwrap_or(0);
+    let badge_start = cols.saturating_sub(badge_len);
+    let show_badge = badge.is_some() && text_end + 2 <= badge_start;
     if show_badge {
         let badge = badge.unwrap();
-        let badge_start = cols - badge_len;
         if badge_start > text_end {
             row.push_str(&bg_block(bg, badge_start - text_end));
         }
@@ -307,7 +462,7 @@ fn painted_row(
     if let Some(border) = border {
         row.push_str(&bg_block(border, 2));
     }
-    row.push_str("\x1b[0m\n");
+    row.push_str("\x1b[0m");
     row
 }
 
@@ -322,8 +477,10 @@ const LOGO_ROWS: usize = 7;
 const MIN_COLS_FOR_GRAPHICS: usize = 60;
 
 /// The painted block: a border bar, `pad_y` blank rows, the text rows, `pad_y` more blank rows,
-/// then another border bar. The logo (if any) is drawn over the first 7 text rows, and the badge
-/// (if any) is right-aligned over the fill of the first few text rows.
+/// then another border bar. The logo (if any) is drawn over the first 7 text rows. The badge (if
+/// any) is right-aligned over the fill of the following few text rows: badge line `i` on text row
+/// `i + 1`, so the badge starts on the second text row and never competes with the header line
+/// for room.
 fn render_painted(machine: &Machine, lines: &[Vec<Span>], graphics: Graphics) -> String {
     let bg = hex_rgb(machine.bg.as_deref().unwrap_or("#000000"));
     let border = machine.border.as_deref().map(hex_rgb);
@@ -362,6 +519,7 @@ fn render_painted(machine: &Machine, lines: &[Vec<Span>], graphics: Graphics) ->
         out.push_str(&painted_row(
             machine, bg, border, pad_x, cols, &blank, None, None,
         ));
+        out.push('\n');
     }
     for (i, line) in lines.iter().enumerate() {
         let logo = if show_logo && i < LOGO_ROWS {
@@ -375,25 +533,191 @@ fn render_painted(machine: &Machine, lines: &[Vec<Span>], graphics: Graphics) ->
         } else {
             None
         };
-        let badge = if show_badge {
-            machine.badge.get(i).map(String::as_str)
+        let badge = if show_badge && i >= 1 {
+            machine.badge.get(i - 1).map(String::as_str)
         } else {
             None
         };
         out.push_str(&painted_row(
             machine, bg, border, pad_x, cols, line, logo, badge,
         ));
+        out.push('\n');
     }
     for _ in 0..pad_y {
         out.push_str(&painted_row(
             machine, bg, border, pad_x, cols, &blank, None, None,
         ));
+        out.push('\n');
     }
     if let Some(border) = border {
         out.push_str(&bg_block(border, total_width));
         out.push_str("\x1b[0m\n");
     }
     out
+}
+
+/// Precomputed geometry for rendering one logical line at a time: the same rules
+/// `render_painted` and `render_plain` use for a whole screen, so the animated show (`show.rs`)
+/// can redraw a single row, in an intermediate or final state, through the same code path.
+pub struct RowGeometry<'a> {
+    machine: &'a Machine,
+    mode: ColorMode,
+    painted: bool,
+    bg: (u8, u8, u8),
+    border: Option<(u8, u8, u8)>,
+    pad_x: usize,
+    cols: usize,
+    show_logo: bool,
+    sprite_rows: Vec<String>,
+    kitty_escape: Option<String>,
+    show_badge: bool,
+}
+
+/// Builds the geometry for `machine`, choosing between the painted and plain paths under the
+/// same rule `render_static` uses.
+pub fn row_geometry<'a>(
+    machine: &'a Machine,
+    mode: ColorMode,
+    term_cols: Option<u16>,
+    graphics: Graphics,
+) -> RowGeometry<'a> {
+    let painted = machine.paint
+        && mode == ColorMode::TrueColor
+        && term_cols.is_some_and(|w| w >= painted_total_width(machine));
+    if painted {
+        RowGeometry::build_painted(machine, graphics)
+    } else {
+        RowGeometry::build_plain(machine, mode)
+    }
+}
+
+impl<'a> RowGeometry<'a> {
+    fn build_painted(machine: &'a Machine, graphics: Graphics) -> Self {
+        let bg = hex_rgb(machine.bg.as_deref().unwrap_or("#000000"));
+        let border = machine.border.as_deref().map(hex_rgb);
+        let pad_x = machine.pad_x as usize;
+        let cols = machine.cols as usize;
+        let show_logo = graphics != Graphics::None
+            && cols >= MIN_COLS_FOR_GRAPHICS
+            && machine.logo.as_deref() == Some("unicorn");
+        let sprite_rows = if show_logo && graphics == Graphics::HalfBlocks {
+            crate::sprite::half_blocks(crate::sprite::UNICORN_GRID, bg)
+        } else {
+            Vec::new()
+        };
+        let kitty_escape = if show_logo && graphics == Graphics::Kitty {
+            Some(crate::sprite::kitty_image(
+                crate::sprite::UNICORN_PNG,
+                14,
+                7,
+            ))
+        } else {
+            None
+        };
+        let show_badge = graphics != Graphics::None
+            && cols >= MIN_COLS_FOR_GRAPHICS
+            && !machine.badge.is_empty();
+        RowGeometry {
+            machine,
+            mode: ColorMode::TrueColor,
+            painted: true,
+            bg,
+            border,
+            pad_x,
+            cols,
+            show_logo,
+            sprite_rows,
+            kitty_escape,
+            show_badge,
+        }
+    }
+
+    fn build_plain(machine: &'a Machine, mode: ColorMode) -> Self {
+        RowGeometry {
+            machine,
+            mode,
+            painted: false,
+            bg: (0, 0, 0),
+            border: None,
+            pad_x: 0,
+            cols: machine.cols as usize,
+            show_logo: false,
+            sprite_rows: Vec::new(),
+            kitty_escape: None,
+            show_badge: false,
+        }
+    }
+
+    /// Whether this geometry uses the painted block path (border, padding, logo, badge) rather
+    /// than the plain one.
+    pub fn painted(&self) -> bool {
+        self.painted
+    }
+
+    /// The top or bottom border bar, full width. `None` when not painted or the machine has no
+    /// `border`.
+    pub fn border_row(&self) -> Option<String> {
+        self.border.map(|border| {
+            let total_width = painted_total_width(self.machine) as usize;
+            let mut row = bg_block(border, total_width);
+            row.push_str("\x1b[0m");
+            row
+        })
+    }
+
+    /// A blank painted row: `pad_y` of these go above and below the text rows.
+    pub fn pad_row(&self) -> String {
+        painted_row(
+            self.machine,
+            self.bg,
+            self.border,
+            self.pad_x,
+            self.cols,
+            &[],
+            None,
+            None,
+        )
+    }
+
+    /// Renders logical line `index` with `spans` as its current text: the same row
+    /// `render_static` would draw for that line, letting the caller pass an intermediate state
+    /// (a `Detect`'s label, a `Count`'s partial value) through the same layout as the final one.
+    pub fn line(&self, index: usize, spans: &[Span]) -> String {
+        if self.painted {
+            let logo = if self.show_logo && index < LOGO_ROWS {
+                let cell = self.sprite_rows.get(index).map(String::as_str);
+                let escape = if index == 0 {
+                    self.kitty_escape.as_deref()
+                } else {
+                    None
+                };
+                Some((cell, escape))
+            } else {
+                None
+            };
+            let badge = if self.show_badge && index >= 1 {
+                self.machine.badge.get(index - 1).map(String::as_str)
+            } else {
+                None
+            };
+            painted_row(
+                self.machine,
+                self.bg,
+                self.border,
+                self.pad_x,
+                self.cols,
+                spans,
+                logo,
+                badge,
+            )
+        } else {
+            let mut out = String::new();
+            for span in spans {
+                out.push_str(&paint(self.machine, self.mode, span.style, &span.text));
+            }
+            out
+        }
+    }
 }
 
 /// The finished screen as text. Every line ends with '\n'. `seed` picks the quip: start at
@@ -705,9 +1029,47 @@ quip = true
         let byte_col = stripped[1].find("Sparkle Modular BIOS").unwrap();
         let text_col = stripped[1][..byte_col].chars().count();
         assert_eq!(text_col, pad_x + 16);
-        assert!(stripped[1].trim_end().ends_with("enchantment"));
-        assert!(stripped[2].trim_end().ends_with("*STAR* ALLY"));
-        assert!(stripped[3].trim_end().ends_with("GLITTER SAFE"));
+        assert!(stripped[1].contains("Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally"));
+        assert!(stripped[2].trim_end().ends_with("enchantment"));
+        assert!(stripped[3].trim_end().ends_with("*STAR* ALLY"));
+        assert!(stripped[4].trim_end().ends_with("GLITTER SAFE"));
+    }
+
+    #[test]
+    fn a_badge_line_is_dropped_rather_than_truncating_the_row_it_collides_with() {
+        let long_line = "A".repeat(60);
+        let src = format!(
+            r##"
+id = "tbadge"
+name = "Test"
+cols = 60
+fg = "#AAAAAA"
+bright = "#FFFFFF"
+accent = "#FFFF55"
+bg = "#000000"
+paint = true
+badge = ["ABCDE"]
+[[step]]
+print = "Header"
+[[step]]
+print = "{long_line}"
+"##
+        );
+        let m = machine::parse(&src).unwrap();
+        let out = render_static(
+            &m,
+            &Facts::new(),
+            ColorMode::TrueColor,
+            0,
+            Some(80),
+            Graphics::HalfBlocks,
+        );
+        let rows: Vec<&str> = out.lines().collect();
+        let stripped: Vec<String> = rows.iter().map(|r| strip_ansi(r)).collect();
+        // rows[0] is the pad_y blank row; rows[1] is "Header" (no badge target); rows[2] is the
+        // long line, which is the badge's target row and collides with it.
+        assert!(stripped[2].contains(&long_line));
+        assert!(!stripped[2].contains("ABCDE"));
     }
 
     #[test]
@@ -755,5 +1117,70 @@ quip = true
         assert!(!out.contains("\x1b_G"));
         assert!(!out.contains('\u{2580}'));
         assert!(!out.contains("enchantment"));
+    }
+
+    #[test]
+    fn animated_layout_final_spans_agree_with_layout() {
+        for id in ["pc95", "pc85", "c64"] {
+            let m = machine::find(id, None).unwrap();
+            let lines = layout(&m, &Facts::fixture(), 0);
+            let animated = animated_layout(&m, &Facts::fixture(), 0);
+            let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
+            assert_eq!(lines, animated_spans, "{id} disagrees on its final lines");
+        }
+    }
+
+    #[test]
+    fn animated_count_steps_grow_from_zero_to_the_final_value() {
+        let m = machine::find("pc95", None).unwrap();
+        let animated = animated_layout(&m, &Facts::fixture(), 0);
+        let count = animated
+            .iter()
+            .find(|s| matches!(s.kind, AnimatedKind::Count { .. }))
+            .unwrap();
+        let AnimatedKind::Count { frames } = &count.kind else {
+            unreachable!()
+        };
+        assert!(frames.len() >= 10, "expected several distinct frames");
+        assert_eq!(frames[0][0].text, "Memory Testing : 0K");
+        assert_eq!(count.spans[0].text, "Memory Testing : 37748736K OK");
+    }
+
+    #[test]
+    fn row_geometry_line_matches_render_static_for_pc95() {
+        let m = machine::find("pc95", None).unwrap();
+        let facts = Facts::fixture();
+        let lines = layout(&m, &facts, 0);
+        let geometry = row_geometry(&m, ColorMode::TrueColor, Some(100), Graphics::HalfBlocks);
+        let mut rebuilt = String::new();
+        if let Some(row) = geometry.border_row() {
+            rebuilt.push_str(&row);
+            rebuilt.push('\n');
+        }
+        for _ in 0..m.pad_y {
+            rebuilt.push_str(&geometry.pad_row());
+            rebuilt.push('\n');
+        }
+        for (i, line) in lines.iter().enumerate() {
+            rebuilt.push_str(&geometry.line(i, line));
+            rebuilt.push('\n');
+        }
+        for _ in 0..m.pad_y {
+            rebuilt.push_str(&geometry.pad_row());
+            rebuilt.push('\n');
+        }
+        if let Some(row) = geometry.border_row() {
+            rebuilt.push_str(&row);
+            rebuilt.push('\n');
+        }
+        let expected = render_static(
+            &m,
+            &facts,
+            ColorMode::TrueColor,
+            0,
+            Some(100),
+            Graphics::HalfBlocks,
+        );
+        assert_eq!(rebuilt, expected);
     }
 }

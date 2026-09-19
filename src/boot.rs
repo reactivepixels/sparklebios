@@ -1,6 +1,7 @@
-//! The boot flow: decide, gather, render, print, save.
+//! The boot flow: decide, gather, render or animate, print, save.
 
 use std::io::{IsTerminal, Write};
+use std::os::unix::io::AsRawFd;
 
 use crate::mode::BootMode;
 
@@ -8,6 +9,8 @@ pub struct BootArgs {
     pub machine: Option<String>,
     pub full: bool,
     pub fast: bool,
+    pub hook: bool,
+    pub no_animate: bool,
 }
 
 fn env_var(name: &str) -> Option<String> {
@@ -27,10 +30,10 @@ fn seed_from_time() -> u64 {
         .unwrap_or(0)
 }
 
-fn write_stdout(output: &str) {
+fn write_stdout_bytes(bytes: &[u8]) {
     let mut stdout = std::io::stdout();
-    if stdout.write_all(output.as_bytes()).is_err() {
-        debug(|| "bios: failed to write the boot screen".to_string());
+    if stdout.write_all(bytes).is_err() {
+        debug(|| "bios: failed to write to stdout".to_string());
     }
 }
 
@@ -54,12 +57,63 @@ fn graphics() -> crate::render::Graphics {
     }
 }
 
+/// Animation is off when the config or `SPARKLEBIOS_ANIMATE=0` disables it, `--no-animate` was
+/// passed, the mode is not TrueColor, or the output is not a terminal.
+fn animate_enabled(
+    config: &crate::config::Config,
+    no_animate_flag: bool,
+    mode: crate::render::ColorMode,
+    is_tty: bool,
+) -> bool {
+    config.animate
+        && env_var("SPARKLEBIOS_ANIMATE").as_deref() != Some("0")
+        && !no_animate_flag
+        && mode == crate::render::ColorMode::TrueColor
+        && is_tty
+}
+
+/// Draws `machine` into `out`: animated (honouring `key_fd` as the skip key source) when
+/// `animate` is true and, if a key is to be polled, raw mode can actually be entered; the final
+/// static screen otherwise. Returns the raw bytes read from `key_fd` while the show played, in
+/// order, empty when it did not animate or nothing was typed.
+#[allow(clippy::too_many_arguments)]
+fn play_or_render(
+    machine: &crate::machine::Machine,
+    facts: &crate::facts::Facts,
+    seed: u64,
+    mode: crate::render::ColorMode,
+    term_cols: Option<u16>,
+    graphics: crate::render::Graphics,
+    animate: bool,
+    out: &mut dyn Write,
+    key_fd: Option<i32>,
+) -> Vec<u8> {
+    if animate {
+        let guard = key_fd.and_then(crate::tty::RawGuard::new);
+        let raw_mode_ok = key_fd.is_none() || guard.is_some();
+        if raw_mode_ok {
+            let geometry = crate::show::Geometry {
+                mode,
+                term_cols,
+                graphics,
+            };
+            return crate::show::play(machine, facts, seed, geometry, out, key_fd, 1.0).typed;
+        }
+    }
+    let output = crate::render::render_static(machine, facts, mode, seed, term_cols, graphics);
+    let _ = out.write_all(output.as_bytes());
+    let _ = out.flush();
+    Vec::new()
+}
+
 /// Never panics outward and never returns an error: a boot that cannot happen prints nothing.
 pub fn run(args: &BootArgs) {
-    if args.machine.is_some() || args.full || args.fast {
+    if args.hook {
+        run_shell_boot(args, true);
+    } else if args.machine.is_some() || args.full || args.fast {
         run_preview(args);
     } else {
-        run_real();
+        run_shell_boot(args, false);
     }
 }
 
@@ -83,19 +137,50 @@ fn run_preview(args: &BootArgs) {
         return;
     };
     let facts = crate::facts::gather();
-    let output = crate::render::render_static(
+    let config = crate::config::load(crate::paths::config_dir().as_deref());
+    let mode = color_mode();
+    let stdout_is_tty = std::io::stdout().is_terminal();
+    let term_cols = crate::term::cols(1);
+    let animate = animate_enabled(&config, args.no_animate, mode, stdout_is_tty);
+    let key_fd = std::io::stdin().is_terminal().then_some(0);
+    let mut stdout = std::io::stdout();
+    play_or_render(
         &machine,
         &facts,
-        color_mode(),
         seed_from_time(),
-        crate::term::cols(1),
+        mode,
+        term_cols,
         graphics(),
+        animate,
+        &mut stdout,
+        key_fd,
     );
-    write_stdout(&output);
 }
 
-fn run_real() {
-    let stdout_is_tty = std::io::stdout().is_terminal();
+/// The real boot: `bios boot` (writes to stdout, keys discarded) or `bios boot --hook` (writes
+/// to `/dev/tty`, and prints only the filtered typed bytes to stdout). Both share the same
+/// decision, machine selection, streak and state handling; only the target and what happens to
+/// the typed bytes differ.
+fn run_shell_boot(args: &BootArgs, hook: bool) {
+    let tty_file = if hook {
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+        {
+            Ok(file) => Some(file),
+            Err(_) => return,
+        }
+    } else {
+        None
+    };
+
+    let is_tty = match &tty_file {
+        // SAFETY: `f` is a valid, open file; `isatty` only reads its fd.
+        Some(f) => unsafe { libc::isatty(f.as_raw_fd()) != 0 },
+        None => std::io::stdout().is_terminal(),
+    };
+
     let now = crate::clock::now_unix();
     let today = crate::clock::day_string(now as i64);
     let state_dir = crate::paths::state_dir();
@@ -105,7 +190,7 @@ fn run_real() {
     };
 
     let inputs = crate::mode::BootInputs {
-        stdout_is_tty,
+        stdout_is_tty: is_tty,
         term: env_var("TERM"),
         kill_switch: env_var("SPARKLEBIOS_BOOT"),
         already_booted: env_var("SPARKLEBIOS_BOOTED").is_some(),
@@ -148,15 +233,35 @@ fn run_real() {
     facts.insert("streak.days", state.streak_days.to_string());
     facts.insert("streak.label", state.streak_label());
 
-    let output = crate::render::render_static(
+    let mode = color_mode();
+    let cols_fd = tty_file.as_ref().map_or(1, |f| f.as_raw_fd());
+    let term_cols = crate::term::cols(cols_fd);
+    let animate = animate_enabled(&config, args.no_animate, mode, is_tty);
+    let key_fd = tty_file
+        .as_ref()
+        .map(|f| f.as_raw_fd())
+        .or_else(|| std::io::stdin().is_terminal().then_some(0));
+
+    let mut stdout_handle = std::io::stdout();
+    let mut tty_write = tty_file;
+    let out: &mut dyn Write = match &mut tty_write {
+        Some(f) => f,
+        None => &mut stdout_handle,
+    };
+    let typed = play_or_render(
         &machine,
         &facts,
-        color_mode(),
         seed_from_time(),
-        crate::term::cols(1),
+        mode,
+        term_cols,
         graphics(),
+        animate,
+        out,
+        key_fd,
     );
-    write_stdout(&output);
+    if hook {
+        write_stdout_bytes(&crate::show::filter_typed(&typed));
+    }
 
     state.last_boot = Some(now);
     if decision == BootMode::Full {

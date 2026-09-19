@@ -79,8 +79,11 @@ is too narrow, or its width is unknown, `paint` is ignored and the screen
 falls back to plain painted-free text. A `logo` and a `badge` only ever
 appear on a painted screen at least 60 columns wide: the logo is drawn as
 half-block characters or, on a terminal that supports it, as an actual
-image, and the badge is right-aligned in the accent colour over the first
-few lines.
+image, and the badge is right-aligned in the accent colour, its first line
+on the second text row (never the first, so the header line is never cut
+short) and one line per row after that. A row's own text is never
+truncated to make room for a badge; if it would end within 2 cells of
+where the badge starts, that row simply shows no badge.
 
 ## Facts available today
 

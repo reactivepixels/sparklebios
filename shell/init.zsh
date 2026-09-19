@@ -2,6 +2,8 @@
 # Add to the END of ~/.zshrc:
 #   command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
 if [[ -o interactive ]] && command -v bios >/dev/null 2>&1; then
-  bios boot
+  _sparklebios_typed="$(bios boot --hook)"
   export SPARKLEBIOS_BOOTED=1
+  [[ -n "$_sparklebios_typed" ]] && print -z -- "$_sparklebios_typed"
+  unset _sparklebios_typed
 fi
