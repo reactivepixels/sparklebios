@@ -2,6 +2,7 @@
 //! skip that jumps straight to the final screen.
 
 use crate::facts::Facts;
+use crate::flavour::Flavour;
 use crate::machine::Machine;
 use crate::render::{self, AnimatedKind, ColorMode, Graphics, Span};
 
@@ -105,13 +106,16 @@ fn frames_for(step: &render::AnimatedStep) -> Vec<(&Vec<Span>, u64)> {
 ///
 /// `key_fd`, when `Some`, is polled for a key press between frames; any key ends the show at
 /// once, drawing everything still to come in its final state. `speed` multiplies every delay
-/// (`0.0` collapses every wait to nothing). Returns the bytes read from `key_fd` while the show
-/// played, unfiltered and in order.
+/// (`0.0` collapses every wait to nothing). `flavour`, for a flavoured machine, supplies its
+/// quips and its logo sprite; with `None` a flavoured machine simply omits whatever it cannot
+/// resolve. Returns the bytes read from `key_fd` while the show played, unfiltered and in order.
+#[allow(clippy::too_many_arguments)]
 pub fn play(
     machine: &Machine,
     facts: &Facts,
     seed: u64,
     geometry: Geometry,
+    flavour: Option<&Flavour>,
     out: &mut dyn std::io::Write,
     key_fd: Option<i32>,
     speed: f32,
@@ -121,8 +125,9 @@ pub fn play(
         geometry.mode,
         geometry.term_cols,
         geometry.graphics,
+        flavour,
     );
-    let steps = render::animated_layout(machine, facts, seed);
+    let steps = render::animated_layout(machine, facts, seed, flavour);
     let pad_y = machine.pad_y as usize;
     let painted = row_geometry.painted();
 
@@ -309,6 +314,7 @@ mod tests {
         machine: &Machine,
         facts: &Facts,
         geometry: Geometry,
+        flavour: Option<&Flavour>,
     ) -> Vec<String> {
         let rendered = crate::render::render_static(
             machine,
@@ -317,14 +323,34 @@ mod tests {
             0,
             geometry.term_cols,
             geometry.graphics,
+            flavour,
         );
         rendered.lines().map(strip_escapes).collect::<Vec<_>>()
     }
 
-    fn play_to_rows(machine: &Machine, geometry: Geometry) -> Vec<String> {
-        let facts = Facts::fixture();
+    /// The flavour a machine boots with in these tests: the unicorn flavour for the flavoured
+    /// `pc95`, none for the others.
+    fn flavour_for(id: &str) -> Option<Flavour> {
+        (id == "pc95").then(|| crate::flavour::find("unicorn", None).unwrap())
+    }
+
+    /// `Facts::fixture()`, with `flavour`'s own slots applied when given.
+    fn facts_for(flavour: Option<&Flavour>) -> Facts {
+        let mut facts = Facts::fixture();
+        if let Some(f) = flavour {
+            crate::flavour::apply(f, &mut facts);
+        }
+        facts
+    }
+
+    fn play_to_rows(
+        machine: &Machine,
+        geometry: Geometry,
+        flavour: Option<&Flavour>,
+    ) -> Vec<String> {
+        let facts = facts_for(flavour);
         let mut buf: Vec<u8> = Vec::new();
-        play(machine, &facts, 0, geometry, &mut buf, None, 0.0);
+        play(machine, &facts, 0, geometry, flavour, &mut buf, None, 0.0);
         resolve_rows(&buf)
     }
 
@@ -332,13 +358,15 @@ mod tests {
     fn speed_zero_resolves_to_the_same_rows_as_render_static_unpainted() {
         for id in ["pc95", "pc85", "c64"] {
             let m = machine::find(id, None).unwrap();
+            let flavour = flavour_for(id);
             let geometry = Geometry {
                 mode: ColorMode::None,
                 term_cols: None,
                 graphics: Graphics::None,
             };
-            let rows = play_to_rows(&m, geometry);
-            let expected = resolved_rows_of_render_static(&m, &Facts::fixture(), geometry);
+            let rows = play_to_rows(&m, geometry, flavour.as_ref());
+            let facts = facts_for(flavour.as_ref());
+            let expected = resolved_rows_of_render_static(&m, &facts, geometry, flavour.as_ref());
             assert_eq!(rows, expected, "{id} unpainted rows disagree");
         }
     }
@@ -347,14 +375,33 @@ mod tests {
     fn speed_zero_resolves_to_the_same_rows_as_render_static_painted() {
         for id in ["pc95", "pc85", "c64"] {
             let m = machine::find(id, None).unwrap();
+            let flavour = flavour_for(id);
             let geometry = Geometry {
                 mode: ColorMode::TrueColor,
                 term_cols: Some(100),
                 graphics: Graphics::HalfBlocks,
             };
-            let rows = play_to_rows(&m, geometry);
-            let expected = resolved_rows_of_render_static(&m, &Facts::fixture(), geometry);
+            let rows = play_to_rows(&m, geometry, flavour.as_ref());
+            let facts = facts_for(flavour.as_ref());
+            let expected = resolved_rows_of_render_static(&m, &facts, geometry, flavour.as_ref());
             assert_eq!(rows, expected, "{id} painted rows disagree");
+        }
+    }
+
+    #[test]
+    fn speed_zero_final_rows_equal_render_static_for_pc95_with_both_flavours() {
+        let m = machine::find("pc95", None).unwrap();
+        for id in ["unicorn", "sumo"] {
+            let flavour = crate::flavour::find(id, None).unwrap();
+            let geometry = Geometry {
+                mode: ColorMode::None,
+                term_cols: None,
+                graphics: Graphics::None,
+            };
+            let rows = play_to_rows(&m, geometry, Some(&flavour));
+            let facts = facts_for(Some(&flavour));
+            let expected = resolved_rows_of_render_static(&m, &facts, geometry, Some(&flavour));
+            assert_eq!(rows, expected, "pc95 with {id} disagrees");
         }
     }
 
@@ -362,14 +409,15 @@ mod tests {
     fn a_transparent_pc95_show_never_emits_a_background_colour() {
         let m = machine::find("pc95", None).unwrap();
         assert_eq!(m.bg, None);
-        let facts = Facts::fixture();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let facts = facts_for(Some(&flavour));
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
             graphics: Graphics::HalfBlocks,
         };
         let mut buf: Vec<u8> = Vec::new();
-        play(&m, &facts, 0, geometry, &mut buf, None, 0.0);
+        play(&m, &facts, 0, geometry, Some(&flavour), &mut buf, None, 0.0);
         // The screen fill colour must never appear. The one exception is a logo pixel where both
         // the upper and lower source pixels are opaque: that background belongs to the sprite,
         // not the screen, and only ever sits inside the 14-cell logo box (7 rows tall, starting
@@ -398,14 +446,15 @@ mod tests {
     #[test]
     fn the_stream_shows_an_intermediate_detect_frame_and_many_count_values() {
         let m = machine::find("pc95", None).unwrap();
-        let facts = Facts::fixture();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let facts = facts_for(Some(&flavour));
         let geometry = Geometry {
             mode: ColorMode::None,
             term_cols: None,
             graphics: Graphics::None,
         };
         let mut buf: Vec<u8> = Vec::new();
-        play(&m, &facts, 0, geometry, &mut buf, None, 0.0);
+        play(&m, &facts, 0, geometry, Some(&flavour), &mut buf, None, 0.0);
         let text = String::from_utf8_lossy(&buf);
         assert!(text.contains("Detecting Horn             ... \r"));
         assert!(!text.contains("Detecting Horn             ... 1 found\r"));
@@ -445,10 +494,19 @@ mod tests {
             libc::write(write_fd, b"x".as_ptr() as *const libc::c_void, 1);
         }
         let mut buf: Vec<u8> = Vec::new();
-        let outcome = play(&m, &facts, 0, geometry, &mut buf, Some(read_fd), 1000.0);
+        let outcome = play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            None,
+            &mut buf,
+            Some(read_fd),
+            1000.0,
+        );
         assert_eq!(outcome.typed, b"x");
         let rows = resolve_rows(&buf);
-        let expected = resolved_rows_of_render_static(&m, &facts, geometry);
+        let expected = resolved_rows_of_render_static(&m, &facts, geometry, None);
         assert_eq!(rows, expected);
         // SAFETY: both fds are valid, open descriptors owned by this test.
         unsafe {

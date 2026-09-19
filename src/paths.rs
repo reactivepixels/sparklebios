@@ -45,6 +45,10 @@ pub fn user_machines_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("machines"))
 }
 
+pub fn user_flavours_dir() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("flavours"))
+}
+
 pub fn ghostty_themes_dir() -> Option<PathBuf> {
     resolve(
         env("XDG_CONFIG_HOME").as_deref(),

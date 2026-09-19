@@ -1,6 +1,7 @@
 //! Static rendering and colour modes.
 
 use crate::facts::Facts;
+use crate::flavour::Flavour;
 use crate::machine::{Machine, Step, Style};
 use crate::template;
 
@@ -76,10 +77,19 @@ fn paint(machine: &Machine, mode: ColorMode, style: Style, text: &str) -> String
     }
 }
 
+/// The quips a machine draws from: a flavoured machine's own `quips` array when it has no
+/// flavour applied, or the flavour's quips when it does; an unflavoured machine's own `quips`.
+fn quips_for<'a>(machine: &'a Machine, flavour: Option<&'a Flavour>) -> &'a [String] {
+    if machine.flavoured {
+        flavour.map(|f| f.quips.as_slice()).unwrap_or(&[])
+    } else {
+        &machine.quips
+    }
+}
+
 /// One line from a resolved quip, starting at `seed % quips.len()` and wrapping around. A
-/// candidate whose rendered length exceeds `machine.cols` is treated as unresolvable.
-fn resolve_quip(machine: &Machine, facts: &Facts, seed: u64) -> Option<String> {
-    let quips = &machine.quips;
+/// candidate whose rendered length exceeds `cols` is treated as unresolvable.
+fn resolve_quip(quips: &[String], cols: u16, facts: &Facts, seed: u64) -> Option<String> {
     if quips.is_empty() {
         return None;
     }
@@ -87,12 +97,43 @@ fn resolve_quip(machine: &Machine, facts: &Facts, seed: u64) -> Option<String> {
     (0..quips.len()).find_map(|offset| {
         let idx = (start + offset) % quips.len();
         let text = template::render(&quips[idx], facts)?;
-        if text.chars().count() > machine.cols as usize {
+        if text.chars().count() > cols as usize {
             None
         } else {
             Some(text)
         }
     })
+}
+
+/// The sprite drawn as a machine's logo, if any: for a flavoured machine, the current flavour's
+/// own sprite; for any other machine, its `logo` key (only `"unicorn"` exists today).
+fn logo_sprite(machine: &Machine, flavour: Option<&Flavour>) -> Option<crate::sprite::Sprite> {
+    let name = if machine.flavoured {
+        flavour.map(|f| f.sprite.as_str())
+    } else {
+        machine.logo.as_deref()
+    };
+    name.and_then(crate::sprite::builtin)
+}
+
+/// The text of a `Detect` step's label: rendered through templates and, when
+/// `machine.detect_width` is set, right-padded with spaces to that width (never truncated).
+/// Without `detect_width`, the label is used exactly as written, unrendered, as before. `None`
+/// when `detect_width` is set and the label's slots do not all resolve.
+fn detect_label(machine: &Machine, facts: &Facts, label: &str) -> Option<String> {
+    match machine.detect_width {
+        Some(width) => {
+            let rendered = template::render(label, facts)?;
+            let width = width as usize;
+            let len = rendered.chars().count();
+            if len < width {
+                Some(format!("{rendered}{}", " ".repeat(width - len)))
+            } else {
+                Some(rendered)
+            }
+        }
+        None => Some(label.to_string()),
+    }
 }
 
 /// Applies `machine.uppercase`, if set.
@@ -110,7 +151,13 @@ fn is_blank(line: &[Span]) -> bool {
 }
 
 /// Resolves a single step to its logical line, or None to omit it.
-fn layout_step(machine: &Machine, facts: &Facts, seed: u64, step: &Step) -> Option<Vec<Span>> {
+fn layout_step(
+    machine: &Machine,
+    facts: &Facts,
+    seed: u64,
+    step: &Step,
+    flavour: Option<&Flavour>,
+) -> Option<Vec<Span>> {
     match step {
         Step::Print { text, style, .. } => {
             let text = template::render(text, facts)?;
@@ -148,10 +195,11 @@ fn layout_step(machine: &Machine, facts: &Facts, seed: u64, step: &Step) -> Opti
             style,
             ..
         } => {
+            let label_text = detect_label(machine, facts, label)?;
             let result = template::render(result, facts)?;
             Some(vec![
                 Span {
-                    text: apply_case(machine, format!("{label}... ")),
+                    text: apply_case(machine, format!("{label_text}... ")),
                     style: Style::Normal,
                 },
                 Span {
@@ -161,7 +209,7 @@ fn layout_step(machine: &Machine, facts: &Facts, seed: u64, step: &Step) -> Opti
             ])
         }
         Step::Quip { style, .. } => {
-            let quip = resolve_quip(machine, facts, seed)?;
+            let quip = resolve_quip(quips_for(machine, flavour), machine.cols, facts, seed)?;
             Some(vec![Span {
                 text: apply_case(machine, quip),
                 style: *style,
@@ -188,11 +236,18 @@ fn collapse_blank_lines(lines: Vec<Vec<Span>>) -> Vec<Vec<Span>> {
 
 /// The machine's steps resolved into logical lines, with unresolvable and too-long-to-fit
 /// lines omitted and blank lines collapsed. `seed` picks the quip: start at `seed % quips.len()`.
-pub fn layout(machine: &Machine, facts: &Facts, seed: u64) -> Vec<Vec<Span>> {
+/// `flavour`, when the machine is flavoured, supplies its quips and (in the painted path) its
+/// logo; ignored otherwise.
+pub fn layout(
+    machine: &Machine,
+    facts: &Facts,
+    seed: u64,
+    flavour: Option<&Flavour>,
+) -> Vec<Vec<Span>> {
     let lines: Vec<Vec<Span>> = machine
         .steps
         .iter()
-        .filter_map(|step| layout_step(machine, facts, seed, step))
+        .filter_map(|step| layout_step(machine, facts, seed, step, flavour))
         .collect();
     collapse_blank_lines(lines)
 }
@@ -228,7 +283,13 @@ const COUNT_FRAMES: u64 = 24;
 /// Resolves a single step for the animated show, or None to omit it. Mirrors `layout_step`
 /// exactly for the final state (`AnimatedStep::spans`), so `layout` and `animated_layout` always
 /// agree on which lines are visible and what they finally say.
-fn animate_step(machine: &Machine, facts: &Facts, seed: u64, step: &Step) -> Option<AnimatedStep> {
+fn animate_step(
+    machine: &Machine,
+    facts: &Facts,
+    seed: u64,
+    step: &Step,
+    flavour: Option<&Flavour>,
+) -> Option<AnimatedStep> {
     match step {
         Step::Print { text, style, ms } => {
             let text = template::render(text, facts)?;
@@ -247,7 +308,7 @@ fn animate_step(machine: &Machine, facts: &Facts, seed: u64, step: &Step) -> Opt
             })
         }
         Step::Quip { style, ms } => {
-            let quip = resolve_quip(machine, facts, seed)?;
+            let quip = resolve_quip(quips_for(machine, flavour), machine.cols, facts, seed)?;
             let spans = vec![Span {
                 text: apply_case(machine, quip),
                 style: *style,
@@ -264,6 +325,7 @@ fn animate_step(machine: &Machine, facts: &Facts, seed: u64, step: &Step) -> Opt
             style,
             ms,
         } => {
+            let label = detect_label(machine, facts, label)?;
             let result = template::render(result, facts)?;
             let label_text = apply_case(machine, format!("{label}... "));
             let label_spans = vec![Span {
@@ -350,11 +412,16 @@ fn collapse_blank_animated(steps: Vec<AnimatedStep>) -> Vec<AnimatedStep> {
 /// The machine's steps resolved for the animated show: one `AnimatedStep` per visible logical
 /// line, in the same order and under the same omission and blank-collapsing rules as `layout`,
 /// whose final `spans` always agree with it.
-pub fn animated_layout(machine: &Machine, facts: &Facts, seed: u64) -> Vec<AnimatedStep> {
+pub fn animated_layout(
+    machine: &Machine,
+    facts: &Facts,
+    seed: u64,
+    flavour: Option<&Flavour>,
+) -> Vec<AnimatedStep> {
     let steps: Vec<AnimatedStep> = machine
         .steps
         .iter()
-        .filter_map(|step| animate_step(machine, facts, seed, step))
+        .filter_map(|step| animate_step(machine, facts, seed, step, flavour))
         .collect();
     collapse_blank_animated(steps)
 }
@@ -500,7 +567,12 @@ const MIN_COLS_FOR_GRAPHICS: usize = 60;
 /// any) is right-aligned over the fill of the following few text rows: badge line `i` on text row
 /// `i + 1`, so the badge starts on the second text row and never competes with the header line
 /// for room.
-fn render_painted(machine: &Machine, lines: &[Vec<Span>], graphics: Graphics) -> String {
+fn render_painted(
+    machine: &Machine,
+    lines: &[Vec<Span>],
+    graphics: Graphics,
+    flavour: Option<&Flavour>,
+) -> String {
     let bg = machine.bg.as_deref().map(hex_rgb);
     let border = machine.border.as_deref().map(hex_rgb);
     let pad_x = machine.pad_x as usize;
@@ -509,17 +581,16 @@ fn render_painted(machine: &Machine, lines: &[Vec<Span>], graphics: Graphics) ->
     let total_width = painted_total_width(machine) as usize;
     let blank: Vec<Span> = Vec::new();
 
-    let show_logo = graphics != Graphics::None
-        && cols >= MIN_COLS_FOR_GRAPHICS
-        && machine.logo.as_deref() == Some("unicorn");
+    let sprite = logo_sprite(machine, flavour);
+    let show_logo = graphics != Graphics::None && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
     let sprite_rows = if show_logo && graphics == Graphics::HalfBlocks {
-        crate::sprite::half_blocks(crate::sprite::UNICORN_GRID, bg)
+        crate::sprite::half_blocks(&sprite.as_ref().unwrap().grid, bg)
     } else {
         Vec::new()
     };
     let kitty_escape = if show_logo && graphics == Graphics::Kitty {
         Some(crate::sprite::kitty_image(
-            crate::sprite::UNICORN_PNG,
+            sprite.as_ref().unwrap().png,
             14,
             7,
         ))
@@ -599,34 +670,35 @@ pub fn row_geometry<'a>(
     mode: ColorMode,
     term_cols: Option<u16>,
     graphics: Graphics,
+    flavour: Option<&Flavour>,
 ) -> RowGeometry<'a> {
     let painted = machine.paint
         && mode == ColorMode::TrueColor
         && term_cols.is_some_and(|w| w >= painted_total_width(machine));
     if painted {
-        RowGeometry::build_painted(machine, graphics)
+        RowGeometry::build_painted(machine, graphics, flavour)
     } else {
         RowGeometry::build_plain(machine, mode)
     }
 }
 
 impl<'a> RowGeometry<'a> {
-    fn build_painted(machine: &'a Machine, graphics: Graphics) -> Self {
+    fn build_painted(machine: &'a Machine, graphics: Graphics, flavour: Option<&Flavour>) -> Self {
         let bg = machine.bg.as_deref().map(hex_rgb);
         let border = machine.border.as_deref().map(hex_rgb);
         let pad_x = machine.pad_x as usize;
         let cols = machine.cols as usize;
-        let show_logo = graphics != Graphics::None
-            && cols >= MIN_COLS_FOR_GRAPHICS
-            && machine.logo.as_deref() == Some("unicorn");
+        let sprite = logo_sprite(machine, flavour);
+        let show_logo =
+            graphics != Graphics::None && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
         let sprite_rows = if show_logo && graphics == Graphics::HalfBlocks {
-            crate::sprite::half_blocks(crate::sprite::UNICORN_GRID, bg)
+            crate::sprite::half_blocks(&sprite.as_ref().unwrap().grid, bg)
         } else {
             Vec::new()
         };
         let kitty_escape = if show_logo && graphics == Graphics::Kitty {
             Some(crate::sprite::kitty_image(
-                crate::sprite::UNICORN_PNG,
+                sprite.as_ref().unwrap().png,
                 14,
                 7,
             ))
@@ -744,6 +816,8 @@ impl<'a> RowGeometry<'a> {
 /// it to decide whether the block fits, falling back to the plain rendering when it does not (or
 /// when the width is unknown, or the mode is not TrueColor). `graphics` chooses how a logo is
 /// drawn in the painted path; the plain path never shows a logo or badge regardless of it.
+/// `flavour`, for a flavoured machine, supplies its quips and its logo sprite; with `None` a
+/// flavoured machine simply omits whatever it cannot resolve.
 pub fn render_static(
     machine: &Machine,
     facts: &Facts,
@@ -751,13 +825,14 @@ pub fn render_static(
     seed: u64,
     term_cols: Option<u16>,
     graphics: Graphics,
+    flavour: Option<&Flavour>,
 ) -> String {
-    let lines = layout(machine, facts, seed);
+    let lines = layout(machine, facts, seed, flavour);
     let painted = machine.paint
         && mode == ColorMode::TrueColor
         && term_cols.is_some_and(|w| w >= painted_total_width(machine));
     if painted {
-        render_painted(machine, &lines, graphics)
+        render_painted(machine, &lines, graphics, flavour)
     } else {
         render_plain(machine, mode, &lines)
     }
@@ -807,6 +882,22 @@ mod tests {
         strip_ansi(s).chars().count()
     }
 
+    fn unicorn_flavour() -> Flavour {
+        crate::flavour::find("unicorn", None).unwrap()
+    }
+
+    fn sumo_flavour() -> Flavour {
+        crate::flavour::find("sumo", None).unwrap()
+    }
+
+    /// `Facts::fixture()` with `flavour`'s own slots applied, for tests that render a flavoured
+    /// machine's wording rather than just checking that its quips are reachable.
+    fn fixture_with_flavour(flavour: &Flavour) -> Facts {
+        let mut facts = Facts::fixture();
+        crate::flavour::apply(flavour, &mut facts);
+        facts
+    }
+
     /// The byte index in `s` where its `col`-th visible character begins, skipping SGR and Kitty
     /// escape sequences. Returns `s.len()` when `s` has fewer than `col` visible characters.
     fn visible_col_byte_index(s: &str, col: usize) -> usize {
@@ -845,14 +936,17 @@ mod tests {
     #[test]
     fn pc95_matches_golden() {
         let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
         assert_eq!(
             render_static(
                 &m,
-                &Facts::fixture(),
+                &facts,
                 ColorMode::None,
                 0,
                 None,
-                Graphics::None
+                Graphics::None,
+                Some(&flavour)
             ),
             golden("pc95")
         );
@@ -867,7 +961,8 @@ mod tests {
                 ColorMode::None,
                 0,
                 None,
-                Graphics::None
+                Graphics::None,
+                None
             ),
             golden("pc85")
         );
@@ -882,7 +977,8 @@ mod tests {
                 ColorMode::None,
                 0,
                 None,
-                Graphics::None
+                Graphics::None,
+                None
             ),
             golden("c64")
         );
@@ -890,13 +986,22 @@ mod tests {
     #[test]
     fn unresolved_lines_vanish_and_blank_lines_collapse() {
         let m = machine::find("pc95", None).unwrap();
-        let mut f = Facts::fixture();
+        let flavour = unicorn_flavour();
+        let f = Facts::fixture();
         let mut g = Facts::new();
         for k in ["date.year", "date.bios", "cpu.name", "cpu.cores", "mem.kb"] {
             g.insert(k, f.get(k).unwrap());
         }
-        f = g;
-        let out = render_static(&m, &f, ColorMode::None, 0, None, Graphics::None);
+        crate::flavour::apply(&flavour, &mut g);
+        let out = render_static(
+            &m,
+            &g,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+        );
         assert!(!out.contains("Detecting Shell"));
         assert!(!out.contains("Boot streak"));
         assert!(out.contains("Detecting Horn"));
@@ -907,13 +1012,36 @@ mod tests {
     #[test]
     fn empty_facts_never_leak_a_slot() {
         for m in machine::builtins() {
-            let out = render_static(&m, &Facts::new(), ColorMode::None, 0, None, Graphics::None);
+            let out = render_static(
+                &m,
+                &Facts::new(),
+                ColorMode::None,
+                0,
+                None,
+                Graphics::None,
+                None,
+            );
             assert!(
                 !out.contains('{') && !out.contains('}'),
                 "{} leaked a slot",
                 m.id
             );
         }
+    }
+    #[test]
+    fn pc95_with_no_flavour_omits_the_firmware_line() {
+        let m = machine::find("pc95", None).unwrap();
+        let out = render_static(
+            &m,
+            &Facts::fixture(),
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            None,
+        );
+        assert!(!out.contains('{'));
+        assert!(!out.contains("Sparkle Modular BIOS"));
     }
     #[test]
     fn truecolor_wraps_spans_and_styles_only_the_detect_result() {
@@ -940,6 +1068,7 @@ style = "accent"
             0,
             None,
             Graphics::None,
+            None,
         );
         assert!(out.contains("\x1b[38;2;255;255;255mSparkle Modular BIOS"));
         assert!(out.contains(
@@ -957,12 +1086,14 @@ style = "accent"
             0,
             None,
             Graphics::None,
+            None,
         );
         assert!(out.contains("\x1b[37m37748736K OK\x1b[0m"));
     }
     #[test]
     fn seed_rotates_quips_and_skips_unresolvable_ones() {
         let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
         let out1 = render_static(
             &m,
             &Facts::fixture(),
@@ -970,20 +1101,30 @@ style = "accent"
             1,
             None,
             Graphics::None,
+            Some(&flavour),
         );
         assert!(out1.contains("Plug and Pray devices found: 1 unicorn"));
         // quip 7 needs {mem.kb}; without it the next resolvable quip is used
         let mut f = Facts::new();
         f.insert("date.year", "2026");
-        let out7 = render_static(&m, &f, ColorMode::None, 7, None, Graphics::None);
+        let out7 = render_static(
+            &m,
+            &f,
+            ColorMode::None,
+            7,
+            None,
+            Graphics::None,
+            Some(&flavour),
+        );
         assert!(out7.contains("Floppy drive A: not found. Nobody is surprised."));
         let wrapped = render_static(
             &m,
             &Facts::fixture(),
             ColorMode::None,
-            m.quips.len() as u64,
+            flavour.quips.len() as u64,
             None,
             Graphics::None,
+            Some(&flavour),
         );
         assert!(wrapped.contains("Turbo button engaged."));
     }
@@ -1013,6 +1154,7 @@ style = "accent"
             0,
             Some(80),
             Graphics::None,
+            None,
         );
         let rows: Vec<&str> = out.lines().collect();
         assert!(!rows.is_empty());
@@ -1039,6 +1181,7 @@ style = "accent"
                 0,
                 term_cols,
                 Graphics::None,
+                None,
             );
             assert!(!out.contains("48;2;"));
         }
@@ -1053,7 +1196,8 @@ style = "accent"
                 ColorMode::None,
                 0,
                 Some(80),
-                Graphics::None
+                Graphics::None,
+                None
             ),
             golden("c64")
         );
@@ -1072,20 +1216,31 @@ quips = ["this quip is much too long to fit", "short"]
 quip = true
 "##;
         let m = machine::parse(src).unwrap();
-        let out = render_static(&m, &Facts::new(), ColorMode::None, 0, None, Graphics::None);
+        let out = render_static(
+            &m,
+            &Facts::new(),
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            None,
+        );
         assert_eq!(out, "short\n");
     }
 
     #[test]
     fn painted_pc95_with_half_blocks_places_the_logo() {
         let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
         let out = render_static(
             &m,
-            &Facts::fixture(),
+            &facts,
             ColorMode::TrueColor,
             0,
             Some(100),
             Graphics::HalfBlocks,
+            Some(&flavour),
         );
         let rows: Vec<&str> = out.lines().collect();
         let width = visible_width(rows[0]);
@@ -1107,13 +1262,16 @@ quip = true
         let m = machine::find("pc95", None).unwrap();
         assert_eq!(m.bg, None);
         assert!(m.paint);
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
         let out = render_static(
             &m,
-            &Facts::fixture(),
+            &facts,
             ColorMode::TrueColor,
             0,
             Some(100),
             Graphics::HalfBlocks,
+            Some(&flavour),
         );
         let rows: Vec<&str> = out.lines().collect();
         let width = visible_width(rows[0]);
@@ -1180,6 +1338,7 @@ print = "Fifth line"
             0,
             Some(100),
             Graphics::HalfBlocks,
+            None,
         );
         let rows: Vec<&str> = out.lines().collect();
         let stripped: Vec<String> = rows.iter().map(|r| strip_ansi(r)).collect();
@@ -1216,6 +1375,7 @@ print = "{long_line}"
             0,
             Some(80),
             Graphics::HalfBlocks,
+            None,
         );
         let rows: Vec<&str> = out.lines().collect();
         let stripped: Vec<String> = rows.iter().map(|r| strip_ansi(r)).collect();
@@ -1228,28 +1388,59 @@ print = "{long_line}"
     #[test]
     fn painted_pc95_with_kitty_emits_one_image_and_no_half_blocks() {
         let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
         let out = render_static(
             &m,
-            &Facts::fixture(),
+            &facts,
             ColorMode::TrueColor,
             0,
             Some(100),
             Graphics::Kitty,
+            Some(&flavour),
         );
         assert_eq!(out.matches("\x1b_Ga=T").count(), 1);
         assert!(!out.contains('\u{2580}'));
     }
 
     #[test]
+    fn painted_pc95_kitty_embeds_the_flavours_own_sprite() {
+        let m = machine::find("pc95", None).unwrap();
+        for id in ["unicorn", "sumo"] {
+            let flavour = crate::flavour::find(id, None).unwrap();
+            let png = crate::sprite::builtin(id).unwrap().png;
+            let facts = fixture_with_flavour(&flavour);
+            let out = render_static(
+                &m,
+                &facts,
+                ColorMode::TrueColor,
+                0,
+                Some(100),
+                Graphics::Kitty,
+                Some(&flavour),
+            );
+            let escape = crate::sprite::kitty_image(&png[..30], 1, 1);
+            let body = escape
+                .strip_prefix("\x1b_Ga=T,f=100,q=2,C=1,c=1,r=1,m=0;")
+                .and_then(|s| s.strip_suffix("\x1b\\"))
+                .unwrap();
+            assert!(out.contains(body), "{id}'s sprite bytes were not embedded");
+        }
+    }
+
+    #[test]
     fn painted_pc95_with_graphics_none_has_no_logo_or_badge() {
         let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
         let out = render_static(
             &m,
-            &Facts::fixture(),
+            &facts,
             ColorMode::TrueColor,
             0,
             Some(100),
             Graphics::None,
+            Some(&flavour),
         );
         assert!(!out.contains("\x1b_G"));
         assert!(!out.contains('\u{2580}'));
@@ -1259,13 +1450,16 @@ print = "{long_line}"
     #[test]
     fn plain_pc95_has_no_logo_or_badge() {
         let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
         let out = render_static(
             &m,
-            &Facts::fixture(),
+            &facts,
             ColorMode::TrueColor,
             0,
             None,
             Graphics::HalfBlocks,
+            Some(&flavour),
         );
         assert!(!out.contains("\x1b_G"));
         assert!(!out.contains('\u{2580}'));
@@ -1273,11 +1467,50 @@ print = "{long_line}"
     }
 
     #[test]
+    fn pc95_with_sumo_shows_sumo_wording_and_hides_unicorn_wording() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = sumo_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+        );
+        assert!(out.contains("Yokozuna Modular BIOS v1.991, Immovable"));
+        assert!(out.contains("Stance: low. Centre of gravity: lower."));
+        assert!(out.contains("DOHYO-15-SUMO-1991RING-00"));
+        assert!(!out.to_lowercase().contains("horn"));
+        assert!(!out.to_lowercase().contains("unicorn"));
+    }
+
+    #[test]
+    fn a_flavoured_detect_label_is_padded_to_detect_width_like_a_literal_one() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = sumo_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+        );
+        let expected = format!("{:<27}... {}", "Detecting Salt", "1 handful (thrown)");
+        assert!(out.contains(&expected));
+    }
+
+    #[test]
     fn animated_layout_final_spans_agree_with_layout() {
         for id in ["pc95", "pc85", "c64"] {
             let m = machine::find(id, None).unwrap();
-            let lines = layout(&m, &Facts::fixture(), 0);
-            let animated = animated_layout(&m, &Facts::fixture(), 0);
+            let lines = layout(&m, &Facts::fixture(), 0, None);
+            let animated = animated_layout(&m, &Facts::fixture(), 0, None);
             let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
             assert_eq!(lines, animated_spans, "{id} disagrees on its final lines");
         }
@@ -1286,7 +1519,7 @@ print = "{long_line}"
     #[test]
     fn animated_count_steps_grow_from_zero_to_the_final_value() {
         let m = machine::find("pc95", None).unwrap();
-        let animated = animated_layout(&m, &Facts::fixture(), 0);
+        let animated = animated_layout(&m, &Facts::fixture(), 0, None);
         let count = animated
             .iter()
             .find(|s| matches!(s.kind, AnimatedKind::Count { .. }))
@@ -1302,9 +1535,16 @@ print = "{long_line}"
     #[test]
     fn row_geometry_line_matches_render_static_for_pc95() {
         let m = machine::find("pc95", None).unwrap();
-        let facts = Facts::fixture();
-        let lines = layout(&m, &facts, 0);
-        let geometry = row_geometry(&m, ColorMode::TrueColor, Some(100), Graphics::HalfBlocks);
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        let lines = layout(&m, &facts, 0, Some(&flavour));
+        let geometry = row_geometry(
+            &m,
+            ColorMode::TrueColor,
+            Some(100),
+            Graphics::HalfBlocks,
+            Some(&flavour),
+        );
         let mut rebuilt = String::new();
         if let Some(row) = geometry.border_row() {
             rebuilt.push_str(&row);
@@ -1333,6 +1573,7 @@ print = "{long_line}"
             0,
             Some(100),
             Graphics::HalfBlocks,
+            Some(&flavour),
         );
         assert_eq!(rebuilt, expected);
     }

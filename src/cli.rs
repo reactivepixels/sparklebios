@@ -28,6 +28,8 @@ enum Command {
     Boot(BootCliArgs),
     /// List the available machines.
     Machines,
+    /// List the available flavours.
+    Flavours,
     /// Choose which machine boots.
     Use(UseCliArgs),
     /// Theme related commands.
@@ -61,6 +63,9 @@ struct BootCliArgs {
     /// Skip the animated show, even where a terminal and the config would otherwise play it.
     #[arg(long)]
     no_animate: bool,
+    /// Preview with this flavour.
+    #[arg(long)]
+    flavour: Option<String>,
 }
 
 impl From<BootCliArgs> for crate::boot::BootArgs {
@@ -71,6 +76,7 @@ impl From<BootCliArgs> for crate::boot::BootArgs {
             fast: args.fast,
             hook: args.hook,
             no_animate: args.no_animate,
+            flavour: args.flavour,
         }
     }
 }
@@ -88,6 +94,9 @@ struct UseCliArgs {
     /// Reset to the defaults: pc95 for the full show, pc85 otherwise.
     #[arg(long, conflicts_with_all = ["id", "full", "fast"])]
     reset: bool,
+    /// Sets the flavour.
+    #[arg(long)]
+    flavour: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -120,6 +129,12 @@ pub fn run() -> i32 {
             }
             0
         }
+        Command::Flavours => {
+            for flavour in crate::flavour::list(crate::paths::user_flavours_dir().as_deref()) {
+                println!("{:<10}{}", flavour.id, flavour.name);
+            }
+            0
+        }
         Command::Use(args) => use_machine(args),
         Command::Theme {
             command: ThemeCommand::Install { dir },
@@ -132,6 +147,13 @@ fn use_machine(args: UseCliArgs) -> i32 {
         eprintln!("bios: cannot find a config directory");
         return 1;
     };
+
+    if let Some(id) = &args.flavour {
+        if crate::flavour::find(id, crate::paths::user_flavours_dir().as_deref()).is_none() {
+            eprintln!("bios: no flavour called {id}. Try: bios flavours");
+            return 1;
+        }
+    }
 
     if let Some(id) = &args.id {
         if crate::machine::find(id, crate::paths::user_machines_dir().as_deref()).is_none() {
@@ -147,9 +169,22 @@ fn use_machine(args: UseCliArgs) -> i32 {
         return 1;
     }
 
+    if let Some(id) = &args.flavour {
+        if crate::config::set_flavour(&dir, id).is_err() {
+            return 1;
+        }
+    }
+
     let config = crate::config::load(Some(&dir));
     println!("Full show  : {}", config.full);
     println!("Every boot : {}", config.fast);
+    let flavour_id = crate::flavour::find(
+        &config.flavour,
+        crate::paths::user_flavours_dir().as_deref(),
+    )
+    .map(|f| f.id)
+    .unwrap_or_else(|| "unicorn".to_string());
+    println!("Flavour    : {flavour_id}");
     0
 }
 

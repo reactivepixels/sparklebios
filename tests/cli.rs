@@ -173,7 +173,7 @@ fn use_sets_both_full_and_fast() {
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success()
-        .stdout("Full show  : c64\nEvery boot : c64\n");
+        .stdout("Full show  : c64\nEvery boot : c64\nFlavour    : unicorn\n");
 }
 
 #[test]
@@ -184,7 +184,7 @@ fn use_fast_leaves_the_full_show_at_the_default() {
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success()
-        .stdout("Full show  : pc95\nEvery boot : c64\n");
+        .stdout("Full show  : pc95\nEvery boot : c64\nFlavour    : unicorn\n");
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn use_reset_returns_to_the_defaults() {
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success()
-        .stdout("Full show  : pc95\nEvery boot : pc85\n");
+        .stdout("Full show  : pc95\nEvery boot : pc85\nFlavour    : unicorn\n");
 }
 
 #[test]
@@ -231,6 +231,66 @@ fn use_then_boot_fast_picks_up_the_chosen_machine() {
         .assert()
         .success()
         .stdout(predicate::str::contains("**** UNICORN 64 BASIC V2 ****"));
+}
+
+#[test]
+fn flavours_lists_both() {
+    bios()
+        .arg("flavours")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("unicorn"))
+        .stdout(predicate::str::contains("sumo"));
+}
+
+#[test]
+fn boot_full_with_flavour_sumo_prints_its_wording() {
+    bios()
+        .args(["boot", "--full", "--flavour", "sumo"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Yokozuna Modular BIOS v1.991, Immovable",
+        ));
+}
+
+#[test]
+fn use_flavour_sumo_then_boot_full_picks_it_up_and_use_reports_it() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "--flavour", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .args(["boot", "--full"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Yokozuna Modular BIOS v1.991, Immovable",
+        ));
+    bios()
+        .arg("use")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Flavour    : sumo"));
+}
+
+#[test]
+fn use_with_an_unknown_flavour_fails_and_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "--flavour", "nope"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr("bios: no flavour called nope. Try: bios flavours\n");
+    assert!(!config.path().join("sparklebios/config.toml").exists());
 }
 
 #[test]

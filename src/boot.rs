@@ -11,6 +11,7 @@ pub struct BootArgs {
     pub fast: bool,
     pub hook: bool,
     pub no_animate: bool,
+    pub flavour: Option<String>,
 }
 
 fn env_var(name: &str) -> Option<String> {
@@ -74,8 +75,9 @@ fn animate_enabled(
 
 /// Draws `machine` into `out`: animated (honouring `key_fd` as the skip key source) when
 /// `animate` is true and, if a key is to be polled, raw mode can actually be entered; the final
-/// static screen otherwise. Returns the raw bytes read from `key_fd` while the show played, in
-/// order, empty when it did not animate or nothing was typed.
+/// static screen otherwise. `flavour`, for a flavoured machine, supplies its quips and its logo
+/// sprite. Returns the raw bytes read from `key_fd` while the show played, in order, empty when
+/// it did not animate or nothing was typed.
 #[allow(clippy::too_many_arguments)]
 fn play_or_render(
     machine: &crate::machine::Machine,
@@ -84,6 +86,7 @@ fn play_or_render(
     mode: crate::render::ColorMode,
     term_cols: Option<u16>,
     graphics: crate::render::Graphics,
+    flavour: Option<&crate::flavour::Flavour>,
     animate: bool,
     out: &mut dyn Write,
     key_fd: Option<i32>,
@@ -97,20 +100,35 @@ fn play_or_render(
                 term_cols,
                 graphics,
             };
-            return crate::show::play(machine, facts, seed, geometry, out, key_fd, 1.0).typed;
+            return crate::show::play(machine, facts, seed, geometry, flavour, out, key_fd, 1.0)
+                .typed;
         }
     }
-    let output = crate::render::render_static(machine, facts, mode, seed, term_cols, graphics);
+    let output =
+        crate::render::render_static(machine, facts, mode, seed, term_cols, graphics, flavour);
     let _ = out.write_all(output.as_bytes());
     let _ = out.flush();
     Vec::new()
+}
+
+/// Resolves the flavour to use: the explicit id when given and known, else the configured one,
+/// else the built-in `unicorn`. `None` only if even `unicorn` cannot be found, which never
+/// happens for the shipped built-ins.
+fn resolve_flavour(
+    explicit: Option<&str>,
+    config_flavour: &str,
+) -> Option<crate::flavour::Flavour> {
+    let dir = crate::paths::user_flavours_dir();
+    let id = explicit.unwrap_or(config_flavour);
+    crate::flavour::find(id, dir.as_deref())
+        .or_else(|| crate::flavour::find("unicorn", dir.as_deref()))
 }
 
 /// Never panics outward and never returns an error: a boot that cannot happen prints nothing.
 pub fn run(args: &BootArgs) {
     if args.hook {
         run_shell_boot(args, true);
-    } else if args.machine.is_some() || args.full || args.fast {
+    } else if args.machine.is_some() || args.full || args.fast || args.flavour.is_some() {
         run_preview(args);
     } else {
         run_shell_boot(args, false);
@@ -119,10 +137,10 @@ pub fn run(args: &BootArgs) {
 
 fn run_preview(args: &BootArgs) {
     let user_dir = crate::paths::user_machines_dir();
+    let config = crate::config::load(crate::paths::config_dir().as_deref());
     let machine = if let Some(id) = &args.machine {
         crate::machine::find(id, user_dir.as_deref())
     } else {
-        let config = crate::config::load(crate::paths::config_dir().as_deref());
         let id = if args.full {
             &config.full
         } else {
@@ -139,7 +157,10 @@ fn run_preview(args: &BootArgs) {
     let mut facts = crate::facts::gather();
     // A preview is not a real shell startup, so a stale or meaningless boot time never appears.
     facts.remove("shell.boot_ms");
-    let config = crate::config::load(crate::paths::config_dir().as_deref());
+    let flavour = resolve_flavour(args.flavour.as_deref(), &config.flavour);
+    if let Some(f) = &flavour {
+        crate::flavour::apply(f, &mut facts);
+    }
     let mode = color_mode();
     let stdout_is_tty = std::io::stdout().is_terminal();
     let term_cols = crate::term::cols(1);
@@ -153,6 +174,7 @@ fn run_preview(args: &BootArgs) {
         mode,
         term_cols,
         graphics(),
+        flavour.as_ref(),
         animate,
         &mut stdout,
         key_fd,
@@ -234,6 +256,10 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
     let mut facts = crate::facts::gather();
     facts.insert("streak.days", state.streak_days.to_string());
     facts.insert("streak.label", state.streak_label());
+    let flavour = resolve_flavour(None, &config.flavour);
+    if let Some(f) = &flavour {
+        crate::flavour::apply(f, &mut facts);
+    }
 
     let mode = color_mode();
     let cols_fd = tty_file.as_ref().map_or(1, |f| f.as_raw_fd());
@@ -257,6 +283,7 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
         mode,
         term_cols,
         graphics(),
+        flavour.as_ref(),
         animate,
         out,
         key_fd,

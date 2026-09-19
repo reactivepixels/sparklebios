@@ -20,6 +20,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `bios boot`: the boot mode decision (off, quiet, fast, full), a boot-day streak, the `SPARKLEBIOS_BOOT=0` kill switch, and previews with `--machine`, `--full` and `--fast`.
 - A code of conduct (the Contributor Covenant) and the social preview artwork, with its source.
 - The mark: a pixel unicorn with a gold horn and a six-stripe mane, on the banner, the social preview and as `docs/assets/mark.svg`.
+- Flavours: one screen, swappable personality. A flavour is a data file and a sprite that supply the mascot, the firmware and vendor wording, one signature detect line, the streak wording, the footer code and the quips. Ships with `unicorn` (the default) and `sumo`. `bios flavours`, `bios use --flavour <id>`, `bios boot --flavour <id>`.
 - Painted screens: a machine can paint itself as a block of its own background colour, with a border, so a boot looks like a screen and not like text. Falls back to plain text when the terminal is too narrow or has no truecolor.
 - The unicorn, in the terminal: real pixels through the kitty graphics protocol where the terminal supports it (Ghostty, kitty), half-block characters everywhere else. `pc95` gains its logo and a compliance badge.
 - The show: the POST now plays. The memory count ticks up, each device is detected in turn, and any key skips to the end. Keys typed during the show are handed back to the prompt, and the terminal is never left in raw mode. `--no-animate`, `SPARKLEBIOS_ANIMATE=0` or `animate = false` turn it off.

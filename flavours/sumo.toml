@@ -1,0 +1,20 @@
+id = "sumo"
+name = "Sumo"
+sprite = "sumo"
+firmware = "Yokozuna Modular BIOS v1.991, Immovable"
+vendor = "Copyright (C) 1991-{date.year}, Grand Tournament Systems"
+board = "DOHYO-15 Ring Revision 1991"
+cpu_gag = "0 steps backward"
+part = "Salt"
+part_result = "1 handful (thrown)"
+streak = "Bouts won in a row: {streak.days}. Do not get pushed out."
+footer = "DOHYO-15-SUMO-1991RING-00"
+quips = [
+  "Stance: low. Centre of gravity: lower.",
+  "Process priority: heavyweight.",
+  "Ring purified. Boot may begin.",
+  "Bout length: {shell.boot_ms}ms. Most are.",
+  "{cpu.cores} cores, all of them pushing.",
+  "Floppy drive A: forced out of the ring.",
+  "Topknot secured. Boot may proceed with dignity.",
+]

@@ -52,6 +52,8 @@ pub struct Machine {
     pub logo: Option<String>,
     pub badge: Vec<String>,
     pub quips: Vec<String>,
+    pub flavoured: bool,
+    pub detect_width: Option<u16>,
     pub steps: Vec<Step>,
 }
 
@@ -95,6 +97,9 @@ struct RawMachine {
     badge: Vec<String>,
     #[serde(default)]
     quips: Vec<String>,
+    #[serde(default)]
+    flavoured: bool,
+    detect_width: Option<u16>,
     #[serde(rename = "step", default)]
     steps: Vec<RawStep>,
 }
@@ -292,6 +297,13 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
             )));
         }
     }
+    if let Some(width) = raw.detect_width {
+        if !(4..=60).contains(&width) {
+            return Err(MachineError::Invalid(format!(
+                "detect_width {width} is not between 4 and 60"
+            )));
+        }
+    }
     if raw.steps.is_empty() {
         return Err(MachineError::Invalid("machine has no steps".into()));
     }
@@ -342,7 +354,7 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
         } else {
             match s.quip {
                 Some(true) => {
-                    if raw.quips.is_empty() {
+                    if raw.quips.is_empty() && !raw.flavoured {
                         return Err(MachineError::Invalid(format!(
                             "step {idx}: quip requires the machine to have quips"
                         )));
@@ -378,6 +390,8 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
         logo: raw.logo,
         badge: raw.badge,
         quips: raw.quips,
+        flavoured: raw.flavoured,
+        detect_width: raw.detect_width,
         steps,
     })
 }
@@ -427,6 +441,29 @@ print = "hello"
         assert_eq!(m.pad_x, 2);
         assert_eq!(m.pad_y, 1);
         assert!(!m.uppercase);
+    }
+
+    #[test]
+    fn flavoured_and_detect_width_parse_with_defaults() {
+        let m = parse(MINIMAL).unwrap();
+        assert!(!m.flavoured);
+        assert_eq!(m.detect_width, None);
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\nflavoured = true\ndetect_width = 27\n",
+        );
+        let m = parse(&src).unwrap();
+        assert!(m.flavoured);
+        assert_eq!(m.detect_width, Some(27));
+    }
+
+    #[test]
+    fn rejects_a_detect_width_out_of_range() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\ndetect_width = 2\n",
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
     }
 
     #[test]
@@ -570,21 +607,44 @@ print = "hello"
     }
 
     #[test]
-    fn builtins_carry_quips_and_a_quip_step() {
+    fn builtins_carry_a_quip_step_and_unflavoured_ones_carry_quips() {
         for m in builtins() {
-            assert!(m.quips.len() >= 5, "{} needs quips", m.id);
+            if !m.flavoured {
+                assert!(m.quips.len() >= 5, "{} needs quips", m.id);
+            }
             assert!(m.steps.iter().any(|s| matches!(s, Step::Quip { .. })));
         }
         assert_eq!(
-            find("pc95", None).unwrap().quips[0],
-            "Turbo button engaged. It does nothing. It never did."
+            find("pc85", None).unwrap().quips[0],
+            "Cassette BASIC loaded. Please do not look for the cassette."
         );
+    }
+
+    #[test]
+    fn pc95_is_flavoured_with_no_logo_and_no_quips() {
+        let m = find("pc95", None).unwrap();
+        assert!(m.flavoured);
+        assert_eq!(m.detect_width, Some(27));
+        assert_eq!(m.logo, None);
+        assert!(m.quips.is_empty());
     }
 
     #[test]
     fn rejects_a_quip_step_without_quips() {
         let src = format!("{MINIMAL}\n[[step]]\nquip = true\n");
         assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn a_flavoured_machine_may_have_a_quip_step_without_quips() {
+        let src = format!(
+            "{}\n[[step]]\nquip = true\n",
+            MINIMAL.replace(
+                "accent = \"#FFFF55\"\n",
+                "accent = \"#FFFF55\"\nflavoured = true\n"
+            )
+        );
+        assert!(parse(&src).is_ok());
     }
 
     #[test]

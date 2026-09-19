@@ -59,6 +59,8 @@ To try it without touching your shell: `bios boot --full`
 
 To choose which machine boots: `bios machines`, then `bios use <id>`.
 
+To change the personality: `bios flavours`, then `bios use --flavour <id>`.
+
 ## What it is
 
 Every new terminal tab boots. The boot screen is period correct, takes about
@@ -69,7 +71,7 @@ SparkleBIOS is three things that share one binary and one visual language:
 
 | Part | What it does |
 |---|---|
-| **The BIOS** | A POST screen on every new tab that is really a health check. Several boot machines, from a mid-90s PC to an 8-bit home computer. `bios setup` is a blue BIOS setup utility, because of course it is. |
+| **The BIOS** | A POST screen on every new tab that is really a health check. One screen, swappable flavours: the unicorn is the default, and the sumo is immovable. `bios setup` will be a blue BIOS setup utility, because of course it will. |
 | **neigh** | A rainbow pipe with era palettes: `make \| neigh`. Bands, dither and raster bars, never gradients, because 1985 had sixteen colours on a good day. |
 | **The theme** | "Rainbows and Unicorns", a serious 1985 Ghostty theme in five variants. The name is the only joke in it. |
 

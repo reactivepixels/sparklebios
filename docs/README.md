@@ -8,6 +8,7 @@ Kept in a binder, on a shelf, next to the machine.
 | [voice.md](voice.md) | The comedy rulebook. Required reading before writing any line a screen will show |
 | [theme.md](theme.md) | The "Rainbows and Unicorns" Ghostty theme: four variants, exact palettes, contrast figures and the reasoning |
 | [machines.md](machines.md) | How to write a boot machine: the TOML schema, the facts you can use, and how quips rotate |
+| [flavours.md](flavours.md) | How to write a flavour: the personality behind a flavoured machine, its sprite pair, and how it resolves slots |
 
 Elsewhere in the repository:
 
