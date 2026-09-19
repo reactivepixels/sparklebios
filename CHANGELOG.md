@@ -28,5 +28,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The `c64` machine: forty columns, light blue on blue, one word changed.
 - `bios use <id>` chooses which machine boots, with `--full`, `--fast` and `--reset`. It edits `~/.config/sparklebios/config.toml` for you and leaves every other setting alone.
 - Mane, a fifth theme variant built from the unicorn's own colours, made to sit under `pc95`. Opt in with `theme = rainbows-and-unicorns-mane`.
+- A cursor trail shader for Ghostty: when the cursor jumps it leaves a short six-stripe trail. Opt in.
+- Tool colours: `ls`, `eza`, `bat`, `fzf`, `man`, `grep`, zsh completion and `delta` told to use the terminal's own sixteen colours, so they follow every theme variant.
 - `extras/starship-palette.toml`, a starship palette to match the theme.
 - `bios init zsh`, `bios machines`, and the machine authoring guide in `docs/machines.md`.

@@ -145,3 +145,9 @@ bold-is-bright = false
 
 Suggested type: IBM Plex Mono for the straight face. For the full 1985, a bitmap
 face such as Departure Mono.
+
+## Beyond the sixteen colours
+
+The cursor trail shader, the tool colours and the starship palettes live in
+[`extras/`](../extras/README.md). All of them are optional, and the tool colours
+work by index, so they follow every variant above.

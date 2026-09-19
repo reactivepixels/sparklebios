@@ -1,0 +1,30 @@
+# Rainbows and Unicorns: git diffs through delta, in the terminal's own colours.
+#
+# Include from ~/.gitconfig:
+#
+#   [include]
+#       path = /path/to/extras/tools/delta.gitconfig
+#
+# Every colour is an ANSI name, so the diff follows whichever theme variant you run.
+
+[core]
+    pager = delta
+[interactive]
+    diffFilter = delta --color-only
+[delta]
+    syntax-theme = ansi
+    line-numbers = true
+    navigate = true
+    file-style = yellow bold
+    file-decoration-style = yellow ul
+    hunk-header-style = cyan
+    hunk-header-decoration-style = none
+    minus-style = red
+    minus-emph-style = black red
+    plus-style = green
+    plus-emph-style = black green
+    line-numbers-minus-style = red
+    line-numbers-plus-style = green
+    line-numbers-zero-style = brightblack
+    line-numbers-left-style = brightblack
+    line-numbers-right-style = brightblack
