@@ -34,3 +34,22 @@ color_orange = '#d9620f'
 color_purple = '#b866d6'
 color_red = '#eb413a'
 color_yellow = '#bf8a00'
+
+# The one that follows any theme. Instead of hex values it names the terminal's
+# own sixteen colours by number, so the prompt changes whenever the theme does,
+# and works with all nine variants. This is the one to use.
+#   palette = 'rainbows_and_unicorns_auto'
+#
+# 9 is bright red, which carries the orange stripe in every variant of the theme.
+
+[palettes.rainbows_and_unicorns_auto]
+color_fg0 = '15'
+color_bg1 = '0'
+color_bg3 = '8'
+color_blue = '4'
+color_aqua = '2'
+color_green = '10'
+color_orange = '9'
+color_purple = '5'
+color_red = '1'
+color_yellow = '3'

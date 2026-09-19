@@ -8,7 +8,7 @@ and none of them are on by default.
 | [shaders/cursor-trail.glsl](shaders/cursor-trail.glsl) | A Ghostty shader. When the cursor jumps it leaves a short six-stripe trail that retracts into it |
 | [tools/colours.zsh](tools/colours.zsh) | Makes `ls`, `eza`, `bat`, `fzf`, `man`, `less`, `grep` and zsh completion follow the terminal's sixteen colours |
 | [tools/delta.gitconfig](tools/delta.gitconfig) | Git diffs through `delta`, drawn from the same sixteen colours |
-| [starship-palette.toml](starship-palette.toml) | Palettes for starship's Gruvbox Rainbow preset, one for the lead theme and one for Mane |
+| [starship-palette.toml](starship-palette.toml) | Palettes for starship's Gruvbox Rainbow preset. `rainbows_and_unicorns_auto` uses the terminal's own colours by number, so the prompt follows whichever theme variant is active |
 
 ## The idea
 
