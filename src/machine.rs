@@ -111,11 +111,16 @@ pub fn builtins() -> Vec<Machine> {
 
 /// `<user_dir>/<id>.toml` wins over a built-in of the same id. Unreadable or invalid user files are ignored.
 pub fn find(id: &str, user_dir: Option<&std::path::Path>) -> Option<Machine> {
+    if !valid_id(id) {
+        return None;
+    }
     if let Some(dir) = user_dir {
         let path = dir.join(format!("{id}.toml"));
         if let Ok(src) = std::fs::read_to_string(&path) {
             if let Ok(m) = parse(&src) {
-                return Some(m);
+                if m.id == id {
+                    return Some(m);
+                }
             }
         }
     }
@@ -408,5 +413,27 @@ print = "hello"
         assert_eq!(m.name, "Test");
         let ids: Vec<String> = list(Some(dir.path())).into_iter().map(|m| m.id).collect();
         assert_eq!(ids, vec!["pc95", "pc85"]);
+    }
+
+    #[test]
+    fn find_rejects_ids_that_are_not_plain_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside.toml");
+        std::fs::write(&outside, MINIMAL.replace("\"t1\"", "\"outside\"")).unwrap();
+        let machines = dir.path().join("machines");
+        std::fs::create_dir(&machines).unwrap();
+        assert!(find("../outside", Some(&machines)).is_none());
+        assert!(find("", Some(&machines)).is_none());
+        assert!(find("PC95", None).is_none());
+    }
+
+    #[test]
+    fn find_ignores_a_user_file_whose_id_does_not_match_its_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pc85.toml"), MINIMAL).unwrap();
+        assert_eq!(
+            find("pc85", Some(dir.path())).unwrap().name,
+            "1985 PC/AT style"
+        );
     }
 }

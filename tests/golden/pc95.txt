@@ -1,0 +1,19 @@
+     Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally
+     Copyright (C) 1985-2026, Rainbows & Unicorns, Inc.
+
+UNI-440BX ACPI BIOS Revision 1007
+
+Main Processor : Apple M4 Pro, 14 cores, 0 horns
+Memory Testing : 37748736K OK
+
+Detecting Primary Master   ... 994GB, 78% used
+Detecting Operating System ... macOS 26.5
+Detecting Shell            ... zsh
+Detecting Horn             ... 1 found (7-band, sparkle capable)
+
+Turbo button engaged. It does nothing. It never did.
+
+Boot streak: 12 days. Don't blow it.
+Shell boot time: 412ms
+
+09/19/2026-UNI-440BX-RNBW-2A69KU1C-00
