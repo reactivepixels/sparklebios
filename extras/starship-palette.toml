@@ -42,10 +42,12 @@ color_yellow = '#bf8a00'
 #
 # 9 is bright red, which carries the orange stripe in every variant of the theme.
 
+# Text on the segments is the theme's black (0), which reads on saturated and
+# pastel variants alike; white text washes out on Workbench and Miami.
 [palettes.rainbows_and_unicorns_auto]
-color_fg0 = '15'
-color_bg1 = '0'
-color_bg3 = '8'
+color_fg0 = '0'
+color_bg1 = '8'
+color_bg3 = '7'
 color_blue = '4'
 color_aqua = '2'
 color_green = '10'
