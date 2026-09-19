@@ -57,6 +57,8 @@ For the theme: `bios theme install`, then follow the four lines it prints.
 
 To try it without touching your shell: `bios boot --full`
 
+To choose which machine boots: `bios machines`, then `bios use <id>`.
+
 ## What it is
 
 Every new terminal tab boots. The boot screen is period correct, takes about

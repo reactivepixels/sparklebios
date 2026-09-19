@@ -129,9 +129,21 @@ allowed to complain.
 
 ## Choosing machines
 
+```
+bios use <id>              set both the once-a-day full show and every other boot
+bios use <id> --full       set only the full show
+bios use <id> --fast       set only every other boot
+bios use --reset           back to the defaults: pc95 for the full show, pc85 otherwise
+bios use                   print the current choice
+```
+
+`--full` and `--fast` conflict with each other, and `--reset` conflicts with
+an id and with both flags. An id that does not name a known machine fails
+without writing anything.
+
 A real boot's full and fast machines come from
 `~/.config/sparklebios/config.toml` (or under `$XDG_CONFIG_HOME/sparklebios`
-if that variable is set). All keys are optional:
+if that variable is set). `bios use` writes this file. All keys are optional:
 
 ```toml
 full = "pc95"    # machine for the once-a-day full show

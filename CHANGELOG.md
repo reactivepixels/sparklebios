@@ -25,6 +25,6 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The show: the POST now plays. The memory count ticks up, each device is detected in turn, and any key skips to the end. Keys typed during the show are handed back to the prompt, and the terminal is never left in raw mode. `--no-animate`, `SPARKLEBIOS_ANIMATE=0` or `animate = false` turn it off.
 - Transparent painted screens: a machine with `paint = true` and no `bg` keeps its layout and logo but sits on the terminal's own background. `pc95` and `pc85` now do this, so they belong to whatever theme you run. `c64` keeps its blue.
 - The `c64` machine: forty columns, light blue on blue, one word changed.
-- `~/.config/sparklebios/config.toml` to choose which machine boots.
+- `bios use <id>` chooses which machine boots, with `--full`, `--fast` and `--reset`. It edits `~/.config/sparklebios/config.toml` for you and leaves every other setting alone.
 - `extras/starship-palette.toml`, a starship palette to match the theme.
 - `bios init zsh`, `bios machines`, and the machine authoring guide in `docs/machines.md`.

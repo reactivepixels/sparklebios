@@ -28,6 +28,8 @@ enum Command {
     Boot(BootCliArgs),
     /// List the available machines.
     Machines,
+    /// Choose which machine boots.
+    Use(UseCliArgs),
     /// Theme related commands.
     Theme {
         #[command(subcommand)]
@@ -73,6 +75,21 @@ impl From<BootCliArgs> for crate::boot::BootArgs {
     }
 }
 
+#[derive(Debug, Args)]
+struct UseCliArgs {
+    /// The machine id to use.
+    id: Option<String>,
+    /// Only change the once-a-day full show.
+    #[arg(long, conflicts_with = "fast")]
+    full: bool,
+    /// Only change every other boot.
+    #[arg(long)]
+    fast: bool,
+    /// Reset to the defaults: pc95 for the full show, pc85 otherwise.
+    #[arg(long, conflicts_with_all = ["id", "full", "fast"])]
+    reset: bool,
+}
+
 #[derive(Debug, Subcommand)]
 enum ThemeCommand {
     /// Install the Ghostty theme files.
@@ -103,10 +120,37 @@ pub fn run() -> i32 {
             }
             0
         }
+        Command::Use(args) => use_machine(args),
         Command::Theme {
             command: ThemeCommand::Install { dir },
         } => install_theme(dir),
     }
+}
+
+fn use_machine(args: UseCliArgs) -> i32 {
+    let Some(dir) = crate::paths::config_dir() else {
+        eprintln!("bios: cannot find a config directory");
+        return 1;
+    };
+
+    if let Some(id) = &args.id {
+        if crate::machine::find(id, crate::paths::user_machines_dir().as_deref()).is_none() {
+            eprintln!("bios: no machine called {id}. Try: bios machines");
+            return 1;
+        }
+        let full = (!args.fast).then_some(id.as_str());
+        let fast = (!args.full).then_some(id.as_str());
+        if crate::config::set_machines(&dir, full, fast, false).is_err() {
+            return 1;
+        }
+    } else if args.reset && crate::config::set_machines(&dir, None, None, true).is_err() {
+        return 1;
+    }
+
+    let config = crate::config::load(Some(&dir));
+    println!("Full show  : {}", config.full);
+    println!("Every boot : {}", config.fast);
+    0
 }
 
 fn install_theme(dir: Option<PathBuf>) -> i32 {

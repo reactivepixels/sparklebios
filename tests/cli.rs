@@ -161,6 +161,79 @@ fn no_animate_flag_is_accepted() {
 }
 
 #[test]
+fn use_sets_both_full_and_fast() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "c64"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .arg("use")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Full show  : c64\nEvery boot : c64\n");
+}
+
+#[test]
+fn use_fast_leaves_the_full_show_at_the_default() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "c64", "--fast"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Full show  : pc95\nEvery boot : c64\n");
+}
+
+#[test]
+fn use_reset_returns_to_the_defaults() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "c64"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .args(["use", "--reset"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Full show  : pc95\nEvery boot : pc85\n");
+}
+
+#[test]
+fn use_with_an_unknown_id_fails_and_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "nope"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr("bios: no machine called nope. Try: bios machines\n");
+    assert!(!config.path().join("sparklebios/config.toml").exists());
+}
+
+#[test]
+fn use_then_boot_fast_picks_up_the_chosen_machine() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "c64"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .args(["boot", "--fast"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("**** UNICORN 64 BASIC V2 ****"));
+}
+
+#[test]
 fn theme_install_writes_four_files() {
     let dir = tempfile::tempdir().unwrap();
     bios()
