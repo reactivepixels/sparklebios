@@ -41,6 +41,19 @@ fn color_mode() -> crate::render::ColorMode {
     )
 }
 
+/// Kitty on a terminal that supports it, half-blocks otherwise. `render_static` only draws a
+/// logo or badge when its painted path is actually in use, so this is safe to pass unconditionally.
+fn graphics() -> crate::render::Graphics {
+    if crate::sprite::supports_kitty(
+        env_var("TERM").as_deref(),
+        env_var("TERM_PROGRAM").as_deref(),
+    ) {
+        crate::render::Graphics::Kitty
+    } else {
+        crate::render::Graphics::HalfBlocks
+    }
+}
+
 /// Never panics outward and never returns an error: a boot that cannot happen prints nothing.
 pub fn run(args: &BootArgs) {
     if args.machine.is_some() || args.full || args.fast {
@@ -76,6 +89,7 @@ fn run_preview(args: &BootArgs) {
         color_mode(),
         seed_from_time(),
         crate::term::cols(1),
+        graphics(),
     );
     write_stdout(&output);
 }
@@ -140,6 +154,7 @@ fn run_real() {
         color_mode(),
         seed_from_time(),
         crate::term::cols(1),
+        graphics(),
     );
     write_stdout(&output);
 

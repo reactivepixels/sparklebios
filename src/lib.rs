@@ -10,6 +10,7 @@ pub mod mode;
 pub mod paths;
 pub mod render;
 pub mod shell;
+pub mod sprite;
 pub mod state;
 pub mod template;
 pub mod term;

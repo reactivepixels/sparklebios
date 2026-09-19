@@ -27,6 +27,8 @@ Top level keys:
 | `pad_x` | integer | no | Defaults to 2. Blank painted columns left and right of the text, 0 to 8 |
 | `pad_y` | integer | no | Defaults to 1. Blank painted rows above and below the text, 0 to 4 |
 | `uppercase` | boolean | no | Defaults to false. Renders every line in upper case, after slot substitution |
+| `logo` | string | no | Only `"unicorn"` exists today. Draws the mark at the top left of a painted screen |
+| `badge` | array of strings | no | Up to 4 lines, each at most 20 characters, shown top right of a painted screen |
 | `quips` | array of strings | no | Defaults to empty. One-line jokes, drawn from at boot |
 | `[[step]]` | array of tables | yes, at least one | The ordered screen content |
 
@@ -74,7 +76,11 @@ inside it, `pad_x` and `pad_y` of blank border around them, and an optional
 frame in the `border` colour. Any line's text is truncated to `cols`
 characters so it always fits the block. When the terminal is not TrueColor,
 is too narrow, or its width is unknown, `paint` is ignored and the screen
-falls back to plain painted-free text.
+falls back to plain painted-free text. A `logo` and a `badge` only ever
+appear on a painted screen at least 60 columns wide: the logo is drawn as
+half-block characters or, on a terminal that supports it, as an actual
+image, and the badge is right-aligned in the accent colour over the first
+few lines.
 
 ## Facts available today
 

@@ -49,6 +49,8 @@ pub struct Machine {
     pub pad_x: u8,
     pub pad_y: u8,
     pub uppercase: bool,
+    pub logo: Option<String>,
+    pub badge: Vec<String>,
     pub quips: Vec<String>,
     pub steps: Vec<Step>,
 }
@@ -88,6 +90,9 @@ struct RawMachine {
     pad_y: u8,
     #[serde(default)]
     uppercase: bool,
+    logo: Option<String>,
+    #[serde(default)]
+    badge: Vec<String>,
     #[serde(default)]
     quips: Vec<String>,
     #[serde(rename = "step", default)]
@@ -267,6 +272,26 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
             raw.pad_y
         )));
     }
+    if let Some(logo) = &raw.logo {
+        if logo != "unicorn" {
+            return Err(MachineError::Invalid(format!(
+                "logo {logo:?} is not a known logo"
+            )));
+        }
+    }
+    if raw.badge.len() > 4 {
+        return Err(MachineError::Invalid(format!(
+            "badge has {} lines, more than 4",
+            raw.badge.len()
+        )));
+    }
+    for line in &raw.badge {
+        if line.chars().count() > 20 {
+            return Err(MachineError::Invalid(format!(
+                "badge line {line:?} is longer than 20 chars"
+            )));
+        }
+    }
     if raw.steps.is_empty() {
         return Err(MachineError::Invalid("machine has no steps".into()));
     }
@@ -350,6 +375,8 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
         pad_x: raw.pad_x,
         pad_y: raw.pad_y,
         uppercase: raw.uppercase,
+        logo: raw.logo,
+        badge: raw.badge,
         quips: raw.quips,
         steps,
     })
@@ -439,6 +466,47 @@ print = "hello"
         let src = MINIMAL.replace(
             "accent = \"#FFFF55\"\n",
             "accent = \"#FFFF55\"\nbg = \"#000000\"\npaint = true\npad_x = 9\n",
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn parses_logo_and_badge_with_defaults() {
+        let m = parse(MINIMAL).unwrap();
+        assert_eq!(m.logo, None);
+        assert!(m.badge.is_empty());
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\nlogo = \"unicorn\"\nbadge = [\"enchantment\", \"*STAR* ALLY\", \"GLITTER SAFE\"]\n",
+        );
+        let m = parse(&src).unwrap();
+        assert_eq!(m.logo.as_deref(), Some("unicorn"));
+        assert_eq!(m.badge, vec!["enchantment", "*STAR* ALLY", "GLITTER SAFE"]);
+    }
+
+    #[test]
+    fn rejects_an_unknown_logo() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\nlogo = \"dragon\"\n",
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn rejects_more_than_four_badge_lines() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\nbadge = [\"a\", \"b\", \"c\", \"d\", \"e\"]\n",
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn rejects_a_badge_line_over_twenty_chars() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\nbadge = [\"this badge line is way too long\"]\n",
         );
         assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
     }
