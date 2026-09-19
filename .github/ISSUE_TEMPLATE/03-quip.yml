@@ -19,11 +19,11 @@ body:
   - type: dropdown
     id: machine
     attributes:
-      label: Which machine says it
+      label: Which flavour says it
       options:
-        - pc95
-        - pc85
-        - Another machine (say which below)
+        - unicorn
+        - sumo
+        - Another flavour (say which below)
     validations:
       required: true
   - type: textarea

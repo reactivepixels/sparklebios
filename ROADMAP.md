@@ -5,14 +5,15 @@ this is in [docs/design.md](docs/design.md).
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | **Theme** | Five Ghostty theme files (`rainbows-and-unicorns`, `-paper`, `-ega`, `-workbench`, `-mane`) load in stock Ghostty; the README shows the config lines; where embedded Ghostty engines load themes from is documented |
+| M0 | **Theme** | Nine Ghostty theme files (`rainbows-and-unicorns`, `-paper`, `-ega`, `-workbench`, `-mane`, `-miami`, `-arcade`, `-vhs`, `-den`) load in stock Ghostty; the README shows the config lines; where embedded Ghostty engines load themes from is documented |
 | M1 | **BIOS skeleton** | `bios init zsh` hook, boot-mode decision, fast facts, `pc95` and `pc85` rendered statically, kill switch, time budgets met |
 | M2 | **The look and the show** | Painted screens with borders, the unicorn logo and badge, the `c64` machine, the timeline player, any key to skip, typeahead preserved, once-a-day full show. Beep codes and the shutdown screen moved to M3 |
 | M3 | **Health checks** | Check engine, fact cache with detached refresh, flavour-voiced findings, the F1 line. Headline checks: **boot device order** (your recent projects and the state you left them in, with `bios resume`), **IRQ conflicts** (ports held by forgotten processes), and the **virus scan** (secrets and keys that git is tracking). Then disk trend, dotfiles changed, stale stashes, battery, runtime drift. Beep codes and the shutdown screen |
-| M4 | **neigh** | All palettes and modes, banner, rule, gallop; BIOS banners painted by neigh |
+| M4 | **Sprinkles** | The optional delight layer, off by default, because not everyone wants sprinkles. One dial (`off`, `light`, `full`): text effects during the animated show (a shimmer across the firmware name, a twinkle around the mascot, a stripe sweep on streak milestones), and sound (the POST beep, beep codes, a short jingle per flavour). Respects reduced motion, never flashes, costs nothing when off. Arrives with `bios config edit`, `bios config path` and `bios config reset`, a fully commented `config.toml`, and per-flavour overrides for power users |
+| M4.5 | **neigh** | The rainbow pipe: all palettes and modes, banner, rule, gallop |
 | M5 | **Setup** | The BIOS setup TUI edits the config file; DEL during boot opens it; beige fail-safe defaults |
 | M6 | **Project POST** | `chpwd` hook, automatic checks including backend binding, `.bios.toml`, `bios trust` |
-| M7 | **More machines** | `c64`, `vms`, `dos`, `zx`, `mac84`; era follows theme; calendar gags; kitty graphics where supported |
+| M7 | **More flavours** | Neko and Lo-fi join Unicorn and Sumo; rare quips and calendar gags; community flavours |
 | M8 | **Launch readiness** | Linux fact probes; bash and fish hooks; `bios fetch`; machine scaffold, lint and CI preview rendering; prebuilt binaries and a Homebrew tap; website |
 
 ## Later
@@ -22,21 +23,7 @@ this is in [docs/design.md](docs/design.md).
 - A matching starship palette
 - An optional CRT shader for Ghostty
 
-## Machine wishlist
+## Flavour wishlist
 
-Machines people have asked for or that obviously belong. Each one is a good
-first contribution once the machine format lands in M1.
-
-- Amiga Kickstart style
-- BBC Micro style
-- Apple II style
-- Atari ST style
-- MSX style
-- Amstrad CPC style
-- Sun OpenBoot style
-- SGI PROM style
-- NeXT style
-- BeOS style
-- Windows 95 style
-- A Linux kernel boot
-- A handheld console logo drop
+Open an issue with the creature or object, and the one part of it a BIOS
+should detect.

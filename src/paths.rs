@@ -58,6 +58,40 @@ pub fn ghostty_themes_dir() -> Option<PathBuf> {
     )
 }
 
+/// The Ghostty config file candidates, in search order: on macOS,
+/// `~/Library/Application Support/com.mitchellh.ghostty/config.ghostty` and `.../config`
+/// (skipped when `home` is unset, and never included at all off macOS); then
+/// `$XDG_CONFIG_HOME/ghostty/config.ghostty` and `.../config`, `XDG_CONFIG_HOME` defaulting to
+/// `home/.config` (skipped when neither `xdg` nor `home` is set).
+fn ghostty_config_candidate_list(
+    is_macos: bool,
+    xdg: Option<&str>,
+    home: Option<&str>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if is_macos {
+        if let Some(home) = home {
+            let support =
+                PathBuf::from(home).join("Library/Application Support/com.mitchellh.ghostty");
+            candidates.push(support.join("config.ghostty"));
+            candidates.push(support.join("config"));
+        }
+    }
+    if let Some(dir) = resolve(xdg, home, ".config", "ghostty") {
+        candidates.push(dir.join("config.ghostty"));
+        candidates.push(dir.join("config"));
+    }
+    candidates
+}
+
+pub fn ghostty_config_candidates() -> Vec<PathBuf> {
+    ghostty_config_candidate_list(
+        cfg!(target_os = "macos"),
+        env("XDG_CONFIG_HOME").as_deref(),
+        env("HOME").as_deref(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +123,57 @@ mod tests {
     #[test]
     fn both_missing_yields_none() {
         assert_eq!(resolve(None, None, ".config", "sparklebios"), None);
+    }
+
+    #[test]
+    fn ghostty_candidates_lead_with_macos_app_support_then_xdg() {
+        let candidates = ghostty_config_candidate_list(true, Some("/xdg"), Some("/home"));
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from(
+                    "/home/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+                ),
+                PathBuf::from("/home/Library/Application Support/com.mitchellh.ghostty/config"),
+                PathBuf::from("/xdg/ghostty/config.ghostty"),
+                PathBuf::from("/xdg/ghostty/config"),
+            ]
+        );
+    }
+
+    #[test]
+    fn ghostty_candidates_off_macos_are_xdg_only() {
+        let candidates = ghostty_config_candidate_list(false, Some("/xdg"), Some("/home"));
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/xdg/ghostty/config.ghostty"),
+                PathBuf::from("/xdg/ghostty/config"),
+            ]
+        );
+    }
+
+    #[test]
+    fn ghostty_candidates_fall_back_to_home_dot_config() {
+        let candidates = ghostty_config_candidate_list(false, None, Some("/home"));
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/home/.config/ghostty/config.ghostty"),
+                PathBuf::from("/home/.config/ghostty/config"),
+            ]
+        );
+    }
+
+    #[test]
+    fn ghostty_candidates_are_empty_with_nothing_set() {
+        assert_eq!(
+            ghostty_config_candidate_list(true, None, None),
+            Vec::<PathBuf>::new()
+        );
+        assert_eq!(
+            ghostty_config_candidate_list(false, None, None),
+            Vec::<PathBuf>::new()
+        );
     }
 }

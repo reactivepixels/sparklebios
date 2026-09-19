@@ -15,12 +15,12 @@ SparkleBIOS is pre-alpha. The most useful things right now:
 - **Original art and wording only.** No real logos, wordmarks or copied copyright strings. Machines are named by era (`pc95`, `c64`) and real hardware is referenced descriptively ("in the style of").
 - **No em dashes or en dashes** in prose, comments or commit messages. Use a comma, a colon, parentheses, or two sentences.
 
-## Adding a boot machine
+## Adding a flavour
 
-A machine is one TOML file in `machines/`: geometry, colours, an ordered list of
-steps, and a pool of rotating quips. The schema is documented in
-[docs/machines.md](docs/machines.md). Preview yours with
-`bios boot --machine <id>`, and paste the output into the pull request.
+A flavour is one TOML file in `flavours/` plus a sprite pair in `sprites/`.
+The schema is documented in [docs/flavours.md](docs/flavours.md). Preview
+yours with `bios boot --flavour <id>`, and paste the output into the pull
+request.
 
 ## Development
 

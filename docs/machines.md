@@ -1,10 +1,11 @@
-# Machines
+# The screen
 
-A machine is one TOML file: a boot screen. It declares an identity, four
-colours, an optional list of quips, and an ordered list of steps. SparkleBIOS
-ships two built-in machines, `pc95` and `pc85`, and can load more from disk.
+SparkleBIOS ships one screen, `pc95`. A [flavour](flavours.md) supplies its
+personality: the mascot, the firmware and vendor wording, the streak line,
+the footer code and the quips. The rest of this page documents the screen
+file format, for anyone who wants to write their own.
 
-**Read [docs/voice.md](voice.md) before writing a single word that a machine
+**Read [docs/voice.md](voice.md) before writing a single word that a screen
 will print.** Every line a screen shows is reviewed like code, against that
 page's rules. Wording is never generated at runtime and never left to whoever
 happens to be implementing the feature.
@@ -15,8 +16,8 @@ Top level keys:
 
 | Key | Type | Required | Notes |
 |---|---|---|---|
-| `id` | string | yes | Matches `[a-z0-9_-]+`. Names an era, for example `pc95`, `pc85`. No real logos, wordmarks or copied copyright strings |
-| `name` | string | yes | A human readable label, shown by `bios machines` |
+| `id` | string | yes | Matches `[a-z0-9_-]+`. Names an era, for example `pc95`. No real logos, wordmarks or copied copyright strings |
+| `name` | string | yes | A human readable label for the screen |
 | `cols` | integer | yes | Terminal column width the screen is authored for. Must be between 20 and 200 |
 | `fg` | string | yes | Normal text colour, `#RRGGBB`, either case |
 | `bright` | string | yes | Bright text colour, `#RRGGBB` |
@@ -30,22 +31,22 @@ Top level keys:
 | `logo` | string | no | Only `"unicorn"` exists today. Draws the mark at the top left of a painted screen |
 | `badge` | array of strings | no | Up to 4 lines, each at most 20 characters, shown top right of a painted screen |
 | `quips` | array of strings | no | Defaults to empty. One-line jokes, drawn from at boot |
-| `flavoured` | boolean | no | Defaults to false. When true, the machine takes its quips and its logo sprite from the current flavour instead of its own `quips` and `logo`. See [flavours.md](flavours.md) |
+| `flavoured` | boolean | no | Defaults to false. When true, the screen takes its quips and its logo sprite from the current flavour instead of its own `quips` and `logo`. See [flavours.md](flavours.md) |
 | `detect_width` | integer | no | 4 to 60. When set, every `detect` step's label is rendered for slots and right-padded with spaces to this width (never truncated), instead of being used exactly as written |
 | `[[step]]` | array of tables | yes, at least one | The ordered screen content |
 
 A step table has exactly one of four kinds: `print`, `count`, `detect`,
 `quip`. Mixing two kinds, or a `quip` step whose value is `false`, is invalid.
-A `quip` step is valid when the machine has its own `quips`, or when
+A `quip` step is valid when the screen has its own `quips`, or when
 `flavoured` is true (in which case the quips come from the flavour at boot,
-and the machine needs none of its own).
+and the screen needs none of its own).
 
 | Kind | Fields | Defaults | Behaviour |
 |---|---|---|---|
 | `print` | `print` (text), optional `style`, optional `ms` | `ms` 45 | Prints one line of text |
 | `count` | `count` (template), `to` (required), optional `suffix`, optional `ms` | `ms` 600, `suffix` empty | Prints a template line with `{n}` replaced by the resolved value of `to`, then the suffix appended |
 | `detect` | `detect` (label), `result` (required), optional `style`, optional `ms` | `ms` 190 | Prints a label followed by a resolved result |
-| `quip` | `quip = true`, optional `style`, optional `ms` | `ms` 120 | Prints one line drawn from the machine's `quips`, or from the current flavour's quips when `flavoured` is true |
+| `quip` | `quip = true`, optional `style`, optional `ms` | `ms` 120 | Prints one line drawn from the screen's `quips`, or from the current flavour's quips when `flavoured` is true |
 
 `style` is one of `"normal"`, `"bright"`, `"accent"` (TOML strings), and is
 allowed on `print`, `detect` and `quip` steps. On a `detect` step it colours
@@ -65,7 +66,7 @@ quip in turn.
 
 ## How quips rotate
 
-A boot picks a starting index into the machine's `quips` array and tries each
+A boot picks a starting index into the screen's `quips` array and tries each
 quip in order from there, wrapping around, printing the first one whose slots
 all resolve. If none resolves, the `quip` step is omitted like any other
 line. Across boots the starting index changes, so the same person sees a
@@ -90,7 +91,7 @@ short) and one line per row after that. A row's own text is never
 truncated to make room for a badge; if it would end within 2 cells of
 where the badge starts, that row simply shows no badge.
 
-A machine with `paint = true` and no `bg` paints transparently: the same
+A screen with `paint = true` and no `bg` paints transparently: the same
 padding, logo placement and badge placement apply, but no background colour
 is emitted anywhere, including in the logo. Text is drawn in its own
 foreground colour only, and any transparent pixel in the logo shows the
@@ -121,51 +122,22 @@ screen, so it requires `bg` to be set.
 A fact that has not been gathered on a given boot is simply absent, and any
 line referencing it is omitted under the rule above.
 
-## User machines
+## User screens
 
-Built-in machines live in this repository's `machines/` directory and are
+The built-in screen lives in this repository's `machines/` directory and is
 compiled into the `bios` binary. A user may add their own by placing a file
 at `~/.config/sparklebios/machines/<id>.toml` (or under
 `$XDG_CONFIG_HOME/sparklebios/machines` if that variable is set). The file
-name must match the `id` inside it. A user file whose id matches a built-in
-replaces it; other user files add to the roster. A file that fails to parse or
-fails validation is ignored, not reported, because nothing on the boot path is
-allowed to complain.
+name must match the `id` inside it. A user file whose id matches `pc95`
+replaces it; other user files add to the roster. A file that fails to parse
+or fails validation is ignored, not reported, because nothing on the boot
+path is allowed to complain.
 
-## Choosing machines
-
-```
-bios use <id>              set both the once-a-day full show and every other boot
-bios use <id> --full       set only the full show
-bios use <id> --fast       set only every other boot
-bios use --reset           back to the defaults: pc95 for the full show, pc85 otherwise
-bios use                   print the current choice
-```
-
-`--full` and `--fast` conflict with each other, and `--reset` conflicts with
-an id and with both flags. An id that does not name a known machine fails
-without writing anything.
-
-A real boot's full and fast machines come from
-`~/.config/sparklebios/config.toml` (or under `$XDG_CONFIG_HOME/sparklebios`
-if that variable is set). `bios use` writes this file. All keys are optional:
-
-```toml
-full = "pc95"    # machine for the once-a-day full show
-fast = "pc85"    # machine for every other boot
-animate = true   # whether a boot plays as an animated show
-```
-
-A missing, unreadable or invalid config file yields those same defaults, and
-unknown keys are ignored. If the configured `full` or `fast` id does not name
-a known machine, the boot falls back to `pc95` or `pc85` respectively.
-
-## Trying a machine
+## Trying a screen
 
 ```
-bios machines                    # the roster
-bios boot --machine pc95         # preview one, without touching any state
-NO_COLOR=1 bios boot --full      # the same, as plain text for pasting into an issue
+bios boot --machine pc95            # preview one, without touching any state
+NO_COLOR=1 bios boot --machine pc95 # the same, as plain text for pasting into an issue
 ```
 
 A preview never reads or writes the streak, so the streak line is absent.
@@ -173,6 +145,6 @@ A preview never reads or writes the streak, so the streak line is absent.
 ## Originality
 
 Per [CONTRIBUTING.md](../CONTRIBUTING.md): original art and wording only. No
-real logos, wordmarks or copied copyright strings. Machines are named by era
-(`pc95`, `pc85`) and real hardware is referenced descriptively, in the style
-of, never copied verbatim.
+real logos, wordmarks or copied copyright strings. A screen's id names an era,
+for example `pc95`, and real hardware is referenced descriptively, in the
+style of, never copied verbatim.

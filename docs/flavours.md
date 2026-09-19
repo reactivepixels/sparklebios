@@ -100,9 +100,8 @@ path is allowed to complain.
 
 ```
 bios flavours                 the roster
-bios use --flavour <id>       set the flavour, may be combined with a machine id
-bios use                      print the current choice, including the flavour
-bios boot --flavour <id>      preview a machine with that flavour, without touching any state
+bios use <flavour>            set the flavour
+bios boot --flavour <id>      preview the screen with that flavour, without touching any state
 ```
 
 A real boot's flavour comes from `flavour` in

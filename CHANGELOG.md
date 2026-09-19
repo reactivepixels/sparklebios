@@ -25,10 +25,16 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The unicorn, in the terminal: real pixels through the kitty graphics protocol where the terminal supports it (Ghostty, kitty), half-block characters everywhere else. `pc95` gains its logo and a compliance badge.
 - The show: the POST now plays. The memory count ticks up, each device is detected in turn, and any key skips to the end. Keys typed during the show are handed back to the prompt, and the terminal is never left in raw mode. `--no-animate`, `SPARKLEBIOS_ANIMATE=0` or `animate = false` turn it off.
 - Transparent painted screens: a machine with `paint = true` and no `bg` keeps its layout and logo but sits on the terminal's own background. `pc95` and `pc85` now do this, so they belong to whatever theme you run. `c64` keeps its blue.
-- The `c64` machine: forty columns, light blue on blue, one word changed.
-- `bios use <id>` chooses which machine boots, with `--full`, `--fast` and `--reset`. It edits `~/.config/sparklebios/config.toml` for you and leaves every other setting alone.
 - Mane, a fifth theme variant built from the unicorn's own colours, made to sit under `pc95`. Opt in with `theme = rainbows-and-unicorns-mane`.
+- Four more theme variants: Miami, Arcade, VHS and Den. Switch with `bios theme use <name>`.
 - A cursor trail shader for Ghostty: when the cursor jumps it leaves a short six-stripe trail. Opt in.
 - Tool colours: `ls`, `eza`, `bat`, `fzf`, `man`, `grep`, zsh completion and `delta` told to use the terminal's own sixteen colours, so they follow every theme variant.
 - `extras/starship-palette.toml`, a starship palette to match the theme.
 - `bios init zsh`, `bios machines`, and the machine authoring guide in `docs/machines.md`.
+
+### Changed
+
+- The README now opens with real boot screens for both flavours and all nine themes, rendered from the binary's own output.
+
+- One screen. The `pc85` and `c64` machines are retired; every boot is `pc95` and flavours carry the personality. The once-a-day boot is animated, the rest are instant.
+- `bios use <flavour>` replaces the machine options, `bios theme use <name>` switches Ghostty's theme, and `bios --help` is written by hand.

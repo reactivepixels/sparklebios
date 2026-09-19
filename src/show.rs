@@ -328,6 +328,47 @@ mod tests {
         rendered.lines().map(strip_escapes).collect::<Vec<_>>()
     }
 
+    /// A small unflavoured, painted, bordered, uppercase machine with its own quips, exercising
+    /// the engine features the retired `pc85` and `c64` machines used to cover.
+    const OTHER_MACHINE: &str = r##"
+id = "other"
+name = "Other"
+cols = 40
+fg = "#6C5EB5"
+bright = "#FFFFFF"
+accent = "#B8C76F"
+bg = "#352879"
+paint = true
+border = "#6C5EB5"
+pad_x = 0
+pad_y = 1
+uppercase = true
+quips = [
+  "quip one",
+  "quip two",
+  "quip three",
+]
+
+[[step]]
+print = "ready."
+
+[[step]]
+count = "{n}K found"
+to = "{mem.kb}"
+ms = 40
+
+[[step]]
+detect = "Detecting drive "
+result = "{disk.free_gb}GB"
+
+[[step]]
+quip = true
+"##;
+
+    fn other_machine() -> Machine {
+        machine::parse(OTHER_MACHINE).unwrap()
+    }
+
     /// The flavour a machine boots with in these tests: the unicorn flavour for the flavoured
     /// `pc95`, none for the others.
     fn flavour_for(id: &str) -> Option<Flavour> {
@@ -356,8 +397,10 @@ mod tests {
 
     #[test]
     fn speed_zero_resolves_to_the_same_rows_as_render_static_unpainted() {
-        for id in ["pc95", "pc85", "c64"] {
-            let m = machine::find(id, None).unwrap();
+        for (id, m) in [
+            ("pc95", machine::find("pc95", None).unwrap()),
+            ("other", other_machine()),
+        ] {
             let flavour = flavour_for(id);
             let geometry = Geometry {
                 mode: ColorMode::None,
@@ -373,8 +416,10 @@ mod tests {
 
     #[test]
     fn speed_zero_resolves_to_the_same_rows_as_render_static_painted() {
-        for id in ["pc95", "pc85", "c64"] {
-            let m = machine::find(id, None).unwrap();
+        for (id, m) in [
+            ("pc95", machine::find("pc95", None).unwrap()),
+            ("other", other_machine()),
+        ] {
             let flavour = flavour_for(id);
             let geometry = Geometry {
                 mode: ColorMode::TrueColor,
@@ -475,7 +520,7 @@ mod tests {
 
     #[test]
     fn a_key_press_ends_the_show_at_once_in_its_final_state() {
-        let m = machine::find("pc85", None).unwrap();
+        let m = other_machine();
         let facts = Facts::fixture();
         let geometry = Geometry {
             mode: ColorMode::None,

@@ -7,8 +7,6 @@ use crate::mode::BootMode;
 
 pub struct BootArgs {
     pub machine: Option<String>,
-    pub full: bool,
-    pub fast: bool,
     pub hook: bool,
     pub no_animate: bool,
     pub flavour: Option<String>,
@@ -128,7 +126,7 @@ fn resolve_flavour(
 pub fn run(args: &BootArgs) {
     if args.hook {
         run_shell_boot(args, true);
-    } else if args.machine.is_some() || args.full || args.fast || args.flavour.is_some() {
+    } else if args.machine.is_some() || args.flavour.is_some() {
         run_preview(args);
     } else {
         run_shell_boot(args, false);
@@ -141,14 +139,7 @@ fn run_preview(args: &BootArgs) {
     let machine = if let Some(id) = &args.machine {
         crate::machine::find(id, user_dir.as_deref())
     } else {
-        let id = if args.full {
-            &config.full
-        } else {
-            &config.fast
-        };
-        crate::machine::find(id, user_dir.as_deref()).or_else(|| {
-            crate::machine::find(if args.full { "pc95" } else { "pc85" }, user_dir.as_deref())
-        })
+        crate::machine::find("pc95", user_dir.as_deref())
     };
     let Some(machine) = machine else {
         debug(|| "bios: unknown machine".to_string());
@@ -183,8 +174,8 @@ fn run_preview(args: &BootArgs) {
 
 /// The real boot: `bios boot` (writes to stdout, keys discarded) or `bios boot --hook` (writes
 /// to `/dev/tty`, and prints only the filtered typed bytes to stdout). Both share the same
-/// decision, machine selection, streak and state handling; only the target and what happens to
-/// the typed bytes differ.
+/// decision, screen (always `pc95`), streak and state handling; only the target, whether the
+/// screen animates (only on a `Full` decision) and what happens to the typed bytes differ.
 fn run_shell_boot(args: &BootArgs, hook: bool) {
     let tty_file = if hook {
         match std::fs::OpenOptions::new()
@@ -230,22 +221,8 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
     }
 
     let config = crate::config::load(crate::paths::config_dir().as_deref());
-    let id = if decision == BootMode::Full {
-        &config.full
-    } else {
-        &config.fast
-    };
     let user_dir = crate::paths::user_machines_dir();
-    let machine = crate::machine::find(id, user_dir.as_deref()).or_else(|| {
-        crate::machine::find(
-            if decision == BootMode::Full {
-                "pc95"
-            } else {
-                "pc85"
-            },
-            user_dir.as_deref(),
-        )
-    });
+    let machine = crate::machine::find("pc95", user_dir.as_deref());
     let Some(machine) = machine else {
         debug(|| "bios: unknown machine".to_string());
         return;
@@ -264,7 +241,9 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
     let mode = color_mode();
     let cols_fd = tty_file.as_ref().map_or(1, |f| f.as_raw_fd());
     let term_cols = crate::term::cols(cols_fd);
-    let animate = animate_enabled(&config, args.no_animate, mode, is_tty);
+    // Fast is the same screen drawn instantly: only a Full decision ever animates.
+    let animate =
+        decision == BootMode::Full && animate_enabled(&config, args.no_animate, mode, is_tty);
     let key_fd = tty_file
         .as_ref()
         .map(|f| f.as_raw_fd())

@@ -1,7 +1,7 @@
 # The theme: Rainbows and Unicorns
 
 A serious 1985 colour terminal theme for Ghostty. The name is the only joke.
-Five variants share one idea: the rainbow is simply the ANSI colours your tools
+Nine variants share one idea: the rainbow is simply the ANSI colours your tools
 were already going to use.
 
 Contrast figures are WCAG ratios against that variant's background.
@@ -130,6 +130,94 @@ shading as plain white, the gold of the horn as the cursor. Made to sit under th
 | 5 | magenta | `#B866D6` | 13 | magenta (pink) | `#F0A0BE` |
 | 6 | cyan | `#45C8C0` | 14 | cyan | `#7FE0D8` |
 | 7 | white (lavender) | `#C8CAE4` | 15 | white | `#FFFFFF` |
+
+### `rainbows-and-unicorns-miami` (Miami)
+
+Pastel neon on deep navy: flamingo pink, pool teal, a sunset that refuses to end. The loud one,
+and the one to pair with anything that has a mane.
+
+| Role | Value | | Role | Value |
+|---|---|---|---|---|
+| background | `#1B1433` | | foreground | `#F9ECF5` (15.4) |
+| cursor-color | `#FF6FD8` | | cursor-text | `#1B1433` |
+| selection-background | `#FF6FD8` | | selection-foreground | `#1B1433` |
+
+| # | Normal | Value | # | Bright | Value |
+|---|---|---|---|---|---|
+| 0 | black | `#2A2148` | 8 | black | `#7A6C9C` |
+| 1 | red | `#FF5C8A` | 9 | red (orange) | `#FF9E64` |
+| 2 | green | `#7CF0A8` | 10 | green | `#A8F7C6` |
+| 3 | yellow | `#FFE27A` | 11 | yellow | `#FFEFAE` |
+| 4 | blue | `#6FB7FF` | 12 | blue | `#A3D2FF` |
+| 5 | magenta | `#FF6FD8` | 13 | magenta | `#FFA3E8` |
+| 6 | cyan | `#3FE0D0` | 14 | cyan | `#8AF0E4` |
+| 7 | white | `#D9CBE8` | 15 | white | `#FFFFFF` |
+
+### `rainbows-and-unicorns-arcade` (Arcade)
+
+Cabinet neon on true black. Every colour is turned up as far as it goes, the way a marquee is.
+The cursor is the green of a vector monitor.
+
+| Role | Value | | Role | Value |
+|---|---|---|---|---|
+| background | `#000000` | | foreground | `#EDEDED` (17.9) |
+| cursor-color | `#39FF14` | | cursor-text | `#000000` |
+| selection-background | `#39FF14` | | selection-foreground | `#000000` |
+
+| # | Normal | Value | # | Bright | Value |
+|---|---|---|---|---|---|
+| 0 | black | `#1A1A1A` | 8 | black | `#6E6E6E` |
+| 1 | red | `#FF2A4D` | 9 | red (orange) | `#FF8A1F` |
+| 2 | green | `#39FF14` | 10 | green | `#8CFF75` |
+| 3 | yellow | `#FFF01F` | 11 | yellow | `#FFF777` |
+| 4 | blue | `#1F8BFF` | 12 | blue | `#6FB4FF` |
+| 5 | magenta | `#FF2CF0` | 13 | magenta | `#FF7DF5` |
+| 6 | cyan | `#00F0FF` | 14 | cyan | `#7AF7FF` |
+| 7 | white | `#C8C8C8` | 15 | white | `#FFFFFF` |
+
+### `rainbows-and-unicorns-vhs` (VHS)
+
+The blue of a video recorder with nothing to play, warm white text, and colours a little washed
+out, as if the tape has been rented a few times.
+
+| Role | Value | | Role | Value |
+|---|---|---|---|---|
+| background | `#101B45` | | foreground | `#F2EBDD` (14.0) |
+| cursor-color | `#F2EBDD` | | cursor-text | `#101B45` |
+| selection-background | `#F2EBDD` | | selection-foreground | `#101B45` |
+
+| # | Normal | Value | # | Bright | Value |
+|---|---|---|---|---|---|
+| 0 | black | `#0A1230` | 8 | black | `#6F7BA8` |
+| 1 | red | `#FF6B6B` | 9 | red (orange) | `#FFA862` |
+| 2 | green | `#8FE3A0` | 10 | green | `#B5F0C1` |
+| 3 | yellow | `#F7D774` | 11 | yellow | `#FBE6A3` |
+| 4 | blue | `#7FB2FF` | 12 | blue | `#ABCDFF` |
+| 5 | magenta | `#D59CFF` | 13 | magenta | `#E5C2FF` |
+| 6 | cyan | `#7FE3E0` | 14 | cyan | `#AEF0EE` |
+| 7 | white | `#D6D0C2` | 15 | white | `#FFFFFF` |
+
+### `rainbows-and-unicorns-den` (Den)
+
+Wood panelling, amber lamps and a carpet nobody chose. Warm browns and one good amber, for
+long evenings in front of the family computer.
+
+| Role | Value | | Role | Value |
+|---|---|---|---|---|
+| background | `#1E150D` | | foreground | `#EBD9B8` (13.0) |
+| cursor-color | `#E0A030` | | cursor-text | `#1E150D` |
+| selection-background | `#E0A030` | | selection-foreground | `#1E150D` |
+
+| # | Normal | Value | # | Bright | Value |
+|---|---|---|---|---|---|
+| 0 | black | `#2E2115` | 8 | black | `#7D6A50` |
+| 1 | red | `#D9583B` | 9 | red (orange) | `#D98036` |
+| 2 | green | `#9DB85C` | 10 | green | `#BBD47E` |
+| 3 | yellow | `#E0A030` | 11 | yellow | `#F0BE5C` |
+| 4 | blue | `#6F9FB8` | 12 | blue | `#95BDD2` |
+| 5 | magenta | `#B87A9A` | 13 | magenta | `#D29CB8` |
+| 6 | cyan | `#7FB0A0` | 14 | cyan | `#A2CDBF` |
+| 7 | white | `#CDBB98` | 15 | white | `#FFF3DA` |
 
 ## Using it
 

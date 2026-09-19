@@ -1,19 +1,19 @@
-name: Add my childhood computer
-description: Propose a new boot machine. Accuracy is the whole joke.
-title: "[machine] "
-labels: ["new-machine"]
+name: Add my childhood mascot
+description: Propose a new flavour. Accuracy is the whole joke.
+title: "[flavour] "
+labels: ["new-flavour"]
 body:
   - type: markdown
     attributes:
       value: |
-        A machine is one TOML file (see `docs/machines.md`). What we need most is an
-        accurate record of what the real screen said, so the one changed word lands.
-        Read `docs/voice.md` before proposing any wording.
+        A flavour is one TOML file (see `docs/flavours.md`). What we need most is an
+        accurate record of the one part a BIOS should detect, so the one changed word
+        lands. Read `docs/voice.md` before proposing any wording.
   - type: input
-    id: machine
+    id: flavour
     attributes:
-      label: The machine, in descriptive terms
-      description: Era and kind, for example "1982 8-bit home computer with a blue screen".
+      label: The flavour, in descriptive terms
+      description: A creature or object, for example "a golden retriever" or "a cassette tape".
     validations:
       required: true
   - type: input
@@ -22,12 +22,11 @@ body:
       label: Year
     validations:
       required: true
-  - type: textarea
-    id: screen
+  - type: input
+    id: part
     attributes:
-      label: What the boot screen actually said
-      description: Line by line, spacing included, as faithfully as you can.
-      render: text
+      label: The one part a BIOS should detect
+      description: For the unicorn it is the horn. What is it for yours, and what does the BIOS report about it?
     validations:
       required: true
   - type: textarea

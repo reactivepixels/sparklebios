@@ -2,7 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 /// Every test runs against an empty config and state directory, so the
-/// developer's own `config.toml` can never change which machine boots.
+/// developer's own `config.toml` can never change which flavour boots.
 fn bios() -> Command {
     let sandbox = std::env::temp_dir().join("sparklebios-test-sandbox");
     let mut cmd = Command::cargo_bin("bios").unwrap();
@@ -18,6 +18,48 @@ fn version_prints_crate_version() {
         .assert()
         .success()
         .stdout(predicate::str::contains("0.1.0"));
+}
+
+#[test]
+fn help_and_bare_invocation_print_the_exact_top_level_help() {
+    let version = env!("CARGO_PKG_VERSION");
+    let expected = format!(
+        r#"SparkleBIOS {version}
+A 1995 POST screen for your terminal that is secretly a health check.
+
+Usage: bios <COMMAND>
+
+Everyday:
+  boot               Play the boot screen now
+  flavours           List the personalities you can boot as
+  use <FLAVOUR>      Boot as that flavour from now on
+  theme list         List the matching Ghostty themes
+  theme use <NAME>   Install the themes and switch Ghostty to one
+
+Setup:
+  init zsh           Print the hook. Add this to the end of ~/.zshrc:
+                     command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
+  theme install      Install the theme files without switching
+
+Try:
+  bios boot --flavour sumo     Preview a flavour without changing anything
+  bios use sumo                Make it permanent
+  bios use                     Show which flavour is set
+  bios theme use mane          Switch Ghostty to the Mane theme
+  SPARKLEBIOS_BOOT=0           Set this in a shell to stop it booting there
+
+Options:
+  -h, --help         Print help
+  -V, --version      Print version
+"#
+    );
+    for args in [vec!["--help"], vec!["help"], Vec::<&str>::new()] {
+        bios()
+            .args(&args)
+            .assert()
+            .success()
+            .stdout(expected.clone());
+    }
 }
 
 #[test]
@@ -54,17 +96,15 @@ fn boot_prints_nothing_when_stdout_is_not_a_tty() {
 }
 
 #[test]
-fn preview_renders_pc85_without_touching_state() {
+fn preview_with_flavour_renders_pc95_without_touching_state() {
     let state = tempfile::tempdir().unwrap();
     bios()
-        .args(["boot", "--fast"])
+        .args(["boot", "--flavour", "unicorn"])
         .env("XDG_STATE_HOME", state.path())
         .env("NO_COLOR", "1")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "The UNICORN Personal Computer Basic",
-        ))
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"))
         .stdout(predicate::str::contains("\x1b").not());
     assert!(!state.path().join("sparklebios").exists());
 }
@@ -74,7 +114,7 @@ fn preview_renders_pc85_without_touching_state() {
 #[test]
 fn preview_shows_the_memory_count_on_macos() {
     bios()
-        .args(["boot", "--fast"])
+        .args(["boot", "--machine", "pc95"])
         .env("NO_COLOR", "1")
         .assert()
         .success()
@@ -82,9 +122,9 @@ fn preview_shows_the_memory_count_on_macos() {
 }
 
 #[test]
-fn preview_full_renders_pc95_and_omits_the_streak_line() {
+fn preview_omits_the_streak_line() {
     bios()
-        .args(["boot", "--full"])
+        .args(["boot", "--flavour", "unicorn"])
         .env("NO_COLOR", "1")
         .assert()
         .success()
@@ -94,9 +134,9 @@ fn preview_full_renders_pc95_and_omits_the_streak_line() {
 }
 
 #[test]
-fn preview_full_omits_shell_boot_time() {
+fn preview_omits_shell_boot_time() {
     bios()
-        .args(["boot", "--full"])
+        .args(["boot", "--machine", "pc95"])
         .env("NO_COLOR", "1")
         .assert()
         .success()
@@ -114,29 +154,22 @@ fn unknown_machine_is_silent_and_successful() {
 }
 
 #[test]
-fn full_and_fast_conflict() {
-    bios().args(["boot", "--full", "--fast"]).assert().failure();
-}
-
-#[test]
-fn machines_lists_the_roster() {
+fn preview_with_a_user_machine_file_renders_it() {
+    let config = tempfile::tempdir().unwrap();
+    let machines_dir = config.path().join("sparklebios/machines");
+    std::fs::create_dir_all(&machines_dir).unwrap();
+    std::fs::write(
+        machines_dir.join("custom.toml"),
+        "id = \"custom\"\nname = \"Custom\"\ncols = 40\nfg = \"#AAAAAA\"\nbright = \"#FFFFFF\"\naccent = \"#FFFF55\"\n[[step]]\nprint = \"A custom machine\"\n",
+    )
+    .unwrap();
     bios()
-        .arg("machines")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("pc95"))
-        .stdout(predicate::str::contains("pc85"))
-        .stdout(predicate::str::contains("c64"));
-}
-
-#[test]
-fn preview_renders_c64() {
-    bios()
-        .args(["boot", "--machine", "c64"])
+        .args(["boot", "--machine", "custom"])
+        .env("XDG_CONFIG_HOME", config.path())
         .env("NO_COLOR", "1")
         .assert()
         .success()
-        .stdout(predicate::str::contains("**** UNICORN 64 BASIC V2 ****"));
+        .stdout(predicate::str::contains("A custom machine"));
 }
 
 #[test]
@@ -154,53 +187,21 @@ fn hook_prints_nothing_to_stdout_and_exits_zero() {
 #[test]
 fn no_animate_flag_is_accepted() {
     bios()
-        .args(["boot", "--fast", "--no-animate"])
+        .args(["boot", "--machine", "pc95", "--no-animate"])
         .env("NO_COLOR", "1")
         .assert()
         .success();
 }
 
 #[test]
-fn use_sets_both_full_and_fast() {
+fn use_with_no_id_prints_the_current_flavour() {
     let config = tempfile::tempdir().unwrap();
-    bios()
-        .args(["use", "c64"])
-        .env("XDG_CONFIG_HOME", config.path())
-        .assert()
-        .success();
     bios()
         .arg("use")
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success()
-        .stdout("Full show  : c64\nEvery boot : c64\nFlavour    : unicorn\n");
-}
-
-#[test]
-fn use_fast_leaves_the_full_show_at_the_default() {
-    let config = tempfile::tempdir().unwrap();
-    bios()
-        .args(["use", "c64", "--fast"])
-        .env("XDG_CONFIG_HOME", config.path())
-        .assert()
-        .success()
-        .stdout("Full show  : pc95\nEvery boot : c64\nFlavour    : unicorn\n");
-}
-
-#[test]
-fn use_reset_returns_to_the_defaults() {
-    let config = tempfile::tempdir().unwrap();
-    bios()
-        .args(["use", "c64"])
-        .env("XDG_CONFIG_HOME", config.path())
-        .assert()
-        .success();
-    bios()
-        .args(["use", "--reset"])
-        .env("XDG_CONFIG_HOME", config.path())
-        .assert()
-        .success()
-        .stdout("Full show  : pc95\nEvery boot : pc85\nFlavour    : unicorn\n");
+        .stdout("Flavour : unicorn\n");
 }
 
 #[test]
@@ -212,25 +213,27 @@ fn use_with_an_unknown_id_fails_and_writes_nothing() {
         .assert()
         .failure()
         .code(1)
-        .stderr("bios: no machine called nope. Try: bios machines\n");
+        .stderr("bios: no flavour called nope. Try: bios flavours\n");
     assert!(!config.path().join("sparklebios/config.toml").exists());
 }
 
 #[test]
-fn use_then_boot_fast_picks_up_the_chosen_machine() {
+fn use_then_boot_preview_picks_up_the_chosen_flavour() {
     let config = tempfile::tempdir().unwrap();
     bios()
-        .args(["use", "c64"])
+        .args(["use", "sumo"])
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success();
     bios()
-        .args(["boot", "--fast"])
+        .args(["boot", "--machine", "pc95"])
         .env("XDG_CONFIG_HOME", config.path())
         .env("NO_COLOR", "1")
         .assert()
         .success()
-        .stdout(predicate::str::contains("**** UNICORN 64 BASIC V2 ****"));
+        .stdout(predicate::str::contains(
+            "Yokozuna Modular BIOS v1.991, Immovable",
+        ));
 }
 
 #[test]
@@ -244,9 +247,9 @@ fn flavours_lists_both() {
 }
 
 #[test]
-fn boot_full_with_flavour_sumo_prints_its_wording() {
+fn boot_preview_with_flavour_sumo_prints_its_wording() {
     bios()
-        .args(["boot", "--full", "--flavour", "sumo"])
+        .args(["boot", "--flavour", "sumo"])
         .env("NO_COLOR", "1")
         .assert()
         .success()
@@ -256,15 +259,15 @@ fn boot_full_with_flavour_sumo_prints_its_wording() {
 }
 
 #[test]
-fn use_flavour_sumo_then_boot_full_picks_it_up_and_use_reports_it() {
+fn use_flavour_sumo_then_boot_preview_picks_it_up_and_use_reports_it() {
     let config = tempfile::tempdir().unwrap();
     bios()
-        .args(["use", "--flavour", "sumo"])
+        .args(["use", "sumo"])
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success();
     bios()
-        .args(["boot", "--full"])
+        .args(["boot", "--machine", "pc95"])
         .env("XDG_CONFIG_HOME", config.path())
         .env("NO_COLOR", "1")
         .assert()
@@ -277,20 +280,7 @@ fn use_flavour_sumo_then_boot_full_picks_it_up_and_use_reports_it() {
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("Flavour    : sumo"));
-}
-
-#[test]
-fn use_with_an_unknown_flavour_fails_and_writes_nothing() {
-    let config = tempfile::tempdir().unwrap();
-    bios()
-        .args(["use", "--flavour", "nope"])
-        .env("XDG_CONFIG_HOME", config.path())
-        .assert()
-        .failure()
-        .code(1)
-        .stderr("bios: no flavour called nope. Try: bios flavours\n");
-    assert!(!config.path().join("sparklebios/config.toml").exists());
+        .stdout(predicate::str::contains("Flavour : sumo"));
 }
 
 #[test]
@@ -308,7 +298,135 @@ fn theme_install_writes_every_theme_file() {
         "rainbows-and-unicorns-ega",
         "rainbows-and-unicorns-workbench",
         "rainbows-and-unicorns-mane",
+        "rainbows-and-unicorns-miami",
+        "rainbows-and-unicorns-arcade",
+        "rainbows-and-unicorns-vhs",
+        "rainbows-and-unicorns-den",
     ] {
         assert!(dir.path().join(name).is_file(), "{name} missing");
     }
+}
+
+#[test]
+fn theme_list_prints_short_names_and_full_names_in_order() {
+    let expected = [
+        ("six", "rainbows-and-unicorns"),
+        ("paper", "rainbows-and-unicorns-paper"),
+        ("ega", "rainbows-and-unicorns-ega"),
+        ("workbench", "rainbows-and-unicorns-workbench"),
+        ("mane", "rainbows-and-unicorns-mane"),
+        ("miami", "rainbows-and-unicorns-miami"),
+        ("arcade", "rainbows-and-unicorns-arcade"),
+        ("vhs", "rainbows-and-unicorns-vhs"),
+        ("den", "rainbows-and-unicorns-den"),
+    ]
+    .iter()
+    .map(|(short, full)| format!("{short:<11}{full}\n"))
+    .collect::<String>();
+    bios()
+        .args(["theme", "list"])
+        .assert()
+        .success()
+        .stdout(expected);
+}
+
+#[test]
+fn theme_use_installs_files_and_sets_the_config_line() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    std::fs::write(
+        &config_path,
+        "font-size = 14\ntheme = old-theme\ncursor-style = block\n",
+    )
+    .unwrap();
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(
+            "Ghostty theme : rainbows-and-unicorns-mane\nReload Ghostty's config or restart the terminal to see it.\n",
+        );
+    assert!(themes_dir
+        .path()
+        .join("rainbows-and-unicorns-mane")
+        .is_file());
+    let contents = std::fs::read_to_string(&config_path).unwrap();
+    assert_eq!(
+        contents,
+        "font-size = 14\ntheme = rainbows-and-unicorns-mane\ncursor-style = block\n"
+    );
+}
+
+#[test]
+fn theme_use_accepts_a_full_name() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    bios()
+        .args(["theme", "use", "rainbows-and-unicorns-paper", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(
+            "Ghostty theme : rainbows-and-unicorns-paper\nReload Ghostty's config or restart the terminal to see it.\n",
+        );
+}
+
+#[test]
+fn theme_use_appends_the_theme_line_when_none_exists() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    std::fs::write(&config_path, "font-size = 14\n").unwrap();
+    bios()
+        .args(["theme", "use", "six", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(&config_path).unwrap();
+    assert_eq!(contents, "font-size = 14\ntheme = rainbows-and-unicorns\n");
+}
+
+#[test]
+fn theme_use_creates_the_config_file_when_missing() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    bios()
+        .args(["theme", "use", "ega", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(&config_path).unwrap(),
+        "theme = rainbows-and-unicorns-ega\n"
+    );
+}
+
+#[test]
+fn theme_use_with_an_unknown_name_fails_and_writes_nothing() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    bios()
+        .args(["theme", "use", "nope", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr("bios: no theme called nope. Try: bios theme list\n");
+    assert!(!config_path.exists());
+    assert!(!themes_dir.path().join("rainbows-and-unicorns").exists());
 }

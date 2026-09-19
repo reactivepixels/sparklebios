@@ -17,27 +17,16 @@
 
 # SparkleBIOS
 
-```
-     Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally
-     Copyright (C) 1985-2026, Rainbows & Unicorns, Inc.
+Every new terminal tab boots. The screen is period correct, takes milliseconds,
+and every line on it is true: that is your real processor, your real disk, your
+real shell, and one fictional horn.
 
-UNI-440BX ACPI BIOS Revision 1007
+<p align="center">
+  <img src="docs/assets/screen-unicorn.png" alt="The unicorn flavour booting in a terminal" width="880">
+</p>
 
-Main Processor : Apple Silicon, 14 cores, 0 horns
-Memory Testing : 37748736K OK
-
-Detecting Primary Master   ... APPLE SSD AP1024Z
-Detecting Primary Slave    ... node v22.23.0
-Detecting Secondary Master ... cargo, swift, python3
-Detecting Horn             ... 1 found (7-band, sparkle capable)
-
-Primary Master S.M.A.R.T. status BAD, 94% full. Backup and replace.
-Press F1 to continue
-
-Boot time: 412ms
-```
-
-> **Status: pre-alpha.** Milestones M0 to M2 work from source: the theme, the hook, three painted boot machines, the unicorn, and the animated show. The health checks come next, and the screen above previews where they are headed.
+> **Status: pre-alpha, and usable every day.** The boot screen, flavours, themes
+> and the animated show all work from source on macOS. Health checks are next.
 
 ## Install from source
 
@@ -45,37 +34,69 @@ Boot time: 412ms
 cargo install --git https://github.com/reactivepixels/sparklebios
 ```
 
-Then add this line to the END of your `~/.zshrc`:
+Add this line to the END of your `~/.zshrc`, then open a new tab. It boots.
 
 ```
 command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
 ```
 
-Open a new tab. It boots.
+To try it without touching your shell: `bios boot`
 
-For the theme: `bios theme install`, then follow the four lines it prints.
+## Flavours
 
-To try it without touching your shell: `bios boot --full`
+One screen, swappable personality. A flavour supplies the mascot, the firmware,
+the vendor, the one part of it a BIOS would detect, and a pool of rotating quips.
 
-To choose which machine boots: `bios machines`, then `bios use <id>`.
+```
+bios flavours            # what is available
+bios boot --flavour sumo # preview one
+bios use sumo            # make it permanent
+```
 
-To change the personality: `bios flavours`, then `bios use --flavour <id>`.
+<p align="center">
+  <img src="docs/assets/screen-sumo.png" alt="The sumo flavour booting in a terminal" width="880">
+</p>
 
-## What it is
+| Flavour | The BIOS detects | It says things like |
+|---|---|---|
+| `unicorn` | Horn: 1 found (7-band, sparkle capable) | Warning: horn is not hot-swappable. |
+| `sumo` | Salt: 1 handful (thrown) | Process priority: heavyweight. |
 
-Every new terminal tab boots. The boot screen is period correct, takes about
-300ms, and every line on it is true: that is your real disk, those are your real
-runtimes, and when it says your drive is failing it means the disk is 94% full.
+A flavour is one TOML file and one sprite, so adding yours needs no Rust. See
+[docs/flavours.md](docs/flavours.md).
 
-SparkleBIOS is three things that share one binary and one visual language:
+## Themes
 
-| Part | What it does |
-|---|---|
-| **The BIOS** | A POST screen on every new tab that is really a health check. One screen, swappable flavours: the unicorn is the default, and the sumo is immovable. `bios setup` will be a blue BIOS setup utility, because of course it will. |
-| **neigh** | A rainbow pipe with era palettes: `make \| neigh`. Bands, dither and raster bars, never gradients, because 1985 had sixteen colours on a good day. |
-| **The theme** | "Rainbows and Unicorns", a serious 1985 Ghostty theme in five variants. The name is the only joke in it. |
+"Rainbows and Unicorns" is a Ghostty theme in nine variants. The name is the
+only joke in it: contrast is checked, and a test fails if a theme file and its
+documentation ever disagree.
+
+```
+bios theme list          # the nine
+bios theme use miami     # install them and switch Ghostty to one
+```
+
+<p align="center">
+  <img src="docs/assets/themes.png" alt="Nine theme variants side by side" width="880">
+</p>
+
+Beside the themes, in [extras/](extras/README.md): a cursor trail shader, tool
+colours for `ls`, `bat`, `fzf`, `delta` and friends that follow whichever variant
+you run, and matching starship palettes. All optional.
+
+## The show
+
+Once a day the boot is animated: the memory count ticks up and each device is
+detected in turn. Press any key to skip it. Whatever you typed during the show
+is waiting on your prompt when it ends, and the terminal is never left in a
+strange state. Every other boot is drawn instantly.
+
+Where the terminal can draw images (Ghostty, kitty) the mascot is a real image.
+Everywhere else it is drawn with half-block characters.
 
 ## The jokes are true
+
+These are the health checks arriving in the next milestone.
 
 | The screen says | It means |
 |---|---|
@@ -92,35 +113,37 @@ SparkleBIOS is three things that share one binary and one visual language:
 2. **Never slow or break the shell.** Under 30ms of work before the first frame. A failure prints nothing and exits 0. One environment variable turns it all off.
 3. **Jokes carry facts.** Every gag line is backed by a real probe.
 4. **Quantised, not gradient.** Three to sixteen colours and hard edges.
-5. **Each machine speaks in its own voice.** The same warning reads differently on a PC, a VMS login and a home computer.
-6. **Content is data.** Boot machines, palettes and gags are files, not code.
+5. **Each flavour speaks in its own voice.** The same warning reads differently from a unicorn and from a sumo.
+6. **Content is data.** Flavours, themes and gags are files, not code.
 7. **No network.** There is no network code in this project and there never will be.
 
 ## Roadmap
 
 | # | Milestone | Status |
 |---|---|---|
-| M0 | The theme: four Ghostty theme files | done |
+| M0 | The theme: nine Ghostty theme variants, `bios theme use` | done |
 | M1 | BIOS skeleton: shell hook, boot modes, static POST screens | done |
-| M2 | The look and the show: painted screens, the unicorn, the `c64` machine, animation, skip keys, typeahead preserved | done |
+| M2 | The look and the show: the mascot as a real image, animation, skip keys, typeahead preserved | done |
 | M2.5 | Flavours: `unicorn` and `sumo`, with more mascots to come | done |
 | M3 | Health checks: boot device order, IRQ conflicts, the virus scan, disk trend | planned |
-| M4 | neigh | planned |
+| M4 | Sprinkles: optional sound and text effects, off by default, and `bios config edit` | planned |
+| M4.5 | neigh, the rainbow pipe | planned |
 | M5 | `bios setup` | planned |
 | M6 | Project POST when you `cd` into a repo | planned |
-| M7 | More boot machines | planned |
+| M7 | More flavours | planned |
 | M8 | Launch readiness: Linux, bash and fish, `bios fetch`, prebuilt binaries | planned |
 
 Details live in [ROADMAP.md](ROADMAP.md), and the rest of the paperwork is in [the manual](docs/README.md).
 
-## Add your childhood computer
+## Add your childhood mascot
 
-A boot machine is a single TOML file: some geometry, some colours, an ordered
-list of steps, and how that machine phrases bad news. If the computer you grew
-up with is not on the list, it should be. See [CONTRIBUTING.md](CONTRIBUTING.md).
-The format is documented in [docs/machines.md](docs/machines.md). If you would
-rather not write TOML, open an issue and tell us which machine and what its boot
-screen said.
+A flavour is one TOML file and one sprite: a mascot, some firmware wording, the
+one part of it a BIOS would detect, and a handful of deadpan quips. If the
+creature or object you grew up with is not on the list, it should be. The format
+is in [docs/flavours.md](docs/flavours.md), the tone is in
+[docs/voice.md](docs/voice.md), and [CONTRIBUTING.md](CONTRIBUTING.md) has the
+house rules. If you would rather not write TOML, open an issue and tell us what
+the BIOS should detect.
 
 ## Questions people ask
 

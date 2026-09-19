@@ -1,7 +1,0 @@
-37748736K OK
-
-The UNICORN Personal Computer Basic
-Version C1.85 Copyright Sparkle Corp 1985
-212GB free, 1 horn detected
-Cassette BASIC loaded. Please do not look for the cassette.
-Ok

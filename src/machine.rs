@@ -126,17 +126,16 @@ struct RawStep {
 }
 
 const PC95_TOML: &str = include_str!("../machines/pc95.toml");
-const PC85_TOML: &str = include_str!("../machines/pc85.toml");
-const C64_TOML: &str = include_str!("../machines/c64.toml");
 
 pub fn parse(src: &str) -> Result<Machine, MachineError> {
     let raw: RawMachine = toml::from_str(src).map_err(|e| MachineError::Parse(e.to_string()))?;
     validate(raw)
 }
 
-/// Built-in machines, in roster order: pc95, pc85, c64. A built-in that fails to parse is skipped.
+/// Built-in machines: just `pc95`, the one screen SparkleBIOS ships. Skipped (yielding an empty
+/// list) if it somehow fails to parse.
 pub fn builtins() -> Vec<Machine> {
-    [PC95_TOML, PC85_TOML, C64_TOML]
+    [PC95_TOML]
         .into_iter()
         .filter_map(|src| parse(src).ok())
         .collect()
@@ -428,9 +427,9 @@ print = "hello"
     }
 
     #[test]
-    fn builtins_are_pc95_then_pc85_then_c64() {
+    fn builtins_is_pc95_only() {
         let ids: Vec<String> = builtins().into_iter().map(|m| m.id).collect();
-        assert_eq!(ids, vec!["pc95", "pc85", "c64"]);
+        assert_eq!(ids, vec!["pc95"]);
     }
 
     #[test]
@@ -607,17 +606,22 @@ print = "hello"
     }
 
     #[test]
-    fn builtins_carry_a_quip_step_and_unflavoured_ones_carry_quips() {
+    fn builtins_carry_a_quip_step() {
         for m in builtins() {
-            if !m.flavoured {
-                assert!(m.quips.len() >= 5, "{} needs quips", m.id);
-            }
             assert!(m.steps.iter().any(|s| matches!(s, Step::Quip { .. })));
         }
-        assert_eq!(
-            find("pc85", None).unwrap().quips[0],
-            "Cassette BASIC loaded. Please do not look for the cassette."
+    }
+
+    #[test]
+    fn an_unflavoured_machine_carries_its_own_quips() {
+        let src = MINIMAL.replace(
+            "[[step]]\nprint = \"hello\"\n",
+            "quips = [\"first quip\", \"second quip\", \"third quip\"]\n[[step]]\nquip = true\n",
         );
+        let m = parse(&src).unwrap();
+        assert!(!m.flavoured);
+        assert_eq!(m.quips[0], "first quip");
+        assert!(m.steps.iter().any(|s| matches!(s, Step::Quip { .. })));
     }
 
     #[test]
@@ -681,15 +685,23 @@ print = "hello"
     fn user_file_overrides_builtin_and_bad_user_files_are_ignored() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
-            dir.path().join("pc85.toml"),
-            MINIMAL.replace("\"t1\"", "\"pc85\""),
+            dir.path().join("pc95.toml"),
+            MINIMAL.replace("\"t1\"", "\"pc95\""),
         )
         .unwrap();
         std::fs::write(dir.path().join("broken.toml"), "id = ").unwrap();
-        let m = find("pc85", Some(dir.path())).unwrap();
+        let m = find("pc95", Some(dir.path())).unwrap();
         assert_eq!(m.name, "Test");
         let ids: Vec<String> = list(Some(dir.path())).into_iter().map(|m| m.id).collect();
-        assert_eq!(ids, vec!["pc95", "pc85", "c64"]);
+        assert_eq!(ids, vec!["pc95"]);
+    }
+
+    #[test]
+    fn a_user_file_with_a_new_id_adds_to_the_roster() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("custom.toml"), MINIMAL).unwrap();
+        let ids: Vec<String> = list(Some(dir.path())).into_iter().map(|m| m.id).collect();
+        assert_eq!(ids, vec!["pc95", "t1"]);
     }
 
     #[test]
@@ -707,10 +719,10 @@ print = "hello"
     #[test]
     fn find_ignores_a_user_file_whose_id_does_not_match_its_name() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("pc85.toml"), MINIMAL).unwrap();
+        std::fs::write(dir.path().join("pc95.toml"), MINIMAL).unwrap();
         assert_eq!(
-            find("pc85", Some(dir.path())).unwrap().name,
-            "1985 PC/AT style"
+            find("pc95", Some(dir.path())).unwrap().name,
+            "Mid-90s PC POST"
         );
     }
 }

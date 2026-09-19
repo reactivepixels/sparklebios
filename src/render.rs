@@ -890,6 +890,47 @@ mod tests {
         crate::flavour::find("sumo", None).unwrap()
     }
 
+    /// A small unflavoured, painted, bordered, uppercase machine with its own quips, exercising
+    /// the engine features the retired `pc85` and `c64` machines used to cover.
+    const OTHER_MACHINE: &str = r##"
+id = "other"
+name = "Other"
+cols = 40
+fg = "#6C5EB5"
+bright = "#FFFFFF"
+accent = "#B8C76F"
+bg = "#352879"
+paint = true
+border = "#6C5EB5"
+pad_x = 0
+pad_y = 1
+uppercase = true
+quips = [
+  "quip one",
+  "quip two",
+  "quip three",
+]
+
+[[step]]
+print = "ready."
+
+[[step]]
+count = "{n}K found"
+to = "{mem.kb}"
+ms = 40
+
+[[step]]
+detect = "Detecting drive "
+result = "{disk.free_gb}GB"
+
+[[step]]
+quip = true
+"##;
+
+    fn other_machine() -> Machine {
+        machine::parse(OTHER_MACHINE).unwrap()
+    }
+
     /// `Facts::fixture()` with `flavour`'s own slots applied, for tests that render a flavoured
     /// machine's wording rather than just checking that its quips are reachable.
     fn fixture_with_flavour(flavour: &Flavour) -> Facts {
@@ -949,38 +990,6 @@ mod tests {
                 Some(&flavour)
             ),
             golden("pc95")
-        );
-    }
-    #[test]
-    fn pc85_matches_golden() {
-        let m = machine::find("pc85", None).unwrap();
-        assert_eq!(
-            render_static(
-                &m,
-                &Facts::fixture(),
-                ColorMode::None,
-                0,
-                None,
-                Graphics::None,
-                None
-            ),
-            golden("pc85")
-        );
-    }
-    #[test]
-    fn c64_matches_golden() {
-        let m = machine::find("c64", None).unwrap();
-        assert_eq!(
-            render_static(
-                &m,
-                &Facts::fixture(),
-                ColorMode::None,
-                0,
-                None,
-                Graphics::None,
-                None
-            ),
-            golden("c64")
         );
     }
     #[test]
@@ -1078,10 +1087,20 @@ style = "accent"
     }
     #[test]
     fn ansi16_uses_basic_codes() {
-        let m = machine::find("pc85", None).unwrap();
+        let src = r##"
+id = "t5"
+name = "Test"
+cols = 80
+fg = "#AAAAAA"
+bright = "#FFFFFF"
+accent = "#FFFF55"
+[[step]]
+print = "37748736K OK"
+"##;
+        let m = machine::parse(src).unwrap();
         let out = render_static(
             &m,
-            &Facts::fixture(),
+            &Facts::new(),
             ColorMode::Ansi16,
             0,
             None,
@@ -1145,8 +1164,8 @@ style = "accent"
         assert_eq!(color_mode_from_env(None, None), ColorMode::Ansi16);
     }
     #[test]
-    fn painted_c64_at_80_columns_has_a_44_wide_border_and_text_rows() {
-        let m = machine::find("c64", None).unwrap();
+    fn a_painted_bordered_uppercase_machine_is_44_wide_with_matching_colours() {
+        let m = other_machine();
         let out = render_static(
             &m,
             &Facts::fixture(),
@@ -1171,8 +1190,8 @@ style = "accent"
         assert!(text_row.contains("38;2;108;94;181;48;2;53;40;121"));
     }
     #[test]
-    fn c64_falls_back_to_plain_truecolor_when_too_narrow_or_unknown() {
-        let m = machine::find("c64", None).unwrap();
+    fn a_painted_machine_falls_back_to_plain_truecolor_when_too_narrow_or_unknown() {
+        let m = other_machine();
         for term_cols in [Some(30), None] {
             let out = render_static(
                 &m,
@@ -1187,20 +1206,27 @@ style = "accent"
         }
     }
     #[test]
-    fn none_mode_with_paint_is_byte_identical_to_the_golden() {
-        let m = machine::find("c64", None).unwrap();
-        assert_eq!(
-            render_static(
-                &m,
-                &Facts::fixture(),
-                ColorMode::None,
-                0,
-                Some(80),
-                Graphics::None,
-                None
-            ),
-            golden("c64")
+    fn none_mode_with_paint_is_the_same_regardless_of_term_cols() {
+        let m = other_machine();
+        let with_cols = render_static(
+            &m,
+            &Facts::fixture(),
+            ColorMode::None,
+            0,
+            Some(80),
+            Graphics::None,
+            None,
         );
+        let without_cols = render_static(
+            &m,
+            &Facts::fixture(),
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            None,
+        );
+        assert_eq!(with_cols, without_cols);
     }
     #[test]
     fn a_quip_longer_than_cols_is_skipped() {
@@ -1507,13 +1533,19 @@ print = "{long_line}"
 
     #[test]
     fn animated_layout_final_spans_agree_with_layout() {
-        for id in ["pc95", "pc85", "c64"] {
-            let m = machine::find(id, None).unwrap();
-            let lines = layout(&m, &Facts::fixture(), 0, None);
-            let animated = animated_layout(&m, &Facts::fixture(), 0, None);
-            let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
-            assert_eq!(lines, animated_spans, "{id} disagrees on its final lines");
-        }
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        let m = machine::find("pc95", None).unwrap();
+        let lines = layout(&m, &facts, 0, Some(&flavour));
+        let animated = animated_layout(&m, &facts, 0, Some(&flavour));
+        let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
+        assert_eq!(lines, animated_spans, "pc95 disagrees on its final lines");
+
+        let m = other_machine();
+        let lines = layout(&m, &Facts::fixture(), 0, None);
+        let animated = animated_layout(&m, &Facts::fixture(), 0, None);
+        let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
+        assert_eq!(lines, animated_spans, "other disagrees on its final lines");
     }
 
     #[test]
