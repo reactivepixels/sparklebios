@@ -103,7 +103,8 @@ SparkleBIOS is three things that share one binary and one visual language:
 | M0 | The theme: four Ghostty theme files | done |
 | M1 | BIOS skeleton: shell hook, boot modes, static POST screens | done |
 | M2 | The look and the show: painted screens, the unicorn, the `c64` machine, animation, skip keys, typeahead preserved | done |
-| M3 | Health checks with machine-voiced warnings | planned |
+| M2.5 | Flavours: `unicorn` and `sumo`, with more mascots to come | done |
+| M3 | Health checks: boot device order, IRQ conflicts, the virus scan, disk trend | planned |
 | M4 | neigh | planned |
 | M5 | `bios setup` | planned |
 | M6 | Project POST when you `cd` into a repo | planned |
