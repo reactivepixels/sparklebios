@@ -21,6 +21,10 @@ impl Facts {
         self.0.get(key).map(String::as_str)
     }
 
+    pub fn remove(&mut self, key: &str) {
+        self.0.remove(key);
+    }
+
     /// Deterministic facts for tests and golden files.
     pub fn fixture() -> Self {
         let mut facts = Self::new();
@@ -71,6 +75,14 @@ mod tests {
         let f = Facts::fixture();
         assert_eq!(f.get("mem.kb"), Some("37748736"));
         assert_eq!(f.get("nope"), None);
+    }
+
+    #[test]
+    fn remove_deletes_a_key() {
+        let mut f = Facts::fixture();
+        assert!(f.get("shell.boot_ms").is_some());
+        f.remove("shell.boot_ms");
+        assert_eq!(f.get("shell.boot_ms"), None);
     }
 
     #[test]

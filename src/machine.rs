@@ -245,14 +245,14 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
             )));
         }
     }
-    if raw.paint && raw.bg.is_none() {
-        return Err(MachineError::Invalid("paint requires bg to be set".into()));
-    }
     if let Some(border) = &raw.border {
         if !raw.paint {
             return Err(MachineError::Invalid(
                 "border requires paint to be true".into(),
             ));
+        }
+        if raw.bg.is_none() {
+            return Err(MachineError::Invalid("border requires bg to be set".into()));
         }
         if !valid_colour(border) {
             return Err(MachineError::Invalid(format!(
@@ -444,12 +444,14 @@ print = "hello"
     }
 
     #[test]
-    fn rejects_paint_without_bg() {
+    fn accepts_paint_without_bg() {
         let src = MINIMAL.replace(
             "accent = \"#FFFF55\"\n",
             "accent = \"#FFFF55\"\npaint = true\n",
         );
-        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+        let m = parse(&src).unwrap();
+        assert!(m.paint);
+        assert_eq!(m.bg, None);
     }
 
     #[test]
@@ -457,6 +459,15 @@ print = "hello"
         let src = MINIMAL.replace(
             "accent = \"#FFFF55\"\n",
             "accent = \"#FFFF55\"\nbg = \"#000000\"\nborder = \"#123456\"\n",
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn rejects_border_without_bg() {
+        let src = MINIMAL.replace(
+            "accent = \"#FFFF55\"\n",
+            "accent = \"#FFFF55\"\npaint = true\nborder = \"#123456\"\n",
         );
         assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
     }

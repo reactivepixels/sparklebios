@@ -380,6 +380,27 @@ fn bg_block(rgb: (u8, u8, u8), width: usize) -> String {
     format!("\x1b[48;2;{r};{g};{b}m{}\x1b[0m", " ".repeat(width))
 }
 
+/// `width` cells of fill: `bg_block` when `bg` is set, or plain spaces with no SGR when the
+/// screen is a transparent painted one.
+fn fill(bg: Option<(u8, u8, u8)>, width: usize) -> String {
+    match bg {
+        Some(rgb) => bg_block(rgb, width),
+        None => " ".repeat(width),
+    }
+}
+
+/// `text` painted in `rgb` as foreground, plus `bg` as background when it is set: foreground-only
+/// SGR for a transparent painted screen.
+fn fg_text(rgb: (u8, u8, u8), bg: Option<(u8, u8, u8)>, text: &str) -> String {
+    let (r, g, b) = rgb;
+    match bg {
+        Some((br, bg_g, bb)) => {
+            format!("\x1b[38;2;{r};{g};{b};48;2;{br};{bg_g};{bb}m{text}\x1b[0m")
+        }
+        None => format!("\x1b[38;2;{r};{g};{b}m{text}\x1b[0m"),
+    }
+}
+
 /// One row of a painted block, built from a logical line's spans: border pillars, background
 /// padding, an optional logo box, the line's text (never truncated to make room for a badge)
 /// filled out with background, the badge itself, the padding and pillars mirrored, then a
@@ -393,10 +414,13 @@ fn bg_block(rgb: (u8, u8, u8), width: usize) -> String {
 /// `badge`, when present, is right-aligned inside the `cols` text area, in the accent colour.
 /// The row's own text is drawn at its full width first; if it ends within 2 cells of where the
 /// badge would start, the badge is dropped for this row instead of the text being cut short.
+///
+/// `bg` is `None` for a transparent painted screen (`paint = true` with no `bg`): fill and
+/// padding are then plain spaces with no SGR, and text and the badge use foreground-only SGR.
 #[allow(clippy::too_many_arguments)]
 fn painted_row(
     machine: &Machine,
-    bg: (u8, u8, u8),
+    bg: Option<(u8, u8, u8)>,
     border: Option<(u8, u8, u8)>,
     pad_x: usize,
     cols: usize,
@@ -404,12 +428,11 @@ fn painted_row(
     logo: Option<(Option<&str>, Option<&str>)>,
     badge: Option<&str>,
 ) -> String {
-    let (bg_r, bg_g, bg_b) = bg;
     let mut row = String::new();
     if let Some(border) = border {
         row.push_str(&bg_block(border, 2));
     }
-    row.push_str(&bg_block(bg, pad_x));
+    row.push_str(&fill(bg, pad_x));
 
     let shift = logo.is_some();
     if let Some((cell, kitty_escape)) = logo {
@@ -418,9 +441,9 @@ fn painted_row(
         }
         match cell {
             Some(cell) => row.push_str(cell),
-            None => row.push_str(&bg_block(bg, 14)),
+            None => row.push_str(&fill(bg, 14)),
         }
-        row.push_str(&bg_block(bg, 2));
+        row.push_str(&fill(bg, 2));
     }
     let shift_offset = if shift { 16 } else { 0 };
     let text_budget = cols.saturating_sub(shift_offset);
@@ -435,10 +458,8 @@ fn painted_row(
             continue;
         }
         used += text.chars().count();
-        let (fr, fg, fb) = hex_rgb(colour_for(machine, span.style));
-        row.push_str(&format!(
-            "\x1b[38;2;{fr};{fg};{fb};48;2;{bg_r};{bg_g};{bg_b}m{text}\x1b[0m"
-        ));
+        let rgb = hex_rgb(colour_for(machine, span.style));
+        row.push_str(&fg_text(rgb, bg, &text));
     }
 
     let text_end = shift_offset + used;
@@ -448,17 +469,15 @@ fn painted_row(
     if show_badge {
         let badge = badge.unwrap();
         if badge_start > text_end {
-            row.push_str(&bg_block(bg, badge_start - text_end));
+            row.push_str(&fill(bg, badge_start - text_end));
         }
-        let (ar, ag, ab) = hex_rgb(&machine.accent);
-        row.push_str(&format!(
-            "\x1b[38;2;{ar};{ag};{ab};48;2;{bg_r};{bg_g};{bg_b}m{badge}\x1b[0m"
-        ));
+        let rgb = hex_rgb(&machine.accent);
+        row.push_str(&fg_text(rgb, bg, badge));
     } else if text_end < cols {
-        row.push_str(&bg_block(bg, cols - text_end));
+        row.push_str(&fill(bg, cols - text_end));
     }
 
-    row.push_str(&bg_block(bg, pad_x));
+    row.push_str(&fill(bg, pad_x));
     if let Some(border) = border {
         row.push_str(&bg_block(border, 2));
     }
@@ -482,7 +501,7 @@ const MIN_COLS_FOR_GRAPHICS: usize = 60;
 /// `i + 1`, so the badge starts on the second text row and never competes with the header line
 /// for room.
 fn render_painted(machine: &Machine, lines: &[Vec<Span>], graphics: Graphics) -> String {
-    let bg = hex_rgb(machine.bg.as_deref().unwrap_or("#000000"));
+    let bg = machine.bg.as_deref().map(hex_rgb);
     let border = machine.border.as_deref().map(hex_rgb);
     let pad_x = machine.pad_x as usize;
     let pad_y = machine.pad_y as usize;
@@ -563,7 +582,7 @@ pub struct RowGeometry<'a> {
     machine: &'a Machine,
     mode: ColorMode,
     painted: bool,
-    bg: (u8, u8, u8),
+    bg: Option<(u8, u8, u8)>,
     border: Option<(u8, u8, u8)>,
     pad_x: usize,
     cols: usize,
@@ -593,7 +612,7 @@ pub fn row_geometry<'a>(
 
 impl<'a> RowGeometry<'a> {
     fn build_painted(machine: &'a Machine, graphics: Graphics) -> Self {
-        let bg = hex_rgb(machine.bg.as_deref().unwrap_or("#000000"));
+        let bg = machine.bg.as_deref().map(hex_rgb);
         let border = machine.border.as_deref().map(hex_rgb);
         let pad_x = machine.pad_x as usize;
         let cols = machine.cols as usize;
@@ -637,7 +656,7 @@ impl<'a> RowGeometry<'a> {
             machine,
             mode,
             painted: false,
-            bg: (0, 0, 0),
+            bg: None,
             border: None,
             pad_x: 0,
             cols: machine.cols as usize,
@@ -786,6 +805,41 @@ mod tests {
 
     fn visible_width(s: &str) -> usize {
         strip_ansi(s).chars().count()
+    }
+
+    /// The byte index in `s` where its `col`-th visible character begins, skipping SGR and Kitty
+    /// escape sequences. Returns `s.len()` when `s` has fewer than `col` visible characters.
+    fn visible_col_byte_index(s: &str, col: usize) -> usize {
+        let chars: Vec<(usize, char)> = s.char_indices().collect();
+        let mut visible = 0;
+        let mut i = 0;
+        while i < chars.len() {
+            let (byte_idx, c) = chars[i];
+            if c == '\x1b' && chars.get(i + 1).map(|&(_, c2)| c2) == Some('_') {
+                i += 2;
+                while i < chars.len()
+                    && !(chars[i].1 == '\x1b' && chars.get(i + 1).map(|&(_, c2)| c2) == Some('\\'))
+                {
+                    i += 1;
+                }
+                i += 2;
+                continue;
+            }
+            if c == '\x1b' {
+                i += 1;
+                while i < chars.len() && chars[i].1 != 'm' {
+                    i += 1;
+                }
+                i += 1;
+                continue;
+            }
+            if visible == col {
+                return byte_idx;
+            }
+            visible += 1;
+            i += 1;
+        }
+        s.len()
     }
 
     #[test]
@@ -1046,6 +1100,52 @@ quip = true
         assert_eq!(text_col, pad_x + 16);
         assert!(stripped[1].contains("Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally"));
         assert!(!out.contains("enchantment"));
+    }
+
+    #[test]
+    fn transparent_painted_pc95_has_no_background_but_keeps_geometry() {
+        let m = machine::find("pc95", None).unwrap();
+        assert_eq!(m.bg, None);
+        assert!(m.paint);
+        let out = render_static(
+            &m,
+            &Facts::fixture(),
+            ColorMode::TrueColor,
+            0,
+            Some(100),
+            Graphics::HalfBlocks,
+        );
+        let rows: Vec<&str> = out.lines().collect();
+        let width = visible_width(rows[0]);
+        for row in &rows {
+            assert_eq!(visible_width(row), width, "row {row:?} is not {width} wide");
+        }
+        // The screen fill colour must never appear. The one exception is a logo pixel where both
+        // the upper and lower source pixels are opaque: that background belongs to the sprite,
+        // not the screen, and only ever sits inside the 14-cell logo box.
+        let pad_x = m.pad_x as usize;
+        let pad_y = m.pad_y as usize;
+        let logo_rows = pad_y..pad_y + LOGO_ROWS;
+        for (i, row) in rows.iter().enumerate() {
+            if logo_rows.contains(&i) {
+                let cutoff = visible_col_byte_index(row, pad_x + 14);
+                assert!(
+                    !row[cutoff..].contains("48;2;"),
+                    "row {i} paints a background colour outside the logo box: {row:?}"
+                );
+            } else {
+                assert!(
+                    !row.contains("48;2;"),
+                    "row {i} outside the logo rows paints a background colour: {row:?}"
+                );
+            }
+        }
+        assert!(rows[1].contains("\x1b[49m") || rows[1].contains("  "));
+        let stripped: Vec<String> = rows.iter().map(|r| strip_ansi(r)).collect();
+        let pad_x = m.pad_x as usize;
+        let byte_col = stripped[1].find("Sparkle Modular BIOS").unwrap();
+        let text_col = stripped[1][..byte_col].chars().count();
+        assert_eq!(text_col, pad_x + 16);
     }
 
     #[test]

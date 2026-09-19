@@ -94,6 +94,16 @@ fn preview_full_renders_pc95_and_omits_the_streak_line() {
 }
 
 #[test]
+fn preview_full_omits_shell_boot_time() {
+    bios()
+        .args(["boot", "--full"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Shell boot time").not());
+}
+
+#[test]
 fn unknown_machine_is_silent_and_successful() {
     bios()
         .args(["boot", "--machine", "nope"])

@@ -21,9 +21,9 @@ Top level keys:
 | `fg` | string | yes | Normal text colour, `#RRGGBB`, either case |
 | `bright` | string | yes | Bright text colour, `#RRGGBB` |
 | `accent` | string | yes | Accent colour, `#RRGGBB` |
-| `bg` | string | no | Background colour, `#RRGGBB`. Required when `paint` is true |
-| `paint` | boolean | no | Defaults to false. Paints the whole screen as a block of `bg` when the terminal is TrueColor and wide enough |
-| `border` | string | no | Colour, `#RRGGBB`. Draws a frame around a painted screen. Requires `paint` to be true |
+| `bg` | string | no | Background colour, `#RRGGBB`. When absent on a painted screen, the screen paints no background: see below |
+| `paint` | boolean | no | Defaults to false. Paints the screen when the terminal is TrueColor and wide enough. Fills the block with `bg` when `bg` is set, or leaves it transparent when it is not |
+| `border` | string | no | Colour, `#RRGGBB`. Draws a frame around a painted screen. Requires `paint` to be true and `bg` to be set |
 | `pad_x` | integer | no | Defaults to 2. Blank painted columns left and right of the text, 0 to 8 |
 | `pad_y` | integer | no | Defaults to 1. Blank painted rows above and below the text, 0 to 4 |
 | `uppercase` | boolean | no | Defaults to false. Renders every line in upper case, after slot substitution |
@@ -85,6 +85,13 @@ short) and one line per row after that. A row's own text is never
 truncated to make room for a badge; if it would end within 2 cells of
 where the badge starts, that row simply shows no badge.
 
+A machine with `paint = true` and no `bg` paints transparently: the same
+padding, logo placement and badge placement apply, but no background colour
+is emitted anywhere, including in the logo. Text is drawn in its own
+foreground colour only, and any transparent pixel in the logo shows the
+terminal's own background. A `border` has nothing to frame on a transparent
+screen, so it requires `bg` to be set.
+
 ## Facts available today
 
 | Key | What it is | Example |
@@ -99,7 +106,7 @@ where the badge starts, that row simply shows no badge.
 | `os.version` | Its version | `26.5` |
 | `host.name` | Host name, without a trailing `.local` | `unicorn` |
 | `shell.name` | The shell that is booting | `zsh` |
-| `shell.boot_ms` | How long the shell took to start, measured. Absent when the shell has been running for more than a minute | `412` |
+| `shell.boot_ms` | How long the shell took to start, measured. Absent when the shell has been running for more than 10 seconds | `412` |
 | `date.bios` | Today, the way a BIOS writes it | `09/19/2026` |
 | `date.year` | The year | `2026` |
 | `date.today` | Today in ISO form | `2026-09-19` |

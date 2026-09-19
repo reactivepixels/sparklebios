@@ -4,7 +4,6 @@ cols = 80
 fg = "#AAAAAA"
 bright = "#FFFFFF"
 accent = "#FFFF55"
-bg = "#000000"
 paint = true
 pad_x = 2
 pad_y = 1

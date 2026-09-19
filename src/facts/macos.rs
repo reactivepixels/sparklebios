@@ -133,7 +133,7 @@ fn parent_shell_name(ppid: libc::pid_t) -> Option<String> {
 }
 
 /// Milliseconds since the parent process started, or `None` when it is
-/// unavailable or exceeds the 60 second freshness window.
+/// unavailable or exceeds the 10 second freshness window.
 fn parent_boot_ms(ppid: libc::pid_t) -> Option<u64> {
     // SAFETY: `proc_bsdinfo` is a C struct of plain integer and array
     // fields, so an all zero bit pattern is a valid value.
@@ -162,7 +162,7 @@ fn parent_boot_ms(ppid: libc::pid_t) -> Option<u64> {
         .ok()?;
     let now_ms = now.as_millis() as u64;
     let elapsed = now_ms.saturating_sub(start_ms);
-    if elapsed > 60_000 {
+    if elapsed > 10_000 {
         return None;
     }
     Some(elapsed)

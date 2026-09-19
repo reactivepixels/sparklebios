@@ -32,11 +32,20 @@ pub fn grid_color(c: char) -> Option<(u8, u8, u8)> {
 }
 
 /// Half-block rendering: each text row packs two pixel rows using U+2580 (upper half block),
-/// fg = upper pixel, bg = lower pixel. A transparent pixel takes `bg`. Returns one string per
-/// text row, each exactly `width` cells wide, with its own SGR and a reset.
-pub fn half_blocks(grid: &str, bg: (u8, u8, u8)) -> Vec<String> {
+/// fg = upper pixel, bg = lower pixel. Returns one string per text row, each exactly `width`
+/// cells wide, with its own SGR and a reset.
+///
+/// A transparent pixel takes `bg` when it is `Some`. When `bg` is `None` (a transparent painted
+/// screen) a cell only emits a background colour of its own when both its pixels are opaque,
+/// because that colour belongs to the sprite, not the screen fill: a cell where both pixels are
+/// transparent is a plain space; a cell whose upper pixel is opaque and lower is transparent
+/// draws U+2580 (upper half block) with the upper pixel as foreground and `\x1b[49m` for its
+/// background; a cell whose upper pixel is transparent and lower is opaque draws U+2584 (lower
+/// half block) with the lower pixel as foreground and `\x1b[49m`; a cell where both pixels are
+/// opaque draws U+2580 with the upper pixel as foreground and the lower pixel as a real
+/// `48;2;R;G;B` background, keeping the sprite at full vertical resolution.
+pub fn half_blocks(grid: &str, bg: Option<(u8, u8, u8)>) -> Vec<String> {
     let rows: Vec<Vec<char>> = grid.lines().map(|line| line.chars().collect()).collect();
-    let (bg_r, bg_g, bg_b) = bg;
     let mut out = Vec::new();
     let mut pair = rows.chunks_exact(2);
     for chunk in &mut pair {
@@ -47,14 +56,32 @@ pub fn half_blocks(grid: &str, bg: (u8, u8, u8)) -> Vec<String> {
         for i in 0..width {
             let upper = top.get(i).copied().and_then(grid_color);
             let lower = bottom.get(i).copied().and_then(grid_color);
-            if upper.is_none() && lower.is_none() {
-                row.push_str(&format!("\x1b[48;2;{bg_r};{bg_g};{bg_b}m \x1b[0m"));
-            } else {
-                let (fr, fg, fb) = upper.unwrap_or(bg);
-                let (br, bgg, bb) = lower.unwrap_or(bg);
-                row.push_str(&format!(
-                    "\x1b[38;2;{fr};{fg};{fb};48;2;{br};{bgg};{bb}m\u{2580}\x1b[0m"
-                ));
+            match bg {
+                Some((bg_r, bg_g, bg_b)) => {
+                    if upper.is_none() && lower.is_none() {
+                        row.push_str(&format!("\x1b[48;2;{bg_r};{bg_g};{bg_b}m \x1b[0m"));
+                    } else {
+                        let (fr, fg, fb) = upper.unwrap_or((bg_r, bg_g, bg_b));
+                        let (br, bgg, bb) = lower.unwrap_or((bg_r, bg_g, bg_b));
+                        row.push_str(&format!(
+                            "\x1b[38;2;{fr};{fg};{fb};48;2;{br};{bgg};{bb}m\u{2580}\x1b[0m"
+                        ));
+                    }
+                }
+                None => match (upper, lower) {
+                    (None, None) => row.push(' '),
+                    (None, Some((lr, lg, lb))) => {
+                        row.push_str(&format!("\x1b[38;2;{lr};{lg};{lb};49m\u{2584}\x1b[0m"));
+                    }
+                    (Some((fr, fg, fb)), None) => {
+                        row.push_str(&format!("\x1b[38;2;{fr};{fg};{fb};49m\u{2580}\x1b[0m"));
+                    }
+                    (Some((fr, fg, fb)), Some((lr, lg, lb))) => {
+                        row.push_str(&format!(
+                            "\x1b[38;2;{fr};{fg};{fb};48;2;{lr};{lg};{lb}m\u{2580}\x1b[0m"
+                        ));
+                    }
+                },
             }
         }
         out.push(row);
@@ -172,7 +199,7 @@ mod tests {
 
     #[test]
     fn half_blocks_of_the_real_grid_is_seven_rows_of_fourteen_cells() {
-        let rows = half_blocks(UNICORN_GRID, (0, 0, 0));
+        let rows = half_blocks(UNICORN_GRID, Some((0, 0, 0)));
         assert_eq!(rows.len(), 7);
         for row in &rows {
             let visible = strip_sgr(row);
@@ -183,9 +210,40 @@ mod tests {
 
     #[test]
     fn half_blocks_of_a_tiny_grid_colours_the_upper_pixel_as_fg() {
-        let rows = half_blocks("R.\n.B", (1, 2, 3));
+        let rows = half_blocks("R.\n.B", Some((1, 2, 3)));
         assert_eq!(rows.len(), 1);
         assert!(rows[0].starts_with("\x1b[38;2;235;65;58;48;2;1;2;3m"));
+    }
+
+    #[test]
+    fn half_blocks_with_no_background_is_a_plain_space_when_both_pixels_are_transparent() {
+        let rows = half_blocks("..\n..", None);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0], "  ");
+    }
+
+    #[test]
+    fn half_blocks_with_no_background_uses_49_for_a_transparent_lower_pixel() {
+        let rows = half_blocks("R.\n..", None);
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].contains("48;2;"));
+        assert!(rows[0].contains("\x1b[38;2;235;65;58;49m\u{2580}"));
+    }
+
+    #[test]
+    fn half_blocks_with_no_background_uses_49_for_a_transparent_upper_pixel() {
+        let rows = half_blocks(".\nR", None);
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].contains("48;2;"));
+        assert!(rows[0].contains('\u{2584}'));
+        assert!(rows[0].starts_with("\x1b[38;2;235;65;58;49m\u{2584}"));
+    }
+
+    #[test]
+    fn half_blocks_with_no_background_still_paints_a_real_background_when_both_pixels_are_opaque() {
+        let rows = half_blocks("R\nB", None);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].contains("\x1b[38;2;235;65;58;48;2;48;146;226m\u{2580}"));
     }
 
     #[test]

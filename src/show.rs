@@ -224,17 +224,60 @@ mod tests {
     /// (`\x1b_G...\x1b\`) escape sequences, leaving only what would be visible on screen once
     /// the show settles.
     fn resolve_rows(stream: &[u8]) -> Vec<String> {
+        resolve_raw_rows(stream)
+            .iter()
+            .map(|row| strip_escapes(row))
+            .collect()
+    }
+
+    /// Like `resolve_rows`, but keeps the raw SGR and Kitty escapes instead of stripping them.
+    fn resolve_raw_rows(stream: &[u8]) -> Vec<String> {
         let text = String::from_utf8_lossy(stream);
         // Each row's final in-place state is everything after its last `\r`.
         let mut rows: Vec<String> = text
             .split('\n')
-            .map(|line| strip_escapes(line.rsplit('\r').next().unwrap_or(line)))
+            .map(|line| line.rsplit('\r').next().unwrap_or(line).to_string())
             .collect();
         // `split('\n')` yields a trailing empty entry for a stream ending in '\n'; drop it.
         if rows.last().is_some_and(String::is_empty) {
             rows.pop();
         }
         rows
+    }
+
+    /// The byte index in `s` where its `col`-th visible character begins, skipping SGR and Kitty
+    /// escape sequences. Returns `s.len()` when `s` has fewer than `col` visible characters.
+    fn visible_col_byte_index(s: &str, col: usize) -> usize {
+        let chars: Vec<(usize, char)> = s.char_indices().collect();
+        let mut visible = 0;
+        let mut i = 0;
+        while i < chars.len() {
+            let (byte_idx, c) = chars[i];
+            if c == '\x1b' && chars.get(i + 1).map(|&(_, c2)| c2) == Some('_') {
+                i += 2;
+                while i < chars.len()
+                    && !(chars[i].1 == '\x1b' && chars.get(i + 1).map(|&(_, c2)| c2) == Some('\\'))
+                {
+                    i += 1;
+                }
+                i += 2;
+                continue;
+            }
+            if c == '\x1b' {
+                i += 1;
+                while i < chars.len() && chars[i].1 != 'm' {
+                    i += 1;
+                }
+                i += 1;
+                continue;
+            }
+            if visible == col {
+                return byte_idx;
+            }
+            visible += 1;
+            i += 1;
+        }
+        s.len()
     }
 
     fn strip_escapes(s: &str) -> String {
@@ -312,6 +355,43 @@ mod tests {
             let rows = play_to_rows(&m, geometry);
             let expected = resolved_rows_of_render_static(&m, &Facts::fixture(), geometry);
             assert_eq!(rows, expected, "{id} painted rows disagree");
+        }
+    }
+
+    #[test]
+    fn a_transparent_pc95_show_never_emits_a_background_colour() {
+        let m = machine::find("pc95", None).unwrap();
+        assert_eq!(m.bg, None);
+        let facts = Facts::fixture();
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::HalfBlocks,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        play(&m, &facts, 0, geometry, &mut buf, None, 0.0);
+        // The screen fill colour must never appear. The one exception is a logo pixel where both
+        // the upper and lower source pixels are opaque: that background belongs to the sprite,
+        // not the screen, and only ever sits inside the 14-cell logo box (7 rows tall, starting
+        // after the machine's pad_y blank rows).
+        let rows = resolve_raw_rows(&buf);
+        let pad_x = m.pad_x as usize;
+        let pad_y = m.pad_y as usize;
+        const LOGO_ROWS: usize = 7;
+        let logo_rows = pad_y..pad_y + LOGO_ROWS;
+        for (i, row) in rows.iter().enumerate() {
+            if logo_rows.contains(&i) {
+                let cutoff = visible_col_byte_index(row, pad_x + 14);
+                assert!(
+                    !row[cutoff..].contains("48;2;"),
+                    "row {i} paints a background colour outside the logo box: {row:?}"
+                );
+            } else {
+                assert!(
+                    !row.contains("48;2;"),
+                    "row {i} outside the logo rows paints a background colour: {row:?}"
+                );
+            }
         }
     }
 

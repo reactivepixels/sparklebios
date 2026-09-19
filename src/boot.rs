@@ -136,7 +136,9 @@ fn run_preview(args: &BootArgs) {
         debug(|| "bios: unknown machine".to_string());
         return;
     };
-    let facts = crate::facts::gather();
+    let mut facts = crate::facts::gather();
+    // A preview is not a real shell startup, so a stale or meaningless boot time never appears.
+    facts.remove("shell.boot_ms");
     let config = crate::config::load(crate::paths::config_dir().as_deref());
     let mode = color_mode();
     let stdout_is_tty = std::io::stdout().is_terminal();
