@@ -1,0 +1,39 @@
+# Contributing
+
+SparkleBIOS is pre-alpha. The most useful things right now:
+
+1. **Tell us about a boot screen.** Open an issue with the machine, the year, and what the screen actually said, ideally with a photo or an emulator screenshot. Accuracy is the whole joke.
+2. **Try the theme** once M0 lands and report how it looks in your terminal.
+3. **Read [docs/design.md](docs/design.md)** and poke holes in it.
+
+## Ground rules
+
+- **Be cool and hilarious.** It is the mandate. Read [docs/voice.md](docs/voice.md) before writing any line a screen will show. Deadpan or nothing.
+- **Never slow or break the shell.** Anything on the boot path has a time budget and a test that enforces it.
+- **Jokes carry facts.** A gag line with no real probe behind it does not ship.
+- **No network code.** Not for updates, not for telemetry, not for anything.
+- **Original art and wording only.** No real logos, wordmarks or copied copyright strings. Machines are named by era (`pc95`, `c64`) and real hardware is referenced descriptively ("in the style of").
+- **No em dashes or en dashes** in prose, comments or commit messages. Use a comma, a colon, parentheses, or two sentences.
+
+## Adding a boot machine
+
+A machine is one TOML file in `machines/`: geometry, colours, an ordered list of
+steps, and a table of how that machine phrases each finding. The schema is
+defined in M1 and documented in `docs/machines.md` when it lands. Until then,
+issues are better than pull requests for new machines.
+
+## Development
+
+```
+cargo build
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check
+```
+
+All four must pass before a pull request is reviewed.
+
+## License
+
+By contributing you agree that your contribution is dual licensed under
+MIT OR Apache-2.0, the same as the project.
