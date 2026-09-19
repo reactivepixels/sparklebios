@@ -18,3 +18,4 @@ Elsewhere in the repository:
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | House rules and how to help |
 | [../CHANGELOG.md](../CHANGELOG.md) | The service log |
 | [../SECURITY.md](../SECURITY.md) | How to report something that could hurt a shell |
+| [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | The Contributor Covenant. The jokes punch at hardware, never at people |

@@ -33,6 +33,11 @@ cargo fmt --check
 
 All four must pass before a pull request is reviewed.
 
+## Conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). The jokes
+here punch at hardware, eras and hardware envy. Never at people.
+
 ## License
 
 By contributing you agree that your contribution is dual licensed under
