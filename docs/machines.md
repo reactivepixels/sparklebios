@@ -33,13 +33,14 @@ Top level keys:
 | `quips` | array of strings | no | Defaults to empty. One-line jokes, drawn from at boot |
 | `flavoured` | boolean | no | Defaults to false. When true, the screen takes its quips and its logo sprite from the current flavour instead of its own `quips` and `logo`. See [flavours.md](flavours.md) |
 | `detect_width` | integer | no | 4 to 60. When set, every `detect` step's label is rendered for slots and right-padded with spaces to this width (never truncated), instead of being used exactly as written |
+| `[findings]` | table | no | Maps a finding id to its phrasing on this screen. Values may contain `{slot}`s, filled in from that finding's own facts, under the same omission rule as any other slot. See [checks.md](checks.md) for what a finding is and the ids that exist |
 | `[[step]]` | array of tables | yes, at least one | The ordered screen content |
 
-A step table has exactly one of four kinds: `print`, `count`, `detect`,
-`quip`. Mixing two kinds, or a `quip` step whose value is `false`, is invalid.
-A `quip` step is valid when the screen has its own `quips`, or when
-`flavoured` is true (in which case the quips come from the flavour at boot,
-and the screen needs none of its own).
+A step table has exactly one of six kinds: `print`, `count`, `detect`,
+`quip`, `findings`, `f1`. Mixing two kinds, or a `quip`, `findings` or `f1`
+step whose value is `false`, is invalid. A `quip` step is valid when the
+screen has its own `quips`, or when `flavoured` is true (in which case the
+quips come from the flavour at boot, and the screen needs none of its own).
 
 | Kind | Fields | Defaults | Behaviour |
 |---|---|---|---|
@@ -47,6 +48,8 @@ and the screen needs none of its own).
 | `count` | `count` (template), `to` (required), optional `suffix`, optional `ms` | `ms` 600, `suffix` empty | Prints a template line with `{n}` replaced by the resolved value of `to`, then the suffix appended |
 | `detect` | `detect` (label), `result` (required), optional `style`, optional `ms` | `ms` 190 | Prints a label followed by a resolved result |
 | `quip` | `quip = true`, optional `style`, optional `ms` | `ms` 120 | Prints one line drawn from the screen's `quips`, or from the current flavour's quips when `flavoured` is true |
+| `findings` | `findings = true`, optional `ms` | `ms` 90 | Prints one line per current finding, in finding order, each phrased from `[findings]`. See [checks.md](checks.md) |
+| `f1` | `f1 = true`, optional `ms` | `ms` 45 | Prints the F1 line, phrased from the `f1_resume` or `f1` key of `[findings]`. See [checks.md](checks.md) |
 
 `style` is one of `"normal"`, `"bright"`, `"accent"` (TOML strings), and is
 allowed on `print`, `detect` and `quip` steps. On a `detect` step it colours

@@ -6,6 +6,8 @@ use serde::Deserialize;
 pub struct Config {
     pub animate: bool,
     pub flavour: String,
+    pub checks: bool,
+    pub project_dirs: Vec<String>,
 }
 
 impl Default for Config {
@@ -13,6 +15,8 @@ impl Default for Config {
         Config {
             animate: true,
             flavour: "unicorn".to_string(),
+            checks: true,
+            project_dirs: Vec::new(),
         }
     }
 }
@@ -21,6 +25,8 @@ impl Default for Config {
 struct RawConfig {
     animate: Option<bool>,
     flavour: Option<String>,
+    checks: Option<bool>,
+    project_dirs: Option<Vec<String>>,
 }
 
 /// Missing, unreadable or invalid file yields the default. Unknown keys, including the retired
@@ -39,6 +45,8 @@ pub fn load(dir: Option<&std::path::Path>) -> Config {
     Config {
         animate: raw.animate.unwrap_or(default.animate),
         flavour: raw.flavour.unwrap_or(default.flavour),
+        checks: raw.checks.unwrap_or(default.checks),
+        project_dirs: raw.project_dirs.unwrap_or(default.project_dirs),
     }
 }
 
@@ -94,6 +102,8 @@ mod tests {
             Config {
                 animate: false,
                 flavour: "unicorn".to_string(),
+                checks: true,
+                project_dirs: Vec::new(),
             }
         );
     }
@@ -107,18 +117,46 @@ mod tests {
     }
 
     #[test]
+    fn checks_defaults_to_true_and_is_read() {
+        assert!(Config::default().checks);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "checks = false\n").unwrap();
+        assert!(!load(Some(dir.path())).checks);
+    }
+
+    #[test]
+    fn project_dirs_defaults_to_empty_and_is_read() {
+        assert!(Config::default().project_dirs.is_empty());
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.toml"),
+            "project_dirs = [\"~/Code\", \"~/work\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            load(Some(dir.path())).project_dirs,
+            vec!["~/Code".to_string(), "~/work".to_string()]
+        );
+    }
+
+    #[test]
     fn set_flavour_preserves_other_keys() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("config.toml"),
-            "animate = false\nfuture_field = true\n",
+            "animate = false\nfuture_field = true\nchecks = false\nproject_dirs = [\"~/work\"]\n",
         )
         .unwrap();
         set_flavour(dir.path(), "sumo").unwrap();
         let contents = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
         assert!(contents.contains("animate = false"));
         assert!(contents.contains("future_field = true"));
-        assert_eq!(load(Some(dir.path())).flavour, "sumo");
+        assert!(contents.contains("checks = false"));
+        assert!(contents.contains("project_dirs"));
+        let loaded = load(Some(dir.path()));
+        assert_eq!(loaded.flavour, "sumo");
+        assert!(!loaded.checks);
+        assert_eq!(loaded.project_dirs, vec!["~/work".to_string()]);
     }
 
     #[test]
@@ -145,6 +183,8 @@ mod tests {
             Config {
                 animate: false,
                 flavour: "unicorn".to_string(),
+                checks: true,
+                project_dirs: Vec::new(),
             }
         );
     }
@@ -168,6 +208,8 @@ mod tests {
             Config {
                 animate: true,
                 flavour: "sumo".to_string(),
+                checks: true,
+                project_dirs: Vec::new(),
             }
         );
     }

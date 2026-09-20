@@ -1,0 +1,25 @@
+Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally
+Copyright (C) 1985-2026, Rainbows & Unicorns, Inc.
+
+UNI-440BX ACPI BIOS Revision 1007
+
+Main Processor : Apple M4 Pro, 14 cores, 0 horns
+Memory Testing : 37748736K OK
+
+Detecting Primary Master   ... 994GB, 78% used
+Detecting Operating System ... macOS 26.5
+Detecting Shell            ... zsh
+Detecting Horn             ... 1 found (7-band, sparkle capable)
+
+Boot device order: eko-pro, sparklebios, klang-stack
+Primary boot device not parked: eko-pro, 3 uncommitted changes.
+IRQ conflict: port 3000 held by node (pid 4821) for 3 days.
+Virus scan: eko-pro has .env.local tracked by git. Quarantine advised.
+
+Turbo button engaged. It does nothing. It never did.
+
+Boot streak: 12 days. Don't blow it.
+Shell boot time: 412ms
+
+Press F1 to continue, or bios resume to boot eko-pro.
+09/19/2026-UNI-440BX-RNBW-2A69KU1C-00

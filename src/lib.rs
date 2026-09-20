@@ -1,6 +1,8 @@
 //! Module declarations only.
 
 pub mod boot;
+pub mod cache;
+pub mod checks;
 pub mod cli;
 pub mod clock;
 pub mod config;

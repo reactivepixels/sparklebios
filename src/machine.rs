@@ -1,5 +1,7 @@
 //! Machine TOML schema, validation, built-ins, lookup.
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -33,6 +35,14 @@ pub enum Step {
         style: Style,
         ms: u64,
     },
+    Findings {
+        style: Style,
+        ms: u64,
+    },
+    F1 {
+        style: Style,
+        ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +64,7 @@ pub struct Machine {
     pub quips: Vec<String>,
     pub flavoured: bool,
     pub detect_width: Option<u16>,
+    pub findings: BTreeMap<String, String>,
     pub steps: Vec<Step>,
 }
 
@@ -100,6 +111,8 @@ struct RawMachine {
     #[serde(default)]
     flavoured: bool,
     detect_width: Option<u16>,
+    #[serde(default)]
+    findings: BTreeMap<String, String>,
     #[serde(rename = "step", default)]
     steps: Vec<RawStep>,
 }
@@ -118,6 +131,8 @@ struct RawStep {
     count: Option<String>,
     detect: Option<String>,
     quip: Option<bool>,
+    findings: Option<bool>,
+    f1: Option<bool>,
     to: Option<String>,
     suffix: Option<String>,
     result: Option<String>,
@@ -197,6 +212,31 @@ fn valid_id(id: &str) -> bool {
 fn valid_colour(s: &str) -> bool {
     let bytes = s.as_bytes();
     bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(|b| b.is_ascii_hexdigit())
+}
+
+/// A findings key: `[a-z0-9_]+`. An unknown id is still valid, since a machine may carry
+/// phrasing for a check that does not exist yet.
+fn valid_finding_key(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn validate_findings(findings: &BTreeMap<String, String>) -> Result<(), MachineError> {
+    for (key, value) in findings {
+        if !valid_finding_key(key) {
+            return Err(MachineError::Invalid(format!(
+                "findings key {key:?} does not match [a-z0-9_]+"
+            )));
+        }
+        if value.is_empty() {
+            return Err(MachineError::Invalid(format!(
+                "findings value for {key:?} is empty"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn parse_style(raw: Option<&str>, idx: usize) -> Result<Style, MachineError> {
@@ -303,6 +343,7 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
             )));
         }
     }
+    validate_findings(&raw.findings)?;
     if raw.steps.is_empty() {
         return Err(MachineError::Invalid("machine has no steps".into()));
     }
@@ -314,13 +355,15 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
             s.count.is_some(),
             s.detect.is_some(),
             s.quip.is_some(),
+            s.findings.is_some(),
+            s.f1.is_some(),
         ]
         .into_iter()
         .filter(|present| *present)
         .count();
         if kinds != 1 {
             return Err(MachineError::Invalid(format!(
-                "step {idx}: must have exactly one of print, count, detect, quip"
+                "step {idx}: must have exactly one of print, count, detect, quip, findings, f1"
             )));
         }
         let style = parse_style(s.style.as_deref(), idx)?;
@@ -350,7 +393,7 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
                 style,
                 ms: s.ms.unwrap_or(190),
             }
-        } else {
+        } else if s.quip.is_some() {
             match s.quip {
                 Some(true) => {
                     if raw.quips.is_empty() && !raw.flavoured {
@@ -366,6 +409,30 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
                 _ => {
                     return Err(MachineError::Invalid(format!(
                         "step {idx}: quip must be true"
+                    )))
+                }
+            }
+        } else if s.findings.is_some() {
+            match s.findings {
+                Some(true) => Step::Findings {
+                    style,
+                    ms: s.ms.unwrap_or(90),
+                },
+                _ => {
+                    return Err(MachineError::Invalid(format!(
+                        "step {idx}: findings must be true"
+                    )))
+                }
+            }
+        } else {
+            match s.f1 {
+                Some(true) => Step::F1 {
+                    style,
+                    ms: s.ms.unwrap_or(45),
+                },
+                _ => {
+                    return Err(MachineError::Invalid(format!(
+                        "step {idx}: f1 must be true"
                     )))
                 }
             }
@@ -391,6 +458,7 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
         quips: raw.quips,
         flavoured: raw.flavoured,
         detect_width: raw.detect_width,
+        findings: raw.findings,
         steps,
     })
 }
@@ -724,5 +792,75 @@ print = "hello"
             find("pc95", Some(dir.path())).unwrap().name,
             "Mid-90s PC POST"
         );
+    }
+
+    #[test]
+    fn the_findings_table_parses() {
+        let src = format!(
+            "{MINIMAL}\n[findings]\nboot_order = \"Boot device order: {{boot.devices}}\"\n"
+        );
+        let m = parse(&src).unwrap();
+        assert_eq!(
+            m.findings.get("boot_order").map(String::as_str),
+            Some("Boot device order: {boot.devices}")
+        );
+    }
+
+    #[test]
+    fn a_findings_key_with_a_capital_letter_and_an_empty_value_are_both_rejected() {
+        let bad_key = format!("{MINIMAL}\n[findings]\nBoot_Order = \"x\"\n");
+        assert!(matches!(parse(&bad_key), Err(MachineError::Invalid(_))));
+        let empty_value = format!("{MINIMAL}\n[findings]\nboot_order = \"\"\n");
+        assert!(matches!(parse(&empty_value), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn findings_true_and_f1_true_parse_with_their_default_ms() {
+        let src = format!("{MINIMAL}\n[[step]]\nfindings = true\n[[step]]\nf1 = true\n");
+        let m = parse(&src).unwrap();
+        assert!(m
+            .steps
+            .iter()
+            .any(|s| matches!(s, Step::Findings { ms: 90, .. })));
+        assert!(m.steps.iter().any(|s| matches!(s, Step::F1 { ms: 45, .. })));
+    }
+
+    #[test]
+    fn findings_false_and_f1_false_are_rejected() {
+        let findings_false = format!("{MINIMAL}\n[[step]]\nfindings = false\n");
+        assert!(matches!(
+            parse(&findings_false),
+            Err(MachineError::Invalid(_))
+        ));
+        let f1_false = format!("{MINIMAL}\n[[step]]\nf1 = false\n");
+        assert!(matches!(parse(&f1_false), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn a_step_with_both_quip_and_findings_is_rejected() {
+        let src = format!(
+            "{}\n[[step]]\nquip = true\nfindings = true\n",
+            MINIMAL.replace(
+                "accent = \"#FFFF55\"\n",
+                "accent = \"#FFFF55\"\nflavoured = true\n"
+            )
+        );
+        assert!(matches!(parse(&src), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn pc95_carries_all_seven_finding_keys() {
+        let m = find("pc95", None).unwrap();
+        for key in [
+            "boot_order",
+            "boot_dirty",
+            "irq_conflict",
+            "virus_one",
+            "virus_many",
+            "f1",
+            "f1_resume",
+        ] {
+            assert!(m.findings.contains_key(key), "missing {key}");
+        }
     }
 }

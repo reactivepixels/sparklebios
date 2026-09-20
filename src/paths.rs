@@ -41,6 +41,15 @@ pub fn state_dir() -> Option<PathBuf> {
     )
 }
 
+pub fn cache_dir() -> Option<PathBuf> {
+    resolve(
+        env("XDG_CACHE_HOME").as_deref(),
+        env("HOME").as_deref(),
+        ".cache",
+        "sparklebios",
+    )
+}
+
 pub fn user_machines_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("machines"))
 }

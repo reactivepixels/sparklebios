@@ -26,7 +26,8 @@ real shell, and one fictional horn.
 </p>
 
 > **Status: pre-alpha, and usable every day.** The boot screen, flavours, themes
-> and the animated show all work from source on macOS. Health checks are next.
+> and the animated show all work from source on macOS. The first three health
+> checks have landed: boot device order, IRQ conflicts and the virus scan.
 
 ## Install from source
 
@@ -96,16 +97,20 @@ Everywhere else it is drawn with half-block characters.
 
 ## The jokes are true
 
-These are the health checks arriving in the next milestone.
+Every line on the screen is backed by a real probe. These ship today.
 
 | The screen says | It means |
 |---|---|
-| Primary Master S.M.A.R.T. status BAD | Your disk is over 90% full |
-| CMOS checksum error, defaults loaded | Your `.zshrc` changed since the last boot |
-| NVRAM: 3 stashes older than 30 days | You have git stashes you forgot about |
-| Boot device slow: 1204ms | Your shell startup is slow, and that number is measured |
-| CMOS battery low | Your laptop battery is low |
-| Detecting backend ... NOT CONNECTED | This repo has no backend credentials of its own |
+| Boot device order: eko-pro, sparklebios, klang-stack | The three projects you worked in most recently |
+| Primary boot device not parked: eko-pro, 3 uncommitted changes. | You walked away from that one mid-change. `bios resume` goes back to it |
+| IRQ conflict: port 3000 held by node (pid 4821) for 3 days. | A dev server you forgot about is still holding a port |
+| Virus scan: eko-pro has .env.local tracked by git. Quarantine advised. | git is tracking a file that looks like a secret |
+
+Nothing slow runs while your shell is starting. The probes run in a detached
+process afterwards, and the boot screen reads the result from a cache.
+
+Still to come: a disk filling up, a changed `.zshrc`, stashes you forgot, a slow
+shell and a low battery.
 
 ## Principles
 
@@ -125,7 +130,8 @@ These are the health checks arriving in the next milestone.
 | M1 | BIOS skeleton: shell hook, boot modes, static POST screens | done |
 | M2 | The look and the show: the mascot as a real image, animation, skip keys, typeahead preserved | done |
 | M2.5 | Flavours: `unicorn` and `sumo`, with more mascots to come | done |
-| M3 | Health checks: boot device order, IRQ conflicts, the virus scan, disk trend | planned |
+| M3 | Health checks: boot device order, IRQ conflicts, the virus scan | done |
+| M3.5 | More checks: disk trend, changed dotfiles, stale stashes, battery, beep codes | planned |
 | M4 | Sprinkles: optional sound and text effects, off by default, and `bios config edit` | planned |
 | M4.5 | neigh, the rainbow pipe | planned |
 | M5 | `bios setup` | planned |
@@ -158,6 +164,10 @@ shell config. The hook is guarded, so uninstalling the binary cannot break
 your shell either.
 
 **Can I skip the show?** Press any key. Whatever you typed is waiting on your prompt when it ends.
+
+**Where did I leave off?** The boot screen lists your recent projects as boot
+devices and names the one you walked away from mid-change. `bios resume` takes
+you back to it.
 
 ## System requirements
 

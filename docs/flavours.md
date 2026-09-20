@@ -32,6 +32,22 @@ All keys are required:
 | `footer` | string | The trailing segment of the footer serial |
 | `quips` | array of strings | At least 3 one-line jokes, in the same voice as a machine's own `quips` |
 
+One more table is optional:
+
+| Key | Type | Notes |
+|---|---|---|
+| `[findings]` | table | Overrides the machine's own `[findings]` phrasing, key by key. See [checks.md](checks.md) for what a finding is and the ids that exist |
+
+## Findings
+
+A flavour's `[findings]` table has the same shape as a machine's own (see
+[machines.md](machines.md)): a map of finding id to phrasing, with the same
+`{slot}` substitution and the same omission rule when a slot does not
+resolve. When the current machine is flavoured, a finding id is looked up in
+the flavour's table first; a key the flavour does not carry falls back to the
+machine's own table for that id. The `unicorn` flavour deliberately has no
+`[findings]` table at all, so it inherits the machine's phrasing unchanged.
+
 ## Slots inside a flavour's own strings
 
 A flavour's strings may contain `{key}` slots, resolved against the facts

@@ -1,6 +1,7 @@
 //! The animated show: plays a machine's steps with their delays, honouring any key press as a
 //! skip that jumps straight to the final screen.
 
+use crate::checks::Finding;
 use crate::facts::Facts;
 use crate::flavour::Flavour;
 use crate::machine::Machine;
@@ -108,7 +109,9 @@ fn frames_for(step: &render::AnimatedStep) -> Vec<(&Vec<Span>, u64)> {
 /// once, drawing everything still to come in its final state. `speed` multiplies every delay
 /// (`0.0` collapses every wait to nothing). `flavour`, for a flavoured machine, supplies its
 /// quips and its logo sprite; with `None` a flavoured machine simply omits whatever it cannot
-/// resolve. Returns the bytes read from `key_fd` while the show played, unfiltered and in order.
+/// resolve. `findings` supplies the lines for a `Findings` or `F1` step, the same way `flavour`
+/// does for a `Quip` step. Returns the bytes read from `key_fd` while the show played, unfiltered
+/// and in order.
 #[allow(clippy::too_many_arguments)]
 pub fn play(
     machine: &Machine,
@@ -116,6 +119,7 @@ pub fn play(
     seed: u64,
     geometry: Geometry,
     flavour: Option<&Flavour>,
+    findings: &[Finding],
     out: &mut dyn std::io::Write,
     key_fd: Option<i32>,
     speed: f32,
@@ -126,8 +130,9 @@ pub fn play(
         geometry.term_cols,
         geometry.graphics,
         flavour,
+        findings,
     );
-    let steps = render::animated_layout(machine, facts, seed, flavour);
+    let steps = render::animated_layout(machine, facts, seed, flavour, findings);
     let pad_y = machine.pad_y as usize;
     let painted = row_geometry.painted();
 
@@ -222,6 +227,7 @@ pub fn filter_typed(bytes: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::checks::Severity;
     use crate::machine;
 
     /// Resolves a stream of animated frame bytes into its final visible rows: applies `\r`
@@ -315,6 +321,7 @@ mod tests {
         facts: &Facts,
         geometry: Geometry,
         flavour: Option<&Flavour>,
+        findings: &[Finding],
     ) -> Vec<String> {
         let rendered = crate::render::render_static(
             machine,
@@ -324,6 +331,7 @@ mod tests {
             geometry.term_cols,
             geometry.graphics,
             flavour,
+            findings,
         );
         rendered.lines().map(strip_escapes).collect::<Vec<_>>()
     }
@@ -388,10 +396,13 @@ quip = true
         machine: &Machine,
         geometry: Geometry,
         flavour: Option<&Flavour>,
+        findings: &[Finding],
     ) -> Vec<String> {
         let facts = facts_for(flavour);
         let mut buf: Vec<u8> = Vec::new();
-        play(machine, &facts, 0, geometry, flavour, &mut buf, None, 0.0);
+        play(
+            machine, &facts, 0, geometry, flavour, findings, &mut buf, None, 0.0,
+        );
         resolve_rows(&buf)
     }
 
@@ -407,9 +418,10 @@ quip = true
                 term_cols: None,
                 graphics: Graphics::None,
             };
-            let rows = play_to_rows(&m, geometry, flavour.as_ref());
+            let rows = play_to_rows(&m, geometry, flavour.as_ref(), &[]);
             let facts = facts_for(flavour.as_ref());
-            let expected = resolved_rows_of_render_static(&m, &facts, geometry, flavour.as_ref());
+            let expected =
+                resolved_rows_of_render_static(&m, &facts, geometry, flavour.as_ref(), &[]);
             assert_eq!(rows, expected, "{id} unpainted rows disagree");
         }
     }
@@ -426,9 +438,10 @@ quip = true
                 term_cols: Some(100),
                 graphics: Graphics::HalfBlocks,
             };
-            let rows = play_to_rows(&m, geometry, flavour.as_ref());
+            let rows = play_to_rows(&m, geometry, flavour.as_ref(), &[]);
             let facts = facts_for(flavour.as_ref());
-            let expected = resolved_rows_of_render_static(&m, &facts, geometry, flavour.as_ref());
+            let expected =
+                resolved_rows_of_render_static(&m, &facts, geometry, flavour.as_ref(), &[]);
             assert_eq!(rows, expected, "{id} painted rows disagree");
         }
     }
@@ -443,10 +456,108 @@ quip = true
                 term_cols: None,
                 graphics: Graphics::None,
             };
-            let rows = play_to_rows(&m, geometry, Some(&flavour));
+            let rows = play_to_rows(&m, geometry, Some(&flavour), &[]);
             let facts = facts_for(Some(&flavour));
-            let expected = resolved_rows_of_render_static(&m, &facts, geometry, Some(&flavour));
+            let expected =
+                resolved_rows_of_render_static(&m, &facts, geometry, Some(&flavour), &[]);
             assert_eq!(rows, expected, "pc95 with {id} disagrees");
+        }
+    }
+
+    fn finding(id: &str, severity: Severity, facts: &[(&str, &str)]) -> Finding {
+        Finding {
+            id: id.to_string(),
+            severity,
+            ttl: 100,
+            facts: facts
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+
+    /// The four findings from the plan's fixture table, in render order.
+    fn fixture_findings() -> Vec<Finding> {
+        vec![
+            finding(
+                "boot_order",
+                Severity::Info,
+                &[("boot.devices", "eko-pro, sparklebios, klang-stack")],
+            ),
+            finding(
+                "boot_dirty",
+                Severity::Info,
+                &[
+                    ("boot.device", "eko-pro"),
+                    ("boot.changes", "3 uncommitted changes"),
+                ],
+            ),
+            finding(
+                "irq_conflict",
+                Severity::Warn,
+                &[
+                    ("irq.port", "3000"),
+                    ("irq.name", "node"),
+                    ("irq.pid", "4821"),
+                    ("irq.age", "3 days"),
+                ],
+            ),
+            finding(
+                "virus_one",
+                Severity::Fail,
+                &[
+                    ("virus.repo", "eko-pro"),
+                    ("virus.file", ".env.local"),
+                    ("virus.count", "1"),
+                ],
+            ),
+        ]
+    }
+
+    /// `facts_for(flavour)` plus every slot the fixture findings' phrasing needs.
+    fn facts_with_findings_for(flavour: Option<&Flavour>) -> Facts {
+        let mut facts = facts_for(flavour);
+        facts.insert("boot.devices", "eko-pro, sparklebios, klang-stack");
+        facts.insert("boot.device", "eko-pro");
+        facts.insert("boot.changes", "3 uncommitted changes");
+        facts.insert("irq.port", "3000");
+        facts.insert("irq.name", "node");
+        facts.insert("irq.pid", "4821");
+        facts.insert("irq.age", "3 days");
+        facts.insert("virus.repo", "eko-pro");
+        facts.insert("virus.file", ".env.local");
+        facts.insert("virus.count", "1");
+        facts
+    }
+
+    #[test]
+    fn speed_zero_final_rows_equal_render_static_for_pc95_with_findings_for_both_flavours() {
+        let m = machine::find("pc95", None).unwrap();
+        for id in ["unicorn", "sumo"] {
+            let flavour = crate::flavour::find(id, None).unwrap();
+            let geometry = Geometry {
+                mode: ColorMode::None,
+                term_cols: None,
+                graphics: Graphics::None,
+            };
+            let findings = fixture_findings();
+            let facts = facts_with_findings_for(Some(&flavour));
+            let mut buf: Vec<u8> = Vec::new();
+            play(
+                &m,
+                &facts,
+                0,
+                geometry,
+                Some(&flavour),
+                &findings,
+                &mut buf,
+                None,
+                0.0,
+            );
+            let rows = resolve_rows(&buf);
+            let expected =
+                resolved_rows_of_render_static(&m, &facts, geometry, Some(&flavour), &findings);
+            assert_eq!(rows, expected, "pc95 with {id} and findings disagrees");
         }
     }
 
@@ -462,7 +573,17 @@ quip = true
             graphics: Graphics::HalfBlocks,
         };
         let mut buf: Vec<u8> = Vec::new();
-        play(&m, &facts, 0, geometry, Some(&flavour), &mut buf, None, 0.0);
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut buf,
+            None,
+            0.0,
+        );
         // The screen fill colour must never appear. The one exception is a logo pixel where both
         // the upper and lower source pixels are opaque: that background belongs to the sprite,
         // not the screen, and only ever sits inside the 14-cell logo box (7 rows tall, starting
@@ -499,7 +620,17 @@ quip = true
             graphics: Graphics::None,
         };
         let mut buf: Vec<u8> = Vec::new();
-        play(&m, &facts, 0, geometry, Some(&flavour), &mut buf, None, 0.0);
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut buf,
+            None,
+            0.0,
+        );
         let text = String::from_utf8_lossy(&buf);
         assert!(text.contains("Detecting Horn             ... \r"));
         assert!(!text.contains("Detecting Horn             ... 1 found\r"));
@@ -545,13 +676,14 @@ quip = true
             0,
             geometry,
             None,
+            &[],
             &mut buf,
             Some(read_fd),
             1000.0,
         );
         assert_eq!(outcome.typed, b"x");
         let rows = resolve_rows(&buf);
-        let expected = resolved_rows_of_render_static(&m, &facts, geometry, None);
+        let expected = resolved_rows_of_render_static(&m, &facts, geometry, None, &[]);
         assert_eq!(rows, expected);
         // SAFETY: both fds are valid, open descriptors owned by this test.
         unsafe {

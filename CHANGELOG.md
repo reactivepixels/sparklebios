@@ -31,6 +31,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tool colours: `ls`, `eza`, `bat`, `fzf`, `man`, `grep`, zsh completion and `delta` told to use the terminal's own sixteen colours, so they follow every theme variant.
 - `extras/starship-palette.toml`, a starship palette to match the theme.
 - `bios init zsh`, `bios machines`, and the machine authoring guide in `docs/machines.md`.
+- Health checks: the boot screen now reports three real things about your machine. Boot device order lists the projects you were most recently working in and says when you walked away from the first one mid-change, and `bios resume` takes you back to it. IRQ conflicts names a dev server you forgot about that is still holding a well known port. The virus scan reports files that git is tracking and that look like secrets or keys. Findings are phrased per flavour, and a Fail is shown even during a burst of new tabs, as a single line.
+- A fact cache with a detached refresh. No probe ever runs while a shell is starting: the boot path reads one JSON file and draws, then spawns `bios refresh` and never waits on it. A finding stops being shown once it is older than its own ttl, so the boot device list survives overnight and the port result does not. `checks = false` turns the whole thing off. The checks are documented in `docs/checks.md`.
 
 ### Changed
 

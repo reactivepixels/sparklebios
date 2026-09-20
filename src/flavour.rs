@@ -1,5 +1,7 @@
 //! Flavour TOML schema, validation, built-ins, lookup, and slot application.
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 
 use crate::facts::Facts;
@@ -19,6 +21,7 @@ pub struct Flavour {
     pub streak: String,
     pub footer: String,
     pub quips: Vec<String>,
+    pub findings: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +39,8 @@ struct RawFlavour {
     footer: String,
     #[serde(default)]
     quips: Vec<String>,
+    #[serde(default)]
+    findings: BTreeMap<String, String>,
 }
 
 const UNICORN_TOML: &str = include_str!("../flavours/unicorn.toml");
@@ -46,6 +51,27 @@ fn valid_id(id: &str) -> bool {
         && id
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+/// A findings key: `[a-z0-9_]+`. An unknown id is still valid, since a flavour may carry
+/// phrasing for a check that does not exist yet.
+fn valid_finding_key(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn validate_findings(findings: &BTreeMap<String, String>) -> Result<(), String> {
+    for (key, value) in findings {
+        if !valid_finding_key(key) {
+            return Err(format!("findings key {key:?} does not match [a-z0-9_]+"));
+        }
+        if value.is_empty() {
+            return Err(format!("findings value for {key:?} is empty"));
+        }
+    }
+    Ok(())
 }
 
 /// All string keys are required and non-empty; `id` matches `[a-z0-9_-]+`; `sprite` must name a
@@ -85,6 +111,7 @@ fn validate(raw: RawFlavour) -> Result<Flavour, String> {
             raw.quips.len()
         ));
     }
+    validate_findings(&raw.findings)?;
     Ok(Flavour {
         id: raw.id,
         name: raw.name,
@@ -98,6 +125,7 @@ fn validate(raw: RawFlavour) -> Result<Flavour, String> {
         streak: raw.streak,
         footer: raw.footer,
         quips: raw.quips,
+        findings: raw.findings,
     })
 }
 
@@ -324,5 +352,35 @@ quips = ["a", "b", "c"]
     #[test]
     fn malformed_toml_is_an_error() {
         assert!(parse("id = ").is_err());
+    }
+
+    #[test]
+    fn sumos_findings_table_parses_and_has_all_seven_keys() {
+        let sumo = find("sumo", None).unwrap();
+        for key in [
+            "boot_order",
+            "boot_dirty",
+            "irq_conflict",
+            "virus_one",
+            "virus_many",
+            "f1",
+            "f1_resume",
+        ] {
+            assert!(sumo.findings.contains_key(key), "sumo missing {key}");
+        }
+    }
+
+    #[test]
+    fn unicorns_findings_table_is_empty() {
+        let unicorn = find("unicorn", None).unwrap();
+        assert!(unicorn.findings.is_empty());
+    }
+
+    #[test]
+    fn rejects_a_bad_findings_key_and_an_empty_value() {
+        let bad_key = format!("{MINIMAL}\n[findings]\nBoot_Order = \"x\"\n");
+        assert!(parse(&bad_key).is_err());
+        let empty_value = format!("{MINIMAL}\n[findings]\nboot_order = \"\"\n");
+        assert!(parse(&empty_value).is_err());
     }
 }

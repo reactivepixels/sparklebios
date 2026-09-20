@@ -1,5 +1,6 @@
 //! Static rendering and colour modes.
 
+use crate::checks::{Finding, Severity};
 use crate::facts::Facts;
 use crate::flavour::Flavour;
 use crate::machine::{Machine, Step, Style};
@@ -150,43 +151,130 @@ fn is_blank(line: &[Span]) -> bool {
     line.iter().all(|span| span.text.is_empty())
 }
 
-/// Resolves a single step to its logical line, or None to omit it.
+/// The phrasing for a finding id: the flavour's override when the machine is flavoured and the
+/// flavour has that key, otherwise the machine's own table, otherwise None.
+fn phrasing<'a>(machine: &'a Machine, flavour: Option<&'a Flavour>, id: &str) -> Option<&'a str> {
+    if machine.flavoured {
+        if let Some(value) = flavour.and_then(|f| f.findings.get(id)) {
+            return Some(value.as_str());
+        }
+    }
+    machine.findings.get(id).map(String::as_str)
+}
+
+/// One finding's rendered line: its phrasing looked up by id, rendered against the facts, and
+/// truncated to `cols` rather than dropped when it runs long, so a Fail is always visible. `None`
+/// when the id has no phrasing or one of its slots does not resolve.
+fn finding_line(
+    machine: &Machine,
+    facts: &Facts,
+    flavour: Option<&Flavour>,
+    finding: &Finding,
+    style: Style,
+) -> Option<Vec<Span>> {
+    let phrase = phrasing(machine, flavour, &finding.id)?;
+    let text = template::render(phrase, facts)?;
+    let cols = machine.cols as usize;
+    let text: String = if text.chars().count() > cols {
+        text.chars().take(cols).collect()
+    } else {
+        text
+    };
+    if text.is_empty() {
+        return Some(vec![]);
+    }
+    Some(vec![Span {
+        text: apply_case(machine, text),
+        style,
+    }])
+}
+
+/// One finding's rendered text, plain: no colour, no border, no padding, only `apply_case`
+/// (matching every other line on the screen). The same phrasing lookup, rendering and truncation
+/// `Step::Findings` uses, reused here so the quiet-mode Fail line and the full screen can never
+/// disagree on wording. `None` when the id has no phrasing or one of its slots does not resolve.
+pub fn finding_text(
+    machine: &Machine,
+    facts: &Facts,
+    flavour: Option<&Flavour>,
+    finding: &Finding,
+) -> Option<String> {
+    let spans = finding_line(machine, facts, flavour, finding, Style::Normal)?;
+    Some(spans.into_iter().map(|span| span.text).collect())
+}
+
+/// The F1 line: `f1_resume` when it resolves, otherwise `f1` when at least one finding is `Warn`
+/// or `Fail`, otherwise no line at all.
+fn f1_line(
+    machine: &Machine,
+    facts: &Facts,
+    flavour: Option<&Flavour>,
+    findings: &[Finding],
+    style: Style,
+) -> Option<Vec<Span>> {
+    if let Some(text) =
+        phrasing(machine, flavour, "f1_resume").and_then(|phrase| template::render(phrase, facts))
+    {
+        return Some(vec![Span {
+            text: apply_case(machine, text),
+            style,
+        }]);
+    }
+    let warn_or_fail = findings
+        .iter()
+        .any(|f| matches!(f.severity, Severity::Warn | Severity::Fail));
+    if !warn_or_fail {
+        return None;
+    }
+    let phrase = phrasing(machine, flavour, "f1")?;
+    let text = template::render(phrase, facts)?;
+    Some(vec![Span {
+        text: apply_case(machine, text),
+        style,
+    }])
+}
+
+/// Resolves a single step to its logical lines: zero for an unresolvable `print`, `count` or
+/// `detect`; exactly one for a resolved `print`, `count`, `detect` or `quip`; zero or more for
+/// `findings` (one per finding whose phrasing resolves); zero or one for `f1`.
 fn layout_step(
     machine: &Machine,
     facts: &Facts,
     seed: u64,
     step: &Step,
     flavour: Option<&Flavour>,
-) -> Option<Vec<Span>> {
+    findings: &[Finding],
+) -> Vec<Vec<Span>> {
     match step {
-        Step::Print { text, style, .. } => {
-            let text = template::render(text, facts)?;
-            if text.is_empty() {
-                Some(vec![])
-            } else {
-                Some(vec![Span {
-                    text: apply_case(machine, text),
-                    style: *style,
-                }])
-            }
-        }
+        Step::Print { text, style, .. } => match template::render(text, facts) {
+            Some(text) if text.is_empty() => vec![vec![]],
+            Some(text) => vec![vec![Span {
+                text: apply_case(machine, text),
+                style: *style,
+            }]],
+            None => vec![],
+        },
         Step::Count {
             template: tmpl,
             to,
             suffix,
             ..
         } => {
-            let n = template::render(to, facts)?;
+            let Some(n) = template::render(to, facts) else {
+                return vec![];
+            };
             let filled = tmpl.replacen("{n}", &n, 1);
-            let mut line = template::render(&filled, facts)?;
+            let Some(mut line) = template::render(&filled, facts) else {
+                return vec![];
+            };
             line.push_str(suffix);
             if line.is_empty() {
-                Some(vec![])
+                vec![vec![]]
             } else {
-                Some(vec![Span {
+                vec![vec![Span {
                     text: apply_case(machine, line),
                     style: Style::Normal,
-                }])
+                }]]
             }
         }
         Step::Detect {
@@ -195,9 +283,13 @@ fn layout_step(
             style,
             ..
         } => {
-            let label_text = detect_label(machine, facts, label)?;
-            let result = template::render(result, facts)?;
-            Some(vec![
+            let Some(label_text) = detect_label(machine, facts, label) else {
+                return vec![];
+            };
+            let Some(result) = template::render(result, facts) else {
+                return vec![];
+            };
+            vec![vec![
                 Span {
                     text: apply_case(machine, format!("{label_text}... ")),
                     style: Style::Normal,
@@ -206,15 +298,25 @@ fn layout_step(
                     text: apply_case(machine, result),
                     style: *style,
                 },
-            ])
+            ]]
         }
         Step::Quip { style, .. } => {
-            let quip = resolve_quip(quips_for(machine, flavour), machine.cols, facts, seed)?;
-            Some(vec![Span {
-                text: apply_case(machine, quip),
-                style: *style,
-            }])
+            match resolve_quip(quips_for(machine, flavour), machine.cols, facts, seed) {
+                Some(quip) => vec![vec![Span {
+                    text: apply_case(machine, quip),
+                    style: *style,
+                }]],
+                None => vec![],
+            }
         }
+        Step::Findings { style, .. } => findings
+            .iter()
+            .filter_map(|f| finding_line(machine, facts, flavour, f, *style))
+            .collect(),
+        Step::F1 { style, .. } => match f1_line(machine, facts, flavour, findings, *style) {
+            Some(line) => vec![line],
+            None => vec![],
+        },
     }
 }
 
@@ -243,11 +345,12 @@ pub fn layout(
     facts: &Facts,
     seed: u64,
     flavour: Option<&Flavour>,
+    findings: &[Finding],
 ) -> Vec<Vec<Span>> {
     let lines: Vec<Vec<Span>> = machine
         .steps
         .iter()
-        .filter_map(|step| layout_step(machine, facts, seed, step, flavour))
+        .flat_map(|step| layout_step(machine, facts, seed, step, flavour, findings))
         .collect();
     collapse_blank_lines(lines)
 }
@@ -280,44 +383,52 @@ pub struct AnimatedStep {
 /// final, suffixed value.
 const COUNT_FRAMES: u64 = 24;
 
-/// Resolves a single step for the animated show, or None to omit it. Mirrors `layout_step`
-/// exactly for the final state (`AnimatedStep::spans`), so `layout` and `animated_layout` always
-/// agree on which lines are visible and what they finally say.
+/// Resolves a single step for the animated show, or an empty `Vec` to omit it. Mirrors
+/// `layout_step` exactly for the final state (`AnimatedStep::spans`), so `layout` and
+/// `animated_layout` always agree on which lines are visible and what they finally say.
+/// `findings` and `f1` are always `AnimatedKind::Instant`, one `AnimatedStep` per finding line.
 fn animate_step(
     machine: &Machine,
     facts: &Facts,
     seed: u64,
     step: &Step,
     flavour: Option<&Flavour>,
-) -> Option<AnimatedStep> {
+    findings: &[Finding],
+) -> Vec<AnimatedStep> {
     match step {
-        Step::Print { text, style, ms } => {
-            let text = template::render(text, facts)?;
-            let spans = if text.is_empty() {
-                vec![]
-            } else {
-                vec![Span {
-                    text: apply_case(machine, text),
-                    style: *style,
+        Step::Print { text, style, ms } => match template::render(text, facts) {
+            Some(text) => {
+                let spans = if text.is_empty() {
+                    vec![]
+                } else {
+                    vec![Span {
+                        text: apply_case(machine, text),
+                        style: *style,
+                    }]
+                };
+                vec![AnimatedStep {
+                    ms: *ms,
+                    spans,
+                    kind: AnimatedKind::Instant,
                 }]
-            };
-            Some(AnimatedStep {
-                ms: *ms,
-                spans,
-                kind: AnimatedKind::Instant,
-            })
-        }
+            }
+            None => vec![],
+        },
         Step::Quip { style, ms } => {
-            let quip = resolve_quip(quips_for(machine, flavour), machine.cols, facts, seed)?;
-            let spans = vec![Span {
-                text: apply_case(machine, quip),
-                style: *style,
-            }];
-            Some(AnimatedStep {
-                ms: *ms,
-                spans,
-                kind: AnimatedKind::Instant,
-            })
+            match resolve_quip(quips_for(machine, flavour), machine.cols, facts, seed) {
+                Some(quip) => {
+                    let spans = vec![Span {
+                        text: apply_case(machine, quip),
+                        style: *style,
+                    }];
+                    vec![AnimatedStep {
+                        ms: *ms,
+                        spans,
+                        kind: AnimatedKind::Instant,
+                    }]
+                }
+                None => vec![],
+            }
         }
         Step::Detect {
             label,
@@ -325,8 +436,12 @@ fn animate_step(
             style,
             ms,
         } => {
-            let label = detect_label(machine, facts, label)?;
-            let result = template::render(result, facts)?;
+            let Some(label) = detect_label(machine, facts, label) else {
+                return vec![];
+            };
+            let Some(result) = template::render(result, facts) else {
+                return vec![];
+            };
             let label_text = apply_case(machine, format!("{label}... "));
             let label_spans = vec![Span {
                 text: label_text.clone(),
@@ -342,11 +457,11 @@ fn animate_step(
                     style: *style,
                 },
             ];
-            Some(AnimatedStep {
+            vec![AnimatedStep {
                 ms: *ms,
                 spans,
                 kind: AnimatedKind::Detect { label_spans },
-            })
+            }]
         }
         Step::Count {
             template: tmpl,
@@ -354,9 +469,13 @@ fn animate_step(
             suffix,
             ms,
         } => {
-            let n = template::render(to, facts)?;
+            let Some(n) = template::render(to, facts) else {
+                return vec![];
+            };
             let filled = tmpl.replacen("{n}", &n, 1);
-            let mut line = template::render(&filled, facts)?;
+            let Some(mut line) = template::render(&filled, facts) else {
+                return vec![];
+            };
             line.push_str(suffix);
             let spans = if line.is_empty() {
                 vec![]
@@ -383,12 +502,29 @@ fn animate_step(
                     })
                     .collect()
             });
-            Some(AnimatedStep {
+            vec![AnimatedStep {
                 ms: *ms,
                 spans,
                 kind: AnimatedKind::Count { frames },
-            })
+            }]
         }
+        Step::Findings { style, ms } => findings
+            .iter()
+            .filter_map(|f| finding_line(machine, facts, flavour, f, *style))
+            .map(|spans| AnimatedStep {
+                ms: *ms,
+                spans,
+                kind: AnimatedKind::Instant,
+            })
+            .collect(),
+        Step::F1 { style, ms } => match f1_line(machine, facts, flavour, findings, *style) {
+            Some(spans) => vec![AnimatedStep {
+                ms: *ms,
+                spans,
+                kind: AnimatedKind::Instant,
+            }],
+            None => vec![],
+        },
     }
 }
 
@@ -417,11 +553,12 @@ pub fn animated_layout(
     facts: &Facts,
     seed: u64,
     flavour: Option<&Flavour>,
+    findings: &[Finding],
 ) -> Vec<AnimatedStep> {
     let steps: Vec<AnimatedStep> = machine
         .steps
         .iter()
-        .filter_map(|step| animate_step(machine, facts, seed, step, flavour))
+        .flat_map(|step| animate_step(machine, facts, seed, step, flavour, findings))
         .collect();
     collapse_blank_animated(steps)
 }
@@ -671,6 +808,7 @@ pub fn row_geometry<'a>(
     term_cols: Option<u16>,
     graphics: Graphics,
     flavour: Option<&Flavour>,
+    _findings: &[Finding],
 ) -> RowGeometry<'a> {
     let painted = machine.paint
         && mode == ColorMode::TrueColor
@@ -818,6 +956,7 @@ impl<'a> RowGeometry<'a> {
 /// drawn in the painted path; the plain path never shows a logo or badge regardless of it.
 /// `flavour`, for a flavoured machine, supplies its quips and its logo sprite; with `None` a
 /// flavoured machine simply omits whatever it cannot resolve.
+#[allow(clippy::too_many_arguments)]
 pub fn render_static(
     machine: &Machine,
     facts: &Facts,
@@ -826,8 +965,9 @@ pub fn render_static(
     term_cols: Option<u16>,
     graphics: Graphics,
     flavour: Option<&Flavour>,
+    findings: &[Finding],
 ) -> String {
-    let lines = layout(machine, facts, seed, flavour);
+    let lines = layout(machine, facts, seed, flavour, findings);
     let painted = machine.paint
         && mode == ColorMode::TrueColor
         && term_cols.is_some_and(|w| w >= painted_total_width(machine));
@@ -987,7 +1127,8 @@ quip = true
                 0,
                 None,
                 Graphics::None,
-                Some(&flavour)
+                Some(&flavour),
+                &[]
             ),
             golden("pc95")
         );
@@ -1010,6 +1151,7 @@ quip = true
             None,
             Graphics::None,
             Some(&flavour),
+            &[],
         );
         assert!(!out.contains("Detecting Shell"));
         assert!(!out.contains("Boot streak"));
@@ -1029,6 +1171,7 @@ quip = true
                 None,
                 Graphics::None,
                 None,
+                &[],
             );
             assert!(
                 !out.contains('{') && !out.contains('}'),
@@ -1048,6 +1191,7 @@ quip = true
             None,
             Graphics::None,
             None,
+            &[],
         );
         assert!(!out.contains('{'));
         assert!(!out.contains("Sparkle Modular BIOS"));
@@ -1078,6 +1222,7 @@ style = "accent"
             None,
             Graphics::None,
             None,
+            &[],
         );
         assert!(out.contains("\x1b[38;2;255;255;255mSparkle Modular BIOS"));
         assert!(out.contains(
@@ -1106,6 +1251,7 @@ print = "37748736K OK"
             None,
             Graphics::None,
             None,
+            &[],
         );
         assert!(out.contains("\x1b[37m37748736K OK\x1b[0m"));
     }
@@ -1121,6 +1267,7 @@ print = "37748736K OK"
             None,
             Graphics::None,
             Some(&flavour),
+            &[],
         );
         assert!(out1.contains("Plug and Pray devices found: 1 unicorn"));
         // quip 7 needs {mem.kb}; without it the next resolvable quip is used
@@ -1134,6 +1281,7 @@ print = "37748736K OK"
             None,
             Graphics::None,
             Some(&flavour),
+            &[],
         );
         assert!(out7.contains("Floppy drive A: not found. Nobody is surprised."));
         let wrapped = render_static(
@@ -1144,6 +1292,7 @@ print = "37748736K OK"
             None,
             Graphics::None,
             Some(&flavour),
+            &[],
         );
         assert!(wrapped.contains("Turbo button engaged."));
     }
@@ -1174,6 +1323,7 @@ print = "37748736K OK"
             Some(80),
             Graphics::None,
             None,
+            &[],
         );
         let rows: Vec<&str> = out.lines().collect();
         assert!(!rows.is_empty());
@@ -1201,6 +1351,7 @@ print = "37748736K OK"
                 term_cols,
                 Graphics::None,
                 None,
+                &[],
             );
             assert!(!out.contains("48;2;"));
         }
@@ -1216,6 +1367,7 @@ print = "37748736K OK"
             Some(80),
             Graphics::None,
             None,
+            &[],
         );
         let without_cols = render_static(
             &m,
@@ -1225,6 +1377,7 @@ print = "37748736K OK"
             None,
             Graphics::None,
             None,
+            &[],
         );
         assert_eq!(with_cols, without_cols);
     }
@@ -1250,6 +1403,7 @@ quip = true
             None,
             Graphics::None,
             None,
+            &[],
         );
         assert_eq!(out, "short\n");
     }
@@ -1267,6 +1421,7 @@ quip = true
             Some(100),
             Graphics::HalfBlocks,
             Some(&flavour),
+            &[],
         );
         let rows: Vec<&str> = out.lines().collect();
         let width = visible_width(rows[0]);
@@ -1298,6 +1453,7 @@ quip = true
             Some(100),
             Graphics::HalfBlocks,
             Some(&flavour),
+            &[],
         );
         let rows: Vec<&str> = out.lines().collect();
         let width = visible_width(rows[0]);
@@ -1365,6 +1521,7 @@ print = "Fifth line"
             Some(100),
             Graphics::HalfBlocks,
             None,
+            &[],
         );
         let rows: Vec<&str> = out.lines().collect();
         let stripped: Vec<String> = rows.iter().map(|r| strip_ansi(r)).collect();
@@ -1402,6 +1559,7 @@ print = "{long_line}"
             Some(80),
             Graphics::HalfBlocks,
             None,
+            &[],
         );
         let rows: Vec<&str> = out.lines().collect();
         let stripped: Vec<String> = rows.iter().map(|r| strip_ansi(r)).collect();
@@ -1424,6 +1582,7 @@ print = "{long_line}"
             Some(100),
             Graphics::Kitty,
             Some(&flavour),
+            &[],
         );
         assert_eq!(out.matches("\x1b_Ga=T").count(), 1);
         assert!(!out.contains('\u{2580}'));
@@ -1444,6 +1603,7 @@ print = "{long_line}"
                 Some(100),
                 Graphics::Kitty,
                 Some(&flavour),
+                &[],
             );
             let escape = crate::sprite::kitty_image(&png[..30], 1, 1);
             let body = escape
@@ -1467,6 +1627,7 @@ print = "{long_line}"
             Some(100),
             Graphics::None,
             Some(&flavour),
+            &[],
         );
         assert!(!out.contains("\x1b_G"));
         assert!(!out.contains('\u{2580}'));
@@ -1486,6 +1647,7 @@ print = "{long_line}"
             None,
             Graphics::HalfBlocks,
             Some(&flavour),
+            &[],
         );
         assert!(!out.contains("\x1b_G"));
         assert!(!out.contains('\u{2580}'));
@@ -1505,6 +1667,7 @@ print = "{long_line}"
             None,
             Graphics::None,
             Some(&flavour),
+            &[],
         );
         assert!(out.contains("Yokozuna Modular BIOS v1.991, Immovable"));
         assert!(out.contains("Stance: low. Centre of gravity: lower."));
@@ -1526,6 +1689,7 @@ print = "{long_line}"
             None,
             Graphics::None,
             Some(&flavour),
+            &[],
         );
         let expected = format!("{:<27}... {}", "Detecting Salt", "1 handful (thrown)");
         assert!(out.contains(&expected));
@@ -1536,14 +1700,14 @@ print = "{long_line}"
         let flavour = unicorn_flavour();
         let facts = fixture_with_flavour(&flavour);
         let m = machine::find("pc95", None).unwrap();
-        let lines = layout(&m, &facts, 0, Some(&flavour));
-        let animated = animated_layout(&m, &facts, 0, Some(&flavour));
+        let lines = layout(&m, &facts, 0, Some(&flavour), &[]);
+        let animated = animated_layout(&m, &facts, 0, Some(&flavour), &[]);
         let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
         assert_eq!(lines, animated_spans, "pc95 disagrees on its final lines");
 
         let m = other_machine();
-        let lines = layout(&m, &Facts::fixture(), 0, None);
-        let animated = animated_layout(&m, &Facts::fixture(), 0, None);
+        let lines = layout(&m, &Facts::fixture(), 0, None, &[]);
+        let animated = animated_layout(&m, &Facts::fixture(), 0, None, &[]);
         let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
         assert_eq!(lines, animated_spans, "other disagrees on its final lines");
     }
@@ -1551,7 +1715,7 @@ print = "{long_line}"
     #[test]
     fn animated_count_steps_grow_from_zero_to_the_final_value() {
         let m = machine::find("pc95", None).unwrap();
-        let animated = animated_layout(&m, &Facts::fixture(), 0, None);
+        let animated = animated_layout(&m, &Facts::fixture(), 0, None, &[]);
         let count = animated
             .iter()
             .find(|s| matches!(s.kind, AnimatedKind::Count { .. }))
@@ -1569,13 +1733,14 @@ print = "{long_line}"
         let m = machine::find("pc95", None).unwrap();
         let flavour = unicorn_flavour();
         let facts = fixture_with_flavour(&flavour);
-        let lines = layout(&m, &facts, 0, Some(&flavour));
+        let lines = layout(&m, &facts, 0, Some(&flavour), &[]);
         let geometry = row_geometry(
             &m,
             ColorMode::TrueColor,
             Some(100),
             Graphics::HalfBlocks,
             Some(&flavour),
+            &[],
         );
         let mut rebuilt = String::new();
         if let Some(row) = geometry.border_row() {
@@ -1606,7 +1771,252 @@ print = "{long_line}"
             Some(100),
             Graphics::HalfBlocks,
             Some(&flavour),
+            &[],
         );
         assert_eq!(rebuilt, expected);
+    }
+
+    fn finding(id: &str, severity: Severity, facts: &[(&str, &str)]) -> Finding {
+        Finding {
+            id: id.to_string(),
+            severity,
+            ttl: 100,
+            facts: facts
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+
+    /// The four findings from the plan's fixture table, in render order.
+    fn fixture_findings() -> Vec<Finding> {
+        vec![
+            finding(
+                "boot_order",
+                Severity::Info,
+                &[("boot.devices", "eko-pro, sparklebios, klang-stack")],
+            ),
+            finding(
+                "boot_dirty",
+                Severity::Info,
+                &[
+                    ("boot.device", "eko-pro"),
+                    ("boot.changes", "3 uncommitted changes"),
+                ],
+            ),
+            finding(
+                "irq_conflict",
+                Severity::Warn,
+                &[
+                    ("irq.port", "3000"),
+                    ("irq.name", "node"),
+                    ("irq.pid", "4821"),
+                    ("irq.age", "3 days"),
+                ],
+            ),
+            finding(
+                "virus_one",
+                Severity::Fail,
+                &[
+                    ("virus.repo", "eko-pro"),
+                    ("virus.file", ".env.local"),
+                    ("virus.count", "1"),
+                ],
+            ),
+        ]
+    }
+
+    /// `Facts::fixture()` plus every slot the fixture findings' phrasing needs.
+    fn facts_with_findings() -> Facts {
+        let mut facts = Facts::fixture();
+        facts.insert("boot.devices", "eko-pro, sparklebios, klang-stack");
+        facts.insert("boot.device", "eko-pro");
+        facts.insert("boot.changes", "3 uncommitted changes");
+        facts.insert("irq.port", "3000");
+        facts.insert("irq.name", "node");
+        facts.insert("irq.pid", "4821");
+        facts.insert("irq.age", "3 days");
+        facts.insert("virus.repo", "eko-pro");
+        facts.insert("virus.file", ".env.local");
+        facts.insert("virus.count", "1");
+        facts
+    }
+
+    #[test]
+    fn pc95_findings_matches_golden_for_both_flavours() {
+        let m = machine::find("pc95", None).unwrap();
+        for (golden_id, flavour) in [
+            ("pc95-findings", unicorn_flavour()),
+            ("pc95-findings-sumo", sumo_flavour()),
+        ] {
+            let mut facts = facts_with_findings();
+            crate::flavour::apply(&flavour, &mut facts);
+            let out = render_static(
+                &m,
+                &facts,
+                ColorMode::None,
+                0,
+                None,
+                Graphics::None,
+                Some(&flavour),
+                &fixture_findings(),
+            );
+            assert_eq!(out, golden(golden_id), "{golden_id} disagrees");
+        }
+    }
+
+    #[test]
+    fn phrasing_prefers_flavour_falls_back_to_machine_and_is_none_for_unknown_id() {
+        let m = machine::find("pc95", None).unwrap();
+        let sumo = sumo_flavour();
+        assert_eq!(
+            phrasing(&m, Some(&sumo), "boot_order"),
+            Some("Bout order: {boot.devices}")
+        );
+        // unicorn deliberately carries no findings table, so this falls back to the machine's own.
+        let unicorn = unicorn_flavour();
+        assert_eq!(
+            phrasing(&m, Some(&unicorn), "boot_order"),
+            Some("Boot device order: {boot.devices}")
+        );
+        assert_eq!(phrasing(&m, Some(&sumo), "nope"), None);
+    }
+
+    #[test]
+    fn an_unflavoured_machine_ignores_a_flavours_findings_table() {
+        let m = other_machine();
+        assert!(!m.flavoured);
+        let sumo = sumo_flavour();
+        assert_eq!(phrasing(&m, Some(&sumo), "boot_order"), None);
+    }
+
+    #[test]
+    fn a_finding_with_an_unresolved_slot_is_omitted_while_others_render() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = facts_with_findings();
+        facts.remove("irq.age");
+        crate::flavour::apply(&flavour, &mut facts);
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &fixture_findings(),
+        );
+        assert!(!out.contains("IRQ conflict"));
+        assert!(out.contains("Boot device order"));
+        assert!(out.contains("Virus scan"));
+    }
+
+    #[test]
+    fn a_finding_with_no_phrasing_at_all_is_omitted() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = facts_with_findings();
+        crate::flavour::apply(&flavour, &mut facts);
+        let mut findings = fixture_findings();
+        findings.push(finding("mystery_check", Severity::Info, &[]));
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &findings,
+        );
+        assert!(!out.to_lowercase().contains("mystery"));
+        assert!(out.contains("Boot device order"));
+    }
+
+    #[test]
+    fn an_over_long_finding_is_truncated_to_exactly_cols() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = Facts::fixture();
+        facts.insert("boot.devices", "a".repeat(200));
+        crate::flavour::apply(&flavour, &mut facts);
+        let findings = vec![finding("boot_order", Severity::Info, &[])];
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &findings,
+        );
+        let line = out
+            .lines()
+            .find(|l| l.starts_with("Boot device order:"))
+            .unwrap();
+        assert_eq!(line.chars().count(), m.cols as usize);
+    }
+
+    #[test]
+    fn f1_resume_wins_when_boot_device_is_present() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = Facts::fixture();
+        facts.insert("boot.device", "eko-pro");
+        crate::flavour::apply(&flavour, &mut facts);
+        let findings = vec![finding("boot_order", Severity::Info, &[])];
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &findings,
+        );
+        assert!(out.contains("Press F1 to continue, or bios resume to boot eko-pro."));
+    }
+
+    #[test]
+    fn f1_appears_when_a_warn_is_present_and_boot_device_is_absent() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        assert_eq!(facts.get("boot.device"), None);
+        let findings = vec![finding("irq_conflict", Severity::Warn, &[])];
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &findings,
+        );
+        assert!(out.contains("Press F1 to continue."));
+    }
+
+    #[test]
+    fn no_f1_line_when_only_info_findings_fired_and_boot_device_is_absent() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        assert_eq!(facts.get("boot.device"), None);
+        let findings = vec![finding("boot_order", Severity::Info, &[])];
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &findings,
+        );
+        assert!(!out.contains("Press F1"));
     }
 }

@@ -2,6 +2,7 @@
 
 use std::io::{IsTerminal, Write};
 use std::os::unix::io::AsRawFd;
+use std::process::Stdio;
 
 use crate::mode::BootMode;
 
@@ -33,6 +34,45 @@ fn write_stdout_bytes(bytes: &[u8]) {
     let mut stdout = std::io::stdout();
     if stdout.write_all(bytes).is_err() {
         debug(|| "bios: failed to write to stdout".to_string());
+    }
+}
+
+/// Spawns a detached `bios refresh`, never waited on: its own process, its own stdio, its own
+/// failures. A failure to find the current executable or to spawn the child is silent.
+fn spawn_refresh() {
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => {
+            debug(|| format!("bios: cannot find own executable to refresh: {e}"));
+            return;
+        }
+    };
+    if let Err(e) = std::process::Command::new(exe)
+        .arg("refresh")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        debug(|| format!("bios: failed to spawn a detached refresh: {e}"));
+    }
+}
+
+/// Loads the fact cache when `config.checks` is true, `None` otherwise (and when there is no
+/// cache directory to read). Kept as the `Cache` itself, not just its fresh findings, so a caller
+/// can check `is_stale` after the screen is drawn without loading it twice.
+fn load_cache(config: &crate::config::Config) -> Option<crate::cache::Cache> {
+    if !config.checks {
+        return None;
+    }
+    crate::paths::cache_dir().map(|dir| crate::cache::load(&dir))
+}
+
+/// Spawns a detached refresh when `cache` is stale. A missing cache (checks off, or no cache
+/// directory) never spawns anything.
+fn refresh_if_stale(cache: Option<&crate::cache::Cache>, now: u64) {
+    if cache.is_some_and(|c| c.is_stale(now)) {
+        spawn_refresh();
     }
 }
 
@@ -74,8 +114,9 @@ fn animate_enabled(
 /// Draws `machine` into `out`: animated (honouring `key_fd` as the skip key source) when
 /// `animate` is true and, if a key is to be polled, raw mode can actually be entered; the final
 /// static screen otherwise. `flavour`, for a flavoured machine, supplies its quips and its logo
-/// sprite. Returns the raw bytes read from `key_fd` while the show played, in order, empty when
-/// it did not animate or nothing was typed.
+/// sprite. `findings` supplies the `Findings` and `F1` lines, empty when checks are off or there
+/// is nothing fresh in the cache. Returns the raw bytes read from `key_fd` while the show played,
+/// in order, empty when it did not animate or nothing was typed.
 #[allow(clippy::too_many_arguments)]
 fn play_or_render(
     machine: &crate::machine::Machine,
@@ -85,6 +126,7 @@ fn play_or_render(
     term_cols: Option<u16>,
     graphics: crate::render::Graphics,
     flavour: Option<&crate::flavour::Flavour>,
+    findings: &[crate::checks::Finding],
     animate: bool,
     out: &mut dyn Write,
     key_fd: Option<i32>,
@@ -98,12 +140,15 @@ fn play_or_render(
                 term_cols,
                 graphics,
             };
-            return crate::show::play(machine, facts, seed, geometry, flavour, out, key_fd, 1.0)
-                .typed;
+            return crate::show::play(
+                machine, facts, seed, geometry, flavour, findings, out, key_fd, 1.0,
+            )
+            .typed;
         }
     }
-    let output =
-        crate::render::render_static(machine, facts, mode, seed, term_cols, graphics, flavour);
+    let output = crate::render::render_static(
+        machine, facts, mode, seed, term_cols, graphics, flavour, findings,
+    );
     let _ = out.write_all(output.as_bytes());
     let _ = out.flush();
     Vec::new()
@@ -148,6 +193,19 @@ fn run_preview(args: &BootArgs) {
     let mut facts = crate::facts::gather();
     // A preview is not a real shell startup, so a stale or meaningless boot time never appears.
     facts.remove("shell.boot_ms");
+
+    let now = crate::clock::now_unix();
+    let cache = load_cache(&config);
+    let findings: Vec<crate::checks::Finding> = cache
+        .as_ref()
+        .map(|c| c.fresh(now).into_iter().cloned().collect())
+        .unwrap_or_default();
+    for finding in &findings {
+        for (key, value) in &finding.facts {
+            facts.insert(key, value.clone());
+        }
+    }
+
     let flavour = resolve_flavour(args.flavour.as_deref(), &config.flavour);
     if let Some(f) = &flavour {
         crate::flavour::apply(f, &mut facts);
@@ -166,10 +224,13 @@ fn run_preview(args: &BootArgs) {
         term_cols,
         graphics(),
         flavour.as_ref(),
+        &findings,
         animate,
         &mut stdout,
         key_fd,
     );
+
+    refresh_if_stale(cache.as_ref(), now);
 }
 
 /// The real boot: `bios boot` (writes to stdout, keys discarded) or `bios boot --hook` (writes
@@ -216,11 +277,17 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
         burst_window_secs: 10,
     };
     let decision = crate::mode::decide(&inputs);
-    if matches!(decision, BootMode::Off | BootMode::Quiet) {
+    if decision == BootMode::Off {
         return;
     }
 
     let config = crate::config::load(crate::paths::config_dir().as_deref());
+
+    if decision == BootMode::Quiet {
+        run_quiet_fail_line(&config, now, tty_file);
+        return;
+    }
+
     let user_dir = crate::paths::user_machines_dir();
     let machine = crate::machine::find("pc95", user_dir.as_deref());
     let Some(machine) = machine else {
@@ -233,6 +300,18 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
     let mut facts = crate::facts::gather();
     facts.insert("streak.days", state.streak_days.to_string());
     facts.insert("streak.label", state.streak_label());
+
+    let cache = load_cache(&config);
+    let findings: Vec<crate::checks::Finding> = cache
+        .as_ref()
+        .map(|c| c.fresh(now).into_iter().cloned().collect())
+        .unwrap_or_default();
+    for finding in &findings {
+        for (key, value) in &finding.facts {
+            facts.insert(key, value.clone());
+        }
+    }
+
     let flavour = resolve_flavour(None, &config.flavour);
     if let Some(f) = &flavour {
         crate::flavour::apply(f, &mut facts);
@@ -263,6 +342,7 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
         term_cols,
         graphics(),
         flavour.as_ref(),
+        &findings,
         animate,
         out,
         key_fd,
@@ -279,5 +359,61 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
         if let Err(e) = state.save(dir) {
             debug(|| format!("bios: failed to save state: {e}"));
         }
+    }
+
+    refresh_if_stale(cache.as_ref(), now);
+}
+
+/// The whole of what a `Quiet` decision does: nothing, unless `config.checks` is true and a fresh
+/// `Fail` finding is sitting in the cache, in which case its rendered line (flavour phrasing
+/// first, then the machine's) is written to `target` (the same `/dev/tty` or stdout a real boot
+/// would use) as plain text: no paint, no border, no padding, no colour, and no F1 line. Spawns a
+/// detached refresh when the cache is stale either way. Never touches state; that stays exactly
+/// as the `Fast` and `Full` paths leave it.
+fn run_quiet_fail_line(
+    config: &crate::config::Config,
+    now: u64,
+    mut target: Option<std::fs::File>,
+) {
+    if !config.checks {
+        return;
+    }
+    let Some(dir) = crate::paths::cache_dir() else {
+        return;
+    };
+    let cache = crate::cache::load(&dir);
+    let fail = cache
+        .fresh(now)
+        .into_iter()
+        .find(|f| f.severity == crate::checks::Severity::Fail)
+        .cloned();
+    if let Some(finding) = fail {
+        let user_dir = crate::paths::user_machines_dir();
+        if let Some(machine) = crate::machine::find("pc95", user_dir.as_deref()) {
+            let mut facts = crate::facts::gather();
+            for (key, value) in &finding.facts {
+                facts.insert(key, value.clone());
+            }
+            let flavour = resolve_flavour(None, &config.flavour);
+            if let Some(f) = &flavour {
+                crate::flavour::apply(f, &mut facts);
+            }
+            if let Some(text) =
+                crate::render::finding_text(&machine, &facts, flavour.as_ref(), &finding)
+            {
+                let mut line = text;
+                line.push('\n');
+                let mut stdout_handle = std::io::stdout();
+                let out: &mut dyn Write = match &mut target {
+                    Some(f) => f,
+                    None => &mut stdout_handle,
+                };
+                let _ = out.write_all(line.as_bytes());
+                let _ = out.flush();
+            }
+        }
+    }
+    if cache.is_stale(now) {
+        spawn_refresh();
     }
 }

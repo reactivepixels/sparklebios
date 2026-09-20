@@ -1,0 +1,25 @@
+Yokozuna Modular BIOS v1.991, Immovable
+Copyright (C) 1991-2026, Grand Tournament Systems
+
+DOHYO-15 Ring Revision 1991
+
+Main Processor : Apple M4 Pro, 14 cores, 0 steps backward
+Memory Testing : 37748736K OK
+
+Detecting Primary Master   ... 994GB, 78% used
+Detecting Operating System ... macOS 26.5
+Detecting Shell            ... zsh
+Detecting Salt             ... 1 handful (thrown)
+
+Bout order: eko-pro, sparklebios, klang-stack
+Left the ring mid-bout: eko-pro, 3 uncommitted changes.
+Ring occupied: port 3000 held by node (pid 4821) for 3 days.
+Ring not purified: eko-pro has .env.local tracked by git. Throw salt.
+
+Stance: low. Centre of gravity: lower.
+
+Bouts won in a row: 12. Do not get pushed out.
+Shell boot time: 412ms
+
+Press F1 to continue, or bios resume to re-enter eko-pro.
+09/19/2026-DOHYO-15-SUMO-1991RING-00

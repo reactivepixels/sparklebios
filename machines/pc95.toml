@@ -60,6 +60,12 @@ result = "{flavour.part_result}"
 print = ""
 
 [[step]]
+findings = true
+
+[[step]]
+print = ""
+
+[[step]]
 quip = true
 
 [[step]]
@@ -76,4 +82,16 @@ print = "Shell boot time: {shell.boot_ms}ms"
 print = ""
 
 [[step]]
+f1 = true
+
+[[step]]
 print = "{date.bios}-{flavour.footer}"
+
+[findings]
+boot_order = "Boot device order: {boot.devices}"
+boot_dirty = "Primary boot device not parked: {boot.device}, {boot.changes}."
+irq_conflict = "IRQ conflict: port {irq.port} held by {irq.name} (pid {irq.pid}) for {irq.age}."
+virus_one = "Virus scan: {virus.repo} has {virus.file} tracked by git. Quarantine advised."
+virus_many = "Virus scan: {virus.count} tracked secrets in {virus.repo}, including {virus.file}."
+f1 = "Press F1 to continue."
+f1_resume = "Press F1 to continue, or bios resume to boot {boot.device}."

@@ -6,8 +6,10 @@ use predicates::prelude::*;
 fn bios() -> Command {
     let sandbox = std::env::temp_dir().join("sparklebios-test-sandbox");
     let mut cmd = Command::cargo_bin("bios").unwrap();
-    cmd.env("XDG_CONFIG_HOME", sandbox.join("config"))
-        .env("XDG_STATE_HOME", sandbox.join("state"));
+    cmd.env("HOME", &sandbox)
+        .env("XDG_CONFIG_HOME", sandbox.join("config"))
+        .env("XDG_STATE_HOME", sandbox.join("state"))
+        .env("XDG_CACHE_HOME", sandbox.join("cache"));
     cmd
 }
 
@@ -31,6 +33,7 @@ Usage: bios <COMMAND>
 
 Everyday:
   boot               Play the boot screen now
+  resume             Change to the project you left work in
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
   theme list         List the matching Ghostty themes
@@ -44,6 +47,7 @@ Setup:
 Try:
   bios boot --flavour sumo     Preview a flavour without changing anything
   bios use sumo                Make it permanent
+  bios resume                  Go back to the project you left work in
   bios use                     Show which flavour is set
   bios theme use mane          Switch Ghostty to the Mane theme
   SPARKLEBIOS_BOOT=0           Set this in a shell to stop it booting there
@@ -71,6 +75,18 @@ fn init_zsh_prints_the_hook() {
         .stdout(predicate::str::contains("bios boot --hook"))
         .stdout(predicate::str::contains("print -z"))
         .stdout(predicate::str::contains("SPARKLEBIOS_BOOTED"));
+}
+
+#[test]
+fn init_zsh_defines_the_resume_wrapper_and_keeps_the_boot_hook_call() {
+    bios()
+        .args(["init", "zsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bios boot --hook"))
+        .stdout(predicate::str::contains("bios() {"))
+        .stdout(predicate::str::contains("command bios resume"))
+        .stdout(predicate::str::contains("builtin cd --"));
 }
 
 #[test]
@@ -429,4 +445,241 @@ fn theme_use_with_an_unknown_name_fails_and_writes_nothing() {
         .stderr("bios: no theme called nope. Try: bios theme list\n");
     assert!(!config_path.exists());
     assert!(!themes_dir.path().join("rainbows-and-unicorns").exists());
+}
+
+/// A fully isolated environment for the checks/cache commands: its own `HOME`, config, state and
+/// cache directories, plus a `project_dirs` config entry pointing at a fresh temp project root
+/// containing one bare repo.
+struct RefreshSandbox {
+    _home: tempfile::TempDir,
+    config: tempfile::TempDir,
+    _state: tempfile::TempDir,
+    cache: tempfile::TempDir,
+    _project_root: tempfile::TempDir,
+    repo: std::path::PathBuf,
+}
+
+impl RefreshSandbox {
+    fn new() -> Self {
+        let home = tempfile::tempdir().unwrap();
+        let config = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let project_root = tempfile::tempdir().unwrap();
+        let repo = project_root.path().join("demo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let sparklebios_config = config.path().join("sparklebios");
+        std::fs::create_dir_all(&sparklebios_config).unwrap();
+        std::fs::write(
+            sparklebios_config.join("config.toml"),
+            format!("project_dirs = [\"{}\"]\n", project_root.path().display()),
+        )
+        .unwrap();
+        RefreshSandbox {
+            _home: home,
+            config,
+            _state: state,
+            cache,
+            _project_root: project_root,
+            repo,
+        }
+    }
+
+    fn cmd(&self) -> Command {
+        let mut cmd = Command::cargo_bin("bios").unwrap();
+        cmd.env("HOME", self._home.path())
+            .env("XDG_CONFIG_HOME", self.config.path())
+            .env("XDG_STATE_HOME", self._state.path())
+            .env("XDG_CACHE_HOME", self.cache.path());
+        cmd
+    }
+
+    fn cache_file(&self) -> std::path::PathBuf {
+        self.cache.path().join("sparklebios/facts.json")
+    }
+}
+
+#[test]
+fn refresh_print_prints_json_containing_boot_order() {
+    let sandbox = RefreshSandbox::new();
+    sandbox
+        .cmd()
+        .args(["refresh", "--print"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("boot_order"));
+}
+
+#[test]
+fn a_second_refresh_immediately_after_is_a_no_op() {
+    let sandbox = RefreshSandbox::new();
+    sandbox.cmd().arg("refresh").assert().success();
+    let first_mtime = std::fs::metadata(sandbox.cache_file())
+        .unwrap()
+        .modified()
+        .unwrap();
+
+    sandbox.cmd().arg("refresh").assert().success();
+    let second_mtime = std::fs::metadata(sandbox.cache_file())
+        .unwrap()
+        .modified()
+        .unwrap();
+
+    assert_eq!(first_mtime, second_mtime);
+}
+
+#[test]
+fn resume_prints_the_expected_absolute_path() {
+    let sandbox = RefreshSandbox::new();
+    sandbox
+        .cmd()
+        .arg("resume")
+        .assert()
+        .success()
+        .stdout(format!("{}\n", sandbox.repo.display()));
+}
+
+#[test]
+fn resume_with_no_candidate_fails_with_the_exact_message() {
+    let home = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let empty_root = tempfile::tempdir().unwrap();
+    let sparklebios_config = config.path().join("sparklebios");
+    std::fs::create_dir_all(&sparklebios_config).unwrap();
+    std::fs::write(
+        sparklebios_config.join("config.toml"),
+        format!("project_dirs = [\"{}\"]\n", empty_root.path().display()),
+    )
+    .unwrap();
+
+    Command::cargo_bin("bios")
+        .unwrap()
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("XDG_STATE_HOME", state.path())
+        .env("XDG_CACHE_HOME", cache.path())
+        .arg("resume")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr("bios: no boot device to resume.\n");
+}
+
+/// A fully isolated environment for the boot-path findings tests: its own `HOME`, config, state
+/// and cache directories, with a `facts.json` this test seeds by hand rather than through a real
+/// `bios refresh`.
+struct FindingsSandbox {
+    _home: tempfile::TempDir,
+    config: tempfile::TempDir,
+    _state: tempfile::TempDir,
+    cache: tempfile::TempDir,
+}
+
+impl FindingsSandbox {
+    fn new() -> Self {
+        FindingsSandbox {
+            _home: tempfile::tempdir().unwrap(),
+            config: tempfile::tempdir().unwrap(),
+            _state: tempfile::tempdir().unwrap(),
+            cache: tempfile::tempdir().unwrap(),
+        }
+    }
+
+    fn cmd(&self) -> Command {
+        let mut cmd = Command::cargo_bin("bios").unwrap();
+        cmd.env("HOME", self._home.path())
+            .env("XDG_CONFIG_HOME", self.config.path())
+            .env("XDG_STATE_HOME", self._state.path())
+            .env("XDG_CACHE_HOME", self.cache.path());
+        cmd
+    }
+
+    /// Writes `<cache>/sparklebios/facts.json` with a single fresh `boot_order` finding,
+    /// `generated` at `now - age_secs`.
+    fn seed_boot_order(&self, age_secs: u64) {
+        let dir = self.cache.path().join("sparklebios");
+        std::fs::create_dir_all(&dir).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let generated = now.saturating_sub(age_secs);
+        let json = format!(
+            r#"{{"generated":{generated},"findings":[{{"id":"boot_order","severity":"info","ttl":57600,"facts":{{"boot.devices":"eko-pro, sparklebios"}}}}]}}"#
+        );
+        std::fs::write(dir.join("facts.json"), json).unwrap();
+    }
+
+    /// Writes `<config>/sparklebios/config.toml` with `checks = false`.
+    fn disable_checks(&self) {
+        let dir = self.config.path().join("sparklebios");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), "checks = false\n").unwrap();
+    }
+}
+
+#[test]
+fn a_fresh_finding_in_the_cache_reaches_the_boot_screen() {
+    let sandbox = FindingsSandbox::new();
+    sandbox.seed_boot_order(0);
+    sandbox
+        .cmd()
+        .args(["boot", "--machine", "pc95", "--no-animate"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Boot device order: eko-pro, sparklebios",
+        ));
+}
+
+#[test]
+fn the_sumo_flavour_phrases_the_same_finding_differently() {
+    let sandbox = FindingsSandbox::new();
+    sandbox.seed_boot_order(0);
+    sandbox
+        .cmd()
+        .args([
+            "boot",
+            "--machine",
+            "pc95",
+            "--flavour",
+            "sumo",
+            "--no-animate",
+        ])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Bout order: eko-pro, sparklebios"))
+        .stdout(predicate::str::contains("Boot device order:").not());
+}
+
+#[test]
+fn a_finding_past_its_own_ttl_is_not_shown() {
+    let sandbox = FindingsSandbox::new();
+    // boot_order's ttl is 57600 seconds (16 hours); generated well past that.
+    sandbox.seed_boot_order(100_000);
+    sandbox
+        .cmd()
+        .args(["boot", "--machine", "pc95", "--no-animate"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Boot device order:").not());
+}
+
+#[test]
+fn checks_false_shows_no_findings() {
+    let sandbox = FindingsSandbox::new();
+    sandbox.seed_boot_order(0);
+    sandbox.disable_checks();
+    sandbox
+        .cmd()
+        .args(["boot", "--machine", "pc95", "--no-animate"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Boot device order:").not());
 }
