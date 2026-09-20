@@ -81,6 +81,9 @@ enum Command {
     Use(UseCliArgs),
     /// Show or set the sprinkles level.
     Sprinkles(SprinklesCliArgs),
+    /// Print the current flavour's line for a moment. For tests and for shells we do not emit.
+    #[command(hide = true)]
+    Say(SayCliArgs),
     /// The CMOS Setup Utility.
     Setup,
     /// Ghostty theme commands.
@@ -141,6 +144,21 @@ struct RefreshCliArgs {
     /// Print the refreshed cache as JSON after refreshing.
     #[arg(long, hide = true)]
     print: bool,
+}
+
+#[derive(Debug, Args)]
+struct SayCliArgs {
+    /// The moment: done, failed, goodbye, not_found, refresh, resume or switched.
+    event: String,
+    /// How long the command took, in seconds, for the lines that mention it.
+    #[arg(long)]
+    took: Option<u64>,
+    /// The project name, for the lines that mention it.
+    #[arg(long)]
+    device: Option<String>,
+    /// The command that was not found, for the line that mentions it.
+    #[arg(long)]
+    cmd: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -248,6 +266,7 @@ pub fn run() -> i32 {
         Command::Theme {
             command: ThemeCommand::Install { dir },
         } => install_theme(dir),
+        Command::Say(args) => say(args),
         Command::Setup => crate::setup::run(),
         Command::Theme {
             command: ThemeCommand::List,
@@ -322,6 +341,12 @@ fn refresh(force: bool, print: bool) -> i32 {
 
     let now = crate::clock::now_unix();
     do_refresh(&cache_dir, now, force, print);
+    // A boot spawns this with its output thrown away, so only a person who typed it sees this.
+    if !print {
+        if let Some(line) = presence_line("refresh", &[]) {
+            println!("{line}");
+        }
+    }
     let _ = std::fs::remove_file(&lock_path);
     0
 }
@@ -366,6 +391,40 @@ fn print_cache(cache: &crate::cache::Cache) {
 
 /// Prints the absolute path of boot device 1. Not on the boot path, so it runs the project scan
 /// inline rather than trusting the cache, and never writes the cache.
+/// The configured flavour's line for `event`, or `None` when presence is switched off, the
+/// flavour has nothing to say, or a slot it needs was not supplied.
+fn say(args: SayCliArgs) -> i32 {
+    let took = args.took.map(crate::presence::duration);
+    let mut slots: Vec<(&str, &str)> = Vec::new();
+    if let Some(took) = &took {
+        slots.push(("took", took));
+    }
+    if let Some(device) = &args.device {
+        slots.push(("device", device));
+    }
+    if let Some(cmd) = &args.cmd {
+        slots.push(("cmd", cmd));
+    }
+    if let Some(line) = presence_line(&args.event, &slots) {
+        println!("{line}");
+    }
+    // Saying nothing is a normal outcome: presence off, an unknown moment, a flavour with no
+    // words for it. None of those is an error worth an exit code.
+    0
+}
+
+fn presence_line(event: &str, slots: &[(&str, &str)]) -> Option<String> {
+    let config = crate::config::load(crate::paths::config_dir().as_deref());
+    if !config.presence {
+        return None;
+    }
+    let flavour = crate::flavour::find(
+        &config.flavour,
+        crate::paths::user_flavours_dir().as_deref(),
+    )?;
+    crate::presence::line(&flavour, event, slots)
+}
+
 fn resume() -> i32 {
     let config = crate::config::load(crate::paths::config_dir().as_deref());
     let devices = crate::checks::projects::boot_devices(&config);
@@ -373,8 +432,19 @@ fn resume() -> i32 {
         eprintln!("bios: no boot device to resume.");
         return 1;
     };
+    // The line goes to stderr on purpose. Stdout is the path, and the shell function does
+    // `cd "$(bios resume)"` with it, so a second line there would be read as part of the path.
+    if let Some(line) = presence_line("resume", &[("device", &dir_name(first))]) {
+        eprintln!("{line}");
+    }
     println!("{}", first.display());
     0
+}
+
+fn dir_name(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 fn use_flavour(args: UseCliArgs) -> i32 {
@@ -401,6 +471,11 @@ fn use_flavour(args: UseCliArgs) -> i32 {
     .map(|f| f.id)
     .unwrap_or_else(|| "unicorn".to_string());
     println!("Flavour : {flavour_id}");
+    if args.id.is_some() {
+        if let Some(line) = presence_line("switched", &[]) {
+            println!("{line}");
+        }
+    }
     0
 }
 

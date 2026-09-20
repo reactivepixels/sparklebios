@@ -12,6 +12,7 @@ pub mod flavour;
 pub mod machine;
 pub mod mode;
 pub mod paths;
+pub mod presence;
 pub mod render;
 pub mod setup;
 pub mod shell;
