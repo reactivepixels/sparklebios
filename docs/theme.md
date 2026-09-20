@@ -244,8 +244,20 @@ plum, so it is gentle to look at and still easy to read all day.
 
 ## Using it
 
-Copy the files from `themes/` into your Ghostty themes directory
-(`~/.config/ghostty/themes/`), then in your Ghostty config:
+The short way, with the `bios` binary installed:
+
+```
+bios theme list          the ten variants and their short names
+bios theme use mane      install every variant and switch Ghostty to one
+bios theme install       install the files without switching
+```
+
+`bios theme use` writes the theme files to `~/.config/ghostty/themes/` and sets
+the `theme` line in your Ghostty config. Nothing else in the config is touched.
+Reload the Ghostty config (Cmd+Shift+, on a Mac) to see it.
+
+The manual way: copy the files from `themes/` into `~/.config/ghostty/themes/`,
+then in your Ghostty config:
 
 ```
 theme = dark:rainbows-and-unicorns,light:rainbows-and-unicorns-paper
