@@ -57,6 +57,16 @@ const UNICORN_PNG: &[u8] = include_bytes!("../sprites/unicorn.png");
 const UNICORN_GRID_SRC: &str = include_str!("../sprites/unicorn14.txt");
 const SUMO_PNG: &[u8] = include_bytes!("../sprites/sumo.png");
 const SUMO_GRID_SRC: &str = include_str!("../sprites/sumo14.txt");
+const NINJA_PNG: &[u8] = include_bytes!("../sprites/ninja.png");
+const NINJA_GRID_SRC: &str = include_str!("../sprites/ninja14.txt");
+const VIKING_PNG: &[u8] = include_bytes!("../sprites/viking.png");
+const VIKING_GRID_SRC: &str = include_str!("../sprites/viking14.txt");
+const LUCHADOR_PNG: &[u8] = include_bytes!("../sprites/luchador.png");
+const LUCHADOR_GRID_SRC: &str = include_str!("../sprites/luchador14.txt");
+const YETI_PNG: &[u8] = include_bytes!("../sprites/yeti.png");
+const YETI_GRID_SRC: &str = include_str!("../sprites/yeti14.txt");
+const RACCOON_PNG: &[u8] = include_bytes!("../sprites/raccoon.png");
+const RACCOON_GRID_SRC: &str = include_str!("../sprites/raccoon14.txt");
 
 /// The built-in sprite named `name`, or `None` if there is no sprite by that name.
 pub fn builtin(name: &str) -> Option<Sprite> {
@@ -68,6 +78,26 @@ pub fn builtin(name: &str) -> Option<Sprite> {
         "sumo" => Some(Sprite {
             png: SUMO_PNG,
             grid: Grid::parse(SUMO_GRID_SRC),
+        }),
+        "ninja" => Some(Sprite {
+            png: NINJA_PNG,
+            grid: Grid::parse(NINJA_GRID_SRC),
+        }),
+        "viking" => Some(Sprite {
+            png: VIKING_PNG,
+            grid: Grid::parse(VIKING_GRID_SRC),
+        }),
+        "luchador" => Some(Sprite {
+            png: LUCHADOR_PNG,
+            grid: Grid::parse(LUCHADOR_GRID_SRC),
+        }),
+        "yeti" => Some(Sprite {
+            png: YETI_PNG,
+            grid: Grid::parse(YETI_GRID_SRC),
+        }),
+        "raccoon" => Some(Sprite {
+            png: RACCOON_PNG,
+            grid: Grid::parse(RACCOON_GRID_SRC),
         }),
         _ => None,
     }
@@ -358,8 +388,29 @@ mod tests {
     }
 
     #[test]
+    fn every_builtin_flavours_sprite_grid_is_14_by_14_with_a_full_palette() {
+        for f in crate::flavour::builtins() {
+            let sprite = builtin(&f.sprite)
+                .unwrap_or_else(|| panic!("{}: sprite {:?} did not resolve", f.id, f.sprite));
+            assert_eq!(sprite.grid.rows.len(), 14, "{}: row count", f.id);
+            for row in &sprite.grid.rows {
+                assert_eq!(row.len(), 14, "{}: row width", f.id);
+                for &c in row {
+                    assert!(
+                        c == '.' || sprite.grid.color(c).is_some(),
+                        "{}: {c:?} has no palette entry",
+                        f.id
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn every_builtin_sprite_grid_is_14_by_14_with_a_full_palette() {
-        for name in ["unicorn", "sumo"] {
+        for name in [
+            "unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon",
+        ] {
             let sprite = builtin(name).unwrap();
             assert_eq!(sprite.grid.rows.len(), 14, "{name} row count");
             for row in &sprite.grid.rows {

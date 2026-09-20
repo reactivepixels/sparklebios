@@ -23,6 +23,11 @@ body:
       options:
         - unicorn
         - sumo
+        - ninja
+        - viking
+        - luchador
+        - yeti
+        - raccoon
         - Another flavour (say which below)
     validations:
       required: true

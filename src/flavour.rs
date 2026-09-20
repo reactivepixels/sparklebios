@@ -45,6 +45,11 @@ struct RawFlavour {
 
 const UNICORN_TOML: &str = include_str!("../flavours/unicorn.toml");
 const SUMO_TOML: &str = include_str!("../flavours/sumo.toml");
+const NINJA_TOML: &str = include_str!("../flavours/ninja.toml");
+const VIKING_TOML: &str = include_str!("../flavours/viking.toml");
+const LUCHADOR_TOML: &str = include_str!("../flavours/luchador.toml");
+const YETI_TOML: &str = include_str!("../flavours/yeti.toml");
+const RACCOON_TOML: &str = include_str!("../flavours/raccoon.toml");
 
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -129,12 +134,21 @@ fn validate(raw: RawFlavour) -> Result<Flavour, String> {
     })
 }
 
-/// Built-in flavours, in roster order: unicorn, sumo. A built-in that fails to parse is skipped.
+/// Built-in flavours, in roster order: unicorn, sumo, ninja, viking, luchador, yeti, raccoon. A
+/// built-in that fails to parse is skipped.
 pub fn builtins() -> Vec<Flavour> {
-    [UNICORN_TOML, SUMO_TOML]
-        .into_iter()
-        .filter_map(|src| parse(src).ok())
-        .collect()
+    [
+        UNICORN_TOML,
+        SUMO_TOML,
+        NINJA_TOML,
+        VIKING_TOML,
+        LUCHADOR_TOML,
+        YETI_TOML,
+        RACCOON_TOML,
+    ]
+    .into_iter()
+    .filter_map(|src| parse(src).ok())
+    .collect()
 }
 
 /// `<user_dir>/<id>.toml` wins over a built-in of the same id. Unreadable or invalid user files
@@ -234,9 +248,12 @@ quips = ["a", "b", "c"]
     }
 
     #[test]
-    fn builtins_are_unicorn_then_sumo() {
+    fn builtins_are_the_full_roster_in_order() {
         let ids: Vec<String> = builtins().into_iter().map(|f| f.id).collect();
-        assert_eq!(ids, vec!["unicorn", "sumo"]);
+        assert_eq!(
+            ids,
+            vec!["unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon"]
+        );
     }
 
     #[test]
@@ -320,6 +337,68 @@ quips = ["a", "b", "c"]
         }
     }
 
+    /// `boot.*`, `irq.*` and `virus.*`, the facts a finding's phrasing renders against, on top of
+    /// `Facts::fixture()`.
+    fn finding_facts() -> Facts {
+        let mut facts = Facts::fixture();
+        facts.insert("boot.devices", "eko-pro, sparklebios, klang-stack");
+        facts.insert("boot.device", "eko-pro");
+        facts.insert("boot.changes", "3 uncommitted changes");
+        facts.insert("irq.port", "3000");
+        facts.insert("irq.name", "node");
+        facts.insert("irq.pid", "4821");
+        facts.insert("irq.age", "3 days");
+        facts.insert("virus.repo", "eko-pro");
+        facts.insert("virus.file", ".env.local");
+        facts.insert("virus.count", "3");
+        facts
+    }
+
+    #[test]
+    fn every_builtin_finding_phrasing_fits_80_columns_against_fixture_facts() {
+        let facts = finding_facts();
+        for f in builtins() {
+            for (key, value) in &f.findings {
+                if let Some(rendered) = template::render(value, &facts) {
+                    assert!(
+                        rendered.chars().count() <= 80,
+                        "{}: finding {key} {:?} is {} chars",
+                        f.id,
+                        rendered,
+                        rendered.chars().count()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_builtin_finding_phrasing_resolves_against_fixture_facts() {
+        let facts = finding_facts();
+        for f in builtins() {
+            for (key, value) in &f.findings {
+                assert!(
+                    template::render(value, &facts).is_some(),
+                    "{}: finding {key} {:?} did not resolve",
+                    f.id,
+                    value
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_builtin_flavours_sprite_resolves() {
+        for f in builtins() {
+            assert!(
+                crate::sprite::builtin(&f.sprite).is_some(),
+                "{}: sprite {:?} did not resolve",
+                f.id,
+                f.sprite
+            );
+        }
+    }
+
     #[test]
     fn user_file_overrides_builtin_and_bad_user_files_are_ignored() {
         let dir = tempfile::tempdir().unwrap();
@@ -332,7 +411,10 @@ quips = ["a", "b", "c"]
         let f = find("sumo", Some(dir.path())).unwrap();
         assert_eq!(f.name, "Test");
         let ids: Vec<String> = list(Some(dir.path())).into_iter().map(|f| f.id).collect();
-        assert_eq!(ids, vec!["unicorn", "sumo"]);
+        assert_eq!(
+            ids,
+            vec!["unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon"]
+        );
     }
 
     #[test]

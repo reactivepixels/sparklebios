@@ -62,6 +62,11 @@ bios use sumo            # make it permanent
 |---|---|---|
 | `unicorn` | Horn: 1 found (7-band, sparkle capable) | Warning: horn is not hot-swappable. |
 | `sumo` | Salt: 1 handful (thrown) | Process priority: heavyweight. |
+| `ninja` | Ninja: not found (as expected) | Floppy drive A: vanished in a puff of smoke. |
+| `viking` | Horns: 2 found (historically inaccurate) | Beard integrity: excellent. |
+| `luchador` | Mask: 1 found (never removed) | Process pinned. One, two, three. |
+| `yeti` | Yeti: 1 found (blurry) | Footprint detected. Size 27. Not yours. |
+| `raccoon` | Trash: located (smells promising) | Hands washed. Evidence also washed. |
 
 A flavour is one TOML file and one sprite, so adding yours needs no Rust. See
 [docs/flavours.md](docs/flavours.md).
