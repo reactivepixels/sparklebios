@@ -8,7 +8,8 @@ use crate::shell;
 
 const TOP_LEVEL_HELP_TEMPLATE: &str = "\
 SparkleBIOS {version}
-A 1995 POST screen for your terminal that is secretly a health check.
+Boot every terminal tab like a 1995 PC. It counts your RAM, detects a unicorn,
+and runs a real health check.
 
 Usage: bios <COMMAND>
 
@@ -16,18 +17,21 @@ Everyday:
   boot               Play the boot screen now
   fetch              Show your machine at a glance
   resume             Change to the project you left work in
+  refresh            Run the health checks again now
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
-  sprinkles [LEVEL]     Optional effects: off, light or full
+  sprinkles [LEVEL]  Optional effects: off, light or full
   theme list         List the matching Ghostty themes
   theme use <NAME>   Install the themes and switch Ghostty to one
 
-Setup:
-  init zsh           Print the hook. Add this to the end of ~/.zshrc:
+Install:
+  init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
                      command -v bios >/dev/null 2>&1 && eval \"$(bios init zsh)\"
   theme install      Install the theme files without switching
   setup              The CMOS Setup Utility. Blue. Arrow keys. You remember.
   config edit        Open the config file in your editor
+  config path        Print where the config file lives
+  config reset       Factory defaults. The unicorn will be notified.
 
 Try:
   bios boot --flavour sumo     Preview a flavour without changing anything
@@ -73,7 +77,8 @@ enum Command {
     Fetch,
     /// Refresh the fact cache used by the boot screen's health checks.
     Refresh(RefreshCliArgs),
-    /// Print the path of the project you left work in.
+    /// Print the path of the project you left work in. The shell hook wraps this in a function
+    /// that changes directory for you, so with the hook installed `bios resume` takes you there.
     Resume,
     /// List the flavours you can boot as.
     Flavours,
@@ -84,6 +89,9 @@ enum Command {
     /// Print the current flavour's line for a moment. For tests and for shells we do not emit.
     #[command(hide = true)]
     Say(SayCliArgs),
+    /// Print the mascot for one prompt. For starship, which spawns its custom commands anyway.
+    #[command(hide = true)]
+    Prompt,
     /// The CMOS Setup Utility.
     Setup,
     /// Ghostty theme commands.
@@ -232,22 +240,13 @@ pub fn run() -> i32 {
     match cli.command {
         Command::Init {
             shell: InitShell::Zsh,
-        } => {
-            print!("{}", shell::ZSH_HOOK);
-            0
-        }
+        } => init(shell::Shell::Zsh),
         Command::Init {
             shell: InitShell::Bash,
-        } => {
-            print!("{}", shell::BASH_HOOK);
-            0
-        }
+        } => init(shell::Shell::Bash),
         Command::Init {
             shell: InitShell::Fish,
-        } => {
-            print!("{}", shell::FISH_HOOK);
-            0
-        }
+        } => init(shell::Shell::Fish),
         Command::Boot(args) => {
             crate::boot::run(&args.into());
             0
@@ -267,6 +266,7 @@ pub fn run() -> i32 {
             command: ThemeCommand::Install { dir },
         } => install_theme(dir),
         Command::Say(args) => say(args),
+        Command::Prompt => prompt(),
         Command::Setup => crate::setup::run(),
         Command::Theme {
             command: ThemeCommand::List,
@@ -393,6 +393,46 @@ fn print_cache(cache: &crate::cache::Cache) {
 /// inline rather than trusting the cache, and never writes the cache.
 /// The configured flavour's line for `event`, or `None` when presence is switched off, the
 /// flavour has nothing to say, or a slot it needs was not supplied.
+/// Prints a shell's hook with the current flavour's lines written into it. Everything the shell
+/// will say is decided here, once, so the shell itself never spawns `bios` to speak.
+fn init(shell: shell::Shell) -> i32 {
+    let config = crate::config::load(crate::paths::config_dir().as_deref());
+    let flavour = crate::flavour::find(
+        &config.flavour,
+        crate::paths::user_flavours_dir().as_deref(),
+    );
+    let mascot = mascot_for(flavour.as_ref(), shell.wrap());
+    print!(
+        "{}",
+        shell::render(shell, &config, flavour.as_ref(), mascot)
+    );
+    0
+}
+
+/// The mascot placement for the prompt, or nothing where the terminal cannot draw an image.
+/// Only the kitty protocol can send an image once and place it cheaply afterwards; the iTerm2
+/// protocol has no stored image, so a prompt there would have to resend the PNG every time and
+/// is left out rather than made expensive.
+fn mascot_for(flavour: Option<&crate::flavour::Flavour>, wrap: shell::Wrap) -> shell::Mascot {
+    let protocol = crate::sprite::detect_image_protocol(
+        std::env::var("TERM").ok().as_deref(),
+        std::env::var("TERM_PROGRAM").ok().as_deref(),
+        std::env::var("LC_TERMINAL").ok().as_deref(),
+    );
+    if protocol != Some(crate::sprite::ImageProtocol::Kitty) {
+        return shell::Mascot::none();
+    }
+    let Some(flavour) = flavour else {
+        return shell::Mascot::none();
+    };
+    let Some(png) = crate::sprite::builtin(&flavour.sprite) else {
+        return shell::Mascot::none();
+    };
+    // An id of our own, steady for a flavour, so a second shell reuses the same image.
+    let id = 9000 + (flavour.id.bytes().map(u32::from).sum::<u32>() % 900);
+    shell::Mascot::kitty(png, id, 1, wrap)
+}
+
 fn say(args: SayCliArgs) -> i32 {
     let took = args.took.map(crate::presence::duration);
     let mut slots: Vec<(&str, &str)> = Vec::new();
@@ -410,6 +450,29 @@ fn say(args: SayCliArgs) -> i32 {
     }
     // Saying nothing is a normal outcome: presence off, an unknown moment, a flavour with no
     // words for it. None of those is an error worth an exit code.
+    0
+}
+
+/// Prints the mascot for one prompt: the same placement `bios init` bakes into
+/// `SPARKLEBIOS_MASCOT`, unwrapped (`shell::Wrap::None`), since starship does its own width
+/// accounting. Prints the image transmission first unless `SPARKLEBIOS_PROMPT_IMG` is set, so a
+/// starship user who wants to pay for it only once can set that after the first prompt. Exits 0
+/// always, and prints nothing at all on any error or wherever the terminal cannot draw an image:
+/// a prompt command must never be able to break a prompt.
+fn prompt() -> i32 {
+    let config = crate::config::load(crate::paths::config_dir().as_deref());
+    let flavour = crate::flavour::find(
+        &config.flavour,
+        crate::paths::user_flavours_dir().as_deref(),
+    );
+    let mascot = mascot_for(flavour.as_ref(), shell::Wrap::None);
+    if mascot.placement.is_empty() {
+        return 0;
+    }
+    if std::env::var("SPARKLEBIOS_PROMPT_IMG").is_err() {
+        print!("{}", mascot.transmit);
+    }
+    print!("{}", mascot.placement);
     0
 }
 

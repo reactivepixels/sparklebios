@@ -31,7 +31,8 @@ fn help_and_bare_invocation_print_the_exact_top_level_help() {
     let version = env!("CARGO_PKG_VERSION");
     let expected = format!(
         r#"SparkleBIOS {version}
-A 1995 POST screen for your terminal that is secretly a health check.
+Boot every terminal tab like a 1995 PC. It counts your RAM, detects a unicorn,
+and runs a real health check.
 
 Usage: bios <COMMAND>
 
@@ -39,18 +40,21 @@ Everyday:
   boot               Play the boot screen now
   fetch              Show your machine at a glance
   resume             Change to the project you left work in
+  refresh            Run the health checks again now
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
-  sprinkles [LEVEL]     Optional effects: off, light or full
+  sprinkles [LEVEL]  Optional effects: off, light or full
   theme list         List the matching Ghostty themes
   theme use <NAME>   Install the themes and switch Ghostty to one
 
-Setup:
-  init zsh           Print the hook. Add this to the end of ~/.zshrc:
+Install:
+  init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
                      command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
   theme install      Install the theme files without switching
   setup              The CMOS Setup Utility. Blue. Arrow keys. You remember.
   config edit        Open the config file in your editor
+  config path        Print where the config file lives
+  config reset       Factory defaults. The unicorn will be notified.
 
 Try:
   bios boot --flavour sumo     Preview a flavour without changing anything
@@ -99,11 +103,81 @@ fn init_zsh_defines_the_resume_wrapper_and_keeps_the_boot_hook_call() {
 
 #[test]
 fn hook_is_valid_zsh() {
-    let zsh = std::process::Command::new("zsh")
-        .args(["-n", "shell/init.zsh"])
-        .status();
-    if let Ok(status) = zsh {
-        assert!(status.success(), "shell/init.zsh has a syntax error");
+    for (shell, template) in shells() {
+        parses(shell, &std::fs::read_to_string(template).unwrap(), template);
+    }
+}
+
+/// The three shells and the template each one is printed from.
+fn shells() -> [(&'static str, &'static str); 3] {
+    [
+        ("zsh", "shell/init.zsh"),
+        ("bash", "shell/init.bash"),
+        ("fish", "shell/init.fish"),
+    ]
+}
+
+/// Asserts `text` parses as `shell`. Skips silently where the shell is not installed, so the
+/// suite still runs on a machine without fish.
+fn parses(shell: &str, text: &str, what: &str) {
+    let path = std::env::temp_dir().join(format!("sparklebios-hook-{shell}-{:x}", hash(what)));
+    std::fs::write(&path, text).unwrap();
+    let run = std::process::Command::new(shell)
+        .arg("-n")
+        .arg(&path)
+        .output();
+    let Ok(out) = run else {
+        return;
+    };
+    let _ = std::fs::remove_file(&path);
+    assert!(
+        out.status.success(),
+        "{what} is not valid {shell}:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn hash(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+
+/// The template parsing is only half of it: what a user evals is the template with the flavour's
+/// own words written into it, and any of those slots can be empty. Every combination has to parse,
+/// because a broken hook takes the whole shell down at startup.
+#[test]
+fn the_hook_parses_in_its_shell_with_every_combination_of_slots_filled_in() {
+    use sparklebios::shell::{render, Mascot, Shell};
+
+    let png = sparklebios::sprite::builtin("ninja").unwrap();
+    let flavours: Vec<Option<sparklebios::flavour::Flavour>> = std::iter::once(None)
+        .chain(sparklebios::flavour::builtins().into_iter().map(Some))
+        .collect();
+
+    for ((name, template), shell) in
+        shells()
+            .into_iter()
+            .zip([Shell::Zsh, Shell::Bash, Shell::Fish])
+    {
+        for flavour in &flavours {
+            for presence in [true, false] {
+                for title in [true, false] {
+                    for mascot in [Mascot::none(), Mascot::kitty(png, 7, 1, shell.wrap())] {
+                        let config = sparklebios::config::Config {
+                            presence,
+                            title,
+                            ..Default::default()
+                        };
+                        let out = render(shell, &config, flavour.as_ref(), mascot);
+                        assert!(!out.contains("{{"), "a slot was left in {template}");
+                        let id = flavour.as_ref().map_or("none", |f| f.id.as_str());
+                        parses(name, &out, &format!("{template} as {id}"));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1798,4 +1872,93 @@ fn checks_false_shows_no_findings() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Boot device order:").not());
+}
+
+#[test]
+fn prompt_with_ghostty_prints_one_placement_and_one_transmission() {
+    let assert = bios()
+        .arg("prompt")
+        .env("TERM", "xterm-ghostty")
+        .env_remove("TERM_PROGRAM")
+        .env_remove("LC_TERMINAL")
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert_eq!(stdout.matches("a=p").count(), 1, "{stdout}");
+    assert_eq!(stdout.matches("a=t").count(), 1, "{stdout}");
+}
+
+#[test]
+fn prompt_with_the_prompt_img_var_set_prints_the_placement_and_no_transmission() {
+    let assert = bios()
+        .arg("prompt")
+        .env("TERM", "xterm-ghostty")
+        .env("SPARKLEBIOS_PROMPT_IMG", "1")
+        .env_remove("TERM_PROGRAM")
+        .env_remove("LC_TERMINAL")
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert_eq!(stdout.matches("a=p").count(), 1, "{stdout}");
+    assert!(!stdout.contains("a=t"), "{stdout}");
+}
+
+#[test]
+fn prompt_with_no_image_protocol_prints_nothing_and_exits_zero() {
+    bios()
+        .arg("prompt")
+        .env("TERM", "xterm-256color")
+        .env_remove("TERM_PROGRAM")
+        .env_remove("LC_TERMINAL")
+        .assert()
+        .success()
+        .stdout("");
+}
+
+#[test]
+fn init_zsh_with_ghostty_defines_the_mascot_variable_with_exactly_one_placement() {
+    let assert = bios()
+        .args(["init", "zsh"])
+        .env("TERM", "xterm-ghostty")
+        .env_remove("TERM_PROGRAM")
+        .env_remove("LC_TERMINAL")
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert_eq!(stdout.matches("a=p").count(), 1, "{stdout}");
+    // The transmission that sends the image appears exactly once in the whole hook.
+    assert_eq!(stdout.matches("a=t").count(), 1, "{stdout}");
+
+    let mascot_line = stdout
+        .lines()
+        .find(|line| line.trim_start().starts_with("export SPARKLEBIOS_MASCOT="))
+        .unwrap();
+    assert!(mascot_line.contains("%{"), "{mascot_line}");
+    assert!(mascot_line.contains("%}"), "{mascot_line}");
+    assert!(!mascot_line.contains("a=t"), "{mascot_line}");
+}
+
+#[test]
+fn say_done_with_took_130_puts_the_worded_duration_in_the_line() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["say", "done", "--took", "130"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2m 10s"));
+}
+
+#[test]
+fn presence_false_in_the_config_silences_say() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "presence = false\n").unwrap();
+    bios()
+        .args(["say", "goodbye"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }

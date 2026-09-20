@@ -75,6 +75,27 @@ pub fn kitty_image(png: &[u8], cols: u16, rows: u16) -> String {
     out
 }
 
+/// Kitty graphics: transmit `png` and keep it under `id`, without displaying it. A prompt then
+/// shows it with a placement of a few dozen bytes rather than sending the image again.
+pub fn kitty_transmit(png: &[u8], id: u32) -> String {
+    let payload = base64_encode(png);
+    let chunks: Vec<&[u8]> = payload.as_bytes().chunks(4096).collect();
+    let mut out = String::new();
+    let last = chunks.len().saturating_sub(1);
+    for (i, chunk) in chunks.iter().enumerate() {
+        let m = if i == last { 0 } else { 1 };
+        if i == 0 {
+            out.push_str(&format!("\x1b_Ga=t,f=100,q=2,i={id},m={m};"));
+        } else {
+            out.push_str(&format!("\x1b_Gm={m};"));
+        }
+        // Base64 is pure ASCII, so every chunk is valid UTF-8.
+        out.push_str(std::str::from_utf8(chunk).unwrap());
+        out.push_str("\x1b\\");
+    }
+    out
+}
+
 /// True when TERM is "xterm-ghostty" or "xterm-kitty", or TERM_PROGRAM is "ghostty".
 pub fn supports_kitty(term: Option<&str>, term_program: Option<&str>) -> bool {
     matches!(term, Some("xterm-ghostty") | Some("xterm-kitty")) || term_program == Some("ghostty")

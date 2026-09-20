@@ -152,6 +152,14 @@ milestone) or `bios sprinkles full` (the same, plus the POST beep and beep
 codes). Sprinkles only ever run in the animated show, never flash, and cost
 nothing when off. See [docs/sprinkles.md](docs/sprinkles.md).
 
+## It stays in character
+
+The boot is the introduction. The flavour keeps talking, a little. It sets
+your tab title, comments on a command that ran long, answers a typo instead
+of the shell's own message, and says goodbye when the shell exits. Nothing
+here spawns a process: your shell already holds every word it will say, from
+the moment it started. See [docs/presence.md](docs/presence.md).
+
 ## The jokes are true
 
 Every line on the screen is backed by a real probe. These ship today.
@@ -205,7 +213,7 @@ one part of it a BIOS would detect, and a handful of deadpan quips. If the
 creature or object you grew up with is not on the list, it should be. The format
 is in [docs/flavours.md](docs/flavours.md), the tone is in
 [docs/voice.md](docs/voice.md), and [CONTRIBUTING.md](CONTRIBUTING.md) has the
-house rules. If you would rather not write TOML, open an issue and tell us what
+house rules. If you would rather not write TOML, open an issue and tell me what
 the BIOS should detect.
 
 ## Questions people ask
