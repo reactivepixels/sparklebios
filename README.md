@@ -114,6 +114,10 @@ bios setup
 Arrow keys move and change, Enter previews the boot screen with your pending
 choices, F10 saves, Esc leaves. Nothing is written until you save.
 
+<p align="center">
+  <img src="docs/assets/setup.png" alt="bios setup: the CMOS Setup Utility" width="880">
+</p>
+
 ## Themes
 
 "Rainbows and Unicorns" is a Ghostty theme in ten variants. The name is the
@@ -159,6 +163,10 @@ your tab title, comments on a command that ran long, answers a typo instead
 of the shell's own message, and says goodbye when the shell exits. Nothing
 here spawns a process: your shell already holds every word it will say, from
 the moment it started. See [docs/presence.md](docs/presence.md).
+
+<p align="center">
+  <img src="docs/assets/presence.png" alt="A ninja at the front of the prompt, a typo answered, a long command reported, and a goodbye" width="880">
+</p>
 
 ## The jokes are true
 

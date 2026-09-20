@@ -61,9 +61,9 @@ pub(super) fn run(screen: &mut super::Screen, session: Session) {
             match game.key(key) {
                 Effect::Nothing => {}
                 Effect::Redraw => redraw(screen, &game),
-                // key() never actually produces this, but the match has to be exhaustive.
                 Effect::Ended => ended = true,
-                Effect::Exit => return, // give up, or the result screen was dismissed: no save.
+                // Ctrl-C, or the result screen being dismissed. Nothing to record either way.
+                Effect::Exit => return,
             }
         }
 
@@ -99,7 +99,7 @@ fn decode(bytes: &[u8]) -> Option<(Key, usize)> {
         // An escape with nothing following it, or followed by something that is not the arrow
         // sequences above, is Esc itself.
         [0x1b, ..] => Some((Key::Esc, 1)),
-        [0x03, ..] => Some((Key::Esc, 1)),
+        [0x03, ..] => Some((Key::CtrlC, 1)),
         [b' ', ..] => Some((Key::Space, 1)),
         [b'a', ..] | [b'A', ..] => Some((Key::Left, 1)),
         [b'd', ..] | [b'D', ..] => Some((Key::Right, 1)),
@@ -139,10 +139,11 @@ mod tests {
     }
 
     #[test]
-    fn space_launches_and_escape_gives_up() {
+    fn space_launches_and_the_two_ways_out_are_told_apart() {
         assert_eq!(decode(b" "), Some((Key::Space, 1)));
         assert_eq!(decode(b"\x1b"), Some((Key::Esc, 1)));
-        assert_eq!(decode(b"\x03"), Some((Key::Esc, 1)));
+        // Ctrl-C is its own key, not another Esc: one scores what you cleared, one does not.
+        assert_eq!(decode(b"\x03"), Some((Key::CtrlC, 1)));
     }
 
     #[test]

@@ -9,7 +9,10 @@ pub enum Key {
     Left,
     Right,
     Space,
+    /// Give up. The game ends as a loss and whatever was cleared still counts.
     Esc,
+    /// Walk away. Nothing is recorded, which is what Ctrl-C means everywhere else.
+    CtrlC,
 }
 
 /// What the caller should do after a key or a tick.
@@ -130,18 +133,22 @@ impl Game {
     pub fn key(&mut self, key: Key) -> Effect {
         match self.phase {
             Phase::Result { .. } => Effect::Exit,
-            Phase::FailPause { .. } => {
-                if key == Key::Esc {
-                    self.phase = Phase::Result { won: false };
-                    Effect::Exit
-                } else {
-                    Effect::Nothing
-                }
-            }
-            Phase::Ready | Phase::Playing => match key {
+            Phase::FailPause { .. } => match key {
+                Key::CtrlC => Effect::Exit,
                 Key::Esc => {
                     self.phase = Phase::Result { won: false };
-                    Effect::Exit
+                    Effect::Ended
+                }
+                _ => Effect::Nothing,
+            },
+            Phase::Ready | Phase::Playing => match key {
+                Key::CtrlC => Effect::Exit,
+                // Giving up is still a result. Whatever was cleared was cleared, so the game
+                // ends the same way losing the last ball does: the result screen, and the score
+                // saved if it is a best.
+                Key::Esc => {
+                    self.phase = Phase::Result { won: false };
+                    Effect::Ended
                 }
                 Key::Left => {
                     self.move_paddle(-1);
@@ -491,12 +498,34 @@ mod tests {
     }
 
     #[test]
-    fn esc_ends_the_game_as_a_loss_but_never_asks_for_it_to_be_saved() {
+    fn esc_ends_the_game_as_a_loss_and_keeps_what_was_cleared() {
         let mut g = Game::new(100, 0, false, 1);
-        assert_eq!(g.key(Key::Esc), Effect::Exit);
+        // Ended, not Exit: the caller saves on Ended, so giving up halfway still scores what it
+        // cleared. Ctrl-C is the way out that records nothing.
+        assert_eq!(g.key(Key::Esc), Effect::Ended);
         assert_eq!(g.phase, Phase::Result { won: false });
-        // Effect::Exit, never Effect::Ended: the caller that only saves on Ended never does.
-        assert_eq!(g.key(Key::Left), Effect::Exit);
+        assert_eq!(
+            g.key(Key::Left),
+            Effect::Exit,
+            "the result screen dismisses"
+        );
+    }
+
+    #[test]
+    fn ctrl_c_walks_away_without_recording_anything() {
+        for phase_setup in [0u8, 1, 2] {
+            let mut g = Game::new(600, 0, false, 1);
+            if phase_setup >= 1 {
+                g.key(Key::Space);
+            }
+            if phase_setup == 2 {
+                g.balls_left = 1;
+                g.lose_ball();
+                assert!(matches!(g.phase, Phase::FailPause { .. }));
+            }
+            // Never Ended, in any phase, so the caller never reaches its save.
+            assert_eq!(g.key(Key::CtrlC), Effect::Exit, "phase {phase_setup}");
+        }
     }
 
     #[test]
