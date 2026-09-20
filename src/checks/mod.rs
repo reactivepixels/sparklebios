@@ -14,18 +14,26 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// How urgent a finding is.
 pub enum Severity {
+    /// Worth knowing, nothing to fix.
     Info,
+    /// Worth a look.
     Warn,
+    /// Needs attention.
     Fail,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One probe's result: what it found, how urgent, and the facts behind it.
 pub struct Finding {
+    /// Which probe this came from.
     pub id: String,
+    /// How urgent this finding is.
     pub severity: Severity,
     /// Seconds this finding may still be shown, counted from the cache's `generated` time.
     pub ttl: u64,
+    /// The probed values behind this finding, for rendering.
     pub facts: std::collections::BTreeMap<String, String>,
 }
 
@@ -38,10 +46,14 @@ pub struct Finding {
 /// the step it last spoke at so it does not repeat itself.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Carried {
+    /// Free space readings from past refreshes, oldest first.
     pub disk_history: Vec<disk::Reading>,
+    /// The battery health step already reported, so it is never reported twice.
     pub battery_step: Option<u8>,
 }
 
+/// Runs every probe and returns its findings alongside the state to carry into the next
+/// refresh. See the module doc comment for probe order and failure handling.
 pub fn run_all(
     config: &crate::config::Config,
     carried: Carried,

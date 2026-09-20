@@ -23,6 +23,7 @@ fn env(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
+/// `$XDG_CONFIG_HOME/sparklebios`, falling back to `~/.config/sparklebios`.
 pub fn config_dir() -> Option<PathBuf> {
     resolve(
         env("XDG_CONFIG_HOME").as_deref(),
@@ -32,6 +33,7 @@ pub fn config_dir() -> Option<PathBuf> {
     )
 }
 
+/// `$XDG_STATE_HOME/sparklebios`, falling back to `~/.local/state/sparklebios`.
 pub fn state_dir() -> Option<PathBuf> {
     resolve(
         env("XDG_STATE_HOME").as_deref(),
@@ -41,6 +43,7 @@ pub fn state_dir() -> Option<PathBuf> {
     )
 }
 
+/// `$XDG_CACHE_HOME/sparklebios`, falling back to `~/.cache/sparklebios`.
 pub fn cache_dir() -> Option<PathBuf> {
     resolve(
         env("XDG_CACHE_HOME").as_deref(),
@@ -50,14 +53,17 @@ pub fn cache_dir() -> Option<PathBuf> {
     )
 }
 
+/// Where a user's own `machines/*.toml` files live, under `config_dir`.
 pub fn user_machines_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("machines"))
 }
 
+/// Where a user's own `flavours/*.toml` files live, under `config_dir`.
 pub fn user_flavours_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("flavours"))
 }
 
+/// `$XDG_CONFIG_HOME/ghostty/themes`, falling back to `~/.config/ghostty/themes`.
 pub fn ghostty_themes_dir() -> Option<PathBuf> {
     resolve(
         env("XDG_CONFIG_HOME").as_deref(),
@@ -104,6 +110,8 @@ fn ghostty_config_candidate_list(
     candidates
 }
 
+/// The Ghostty config file candidates for this machine, in search order. See
+/// `ghostty_config_candidate_list` for the exact order.
 pub fn ghostty_config_candidates() -> Vec<PathBuf> {
     ghostty_config_candidate_list(
         cfg!(target_os = "macos"),

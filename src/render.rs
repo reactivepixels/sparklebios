@@ -6,10 +6,14 @@ use crate::flavour::Flavour;
 use crate::machine::{Machine, Step, Style};
 use crate::template;
 
+/// How much colour the terminal supports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorMode {
+    /// No colour at all.
     None,
+    /// The 16 ANSI colours.
     Ansi16,
+    /// Full 24-bit colour.
     TrueColor,
 }
 
@@ -46,7 +50,9 @@ impl Graphics {
 /// One resolved, styled run of text within a logical line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Span {
+    /// The run's text, after template substitution.
     pub text: String,
+    /// Which colour to draw it in.
     pub style: Style,
 }
 
@@ -62,14 +68,18 @@ pub fn color_mode_from_env(no_color: Option<&str>, colorterm: Option<&str>) -> C
 }
 
 /// Parses a `#RRGGBB` colour (validated already by `machine::parse`) into its components.
+/// Total: anything shorter, non-UTF-8 at that range, or not a hex pair falls back to `0` a
+/// channel at a time, so a malformed colour never panics the render path.
 fn hex_rgb(colour: &str) -> (u8, u8, u8) {
     let bytes = colour.as_bytes();
-    let byte = |i: usize| u8::from_str_radix(std::str::from_utf8(&bytes[i..i + 2]).unwrap(), 16);
-    (
-        byte(1).unwrap_or(0),
-        byte(3).unwrap_or(0),
-        byte(5).unwrap_or(0),
-    )
+    let byte = |i: usize| {
+        bytes
+            .get(i..i + 2)
+            .and_then(|pair| std::str::from_utf8(pair).ok())
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+            .unwrap_or(0)
+    };
+    (byte(1), byte(3), byte(5))
 }
 
 /// Wraps `text` in the escape codes for `style`, or returns it unchanged for `ColorMode::None`.
@@ -455,11 +465,17 @@ pub enum AnimatedKind {
     Instant,
     /// Appears first as `label_spans` (the label plus `"... "`), then is redrawn with the final
     /// state (the label plus the result): a `Detect` step.
-    Detect { label_spans: Vec<Span> },
+    Detect {
+        /// The label plus its trailing `"... "`, shown before the result arrives.
+        label_spans: Vec<Span>,
+    },
     /// Counts up through `frames` before settling on the final state: a `Count` step. Empty
     /// when the target does not parse as a number, in which case the step behaves like
     /// `Instant`.
-    Count { frames: Vec<Vec<Span>> },
+    Count {
+        /// The growing frames the count animates through, ending on the final state.
+        frames: Vec<Vec<Span>>,
+    },
 }
 
 /// One step, resolved for the animated show: its final spans (`spans`, identical to what
@@ -467,8 +483,11 @@ pub enum AnimatedKind {
 /// applied (`ms`), and how it gets there (`kind`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimatedStep {
+    /// How long to hold on this step, in milliseconds, before speed is applied.
     pub ms: u64,
+    /// The step's final spans, identical to what `layout` produces for the same step.
     pub spans: Vec<Span>,
+    /// How this step gets to its final state.
     pub kind: AnimatedKind,
 }
 
@@ -790,11 +809,10 @@ fn painted_row(
     }
 
     let text_end = shift_offset + used;
-    let badge_len = badge.map(|b| b.chars().count()).unwrap_or(0);
+    let badge_len = badge.map_or(0, |b| b.chars().count());
     let badge_start = cols.saturating_sub(badge_len);
-    let show_badge = badge.is_some() && text_end + 2 <= badge_start;
-    if show_badge {
-        let badge = badge.unwrap();
+    let fitting_badge = badge.filter(|_| text_end + 2 <= badge_start);
+    if let Some(badge) = fitting_badge {
         if badge_start > text_end {
             row.push_str(&fill(bg, badge_start - text_end));
         }
@@ -846,10 +864,13 @@ fn render_painted(
     let blank: Vec<Span> = Vec::new();
 
     let sprite = logo_sprite(machine, flavour);
-    let show_logo = graphics.draws_image() && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
-    let kitty_escape = show_logo.then(|| {
+    let visible_sprite = (graphics.draws_image() && cols >= MIN_COLS_FOR_GRAPHICS)
+        .then_some(sprite)
+        .flatten();
+    let show_logo = visible_sprite.is_some();
+    let kitty_escape = visible_sprite.map(|sprite| {
         graphics
-            .image_escape(sprite.unwrap(), MASCOT_COLS as u16, MASCOT_ROWS as u16)
+            .image_escape(sprite, MASCOT_COLS as u16, MASCOT_ROWS as u16)
             .unwrap_or_default()
     });
     let logo_cols = if show_logo { MASCOT_COLS } else { 0 };
@@ -952,10 +973,13 @@ impl<'a> RowGeometry<'a> {
         let pad_x = machine.pad_x as usize;
         let cols = machine.cols as usize;
         let sprite = logo_sprite(machine, flavour);
-        let show_logo = graphics.draws_image() && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
-        let kitty_escape = show_logo.then(|| {
+        let visible_sprite = (graphics.draws_image() && cols >= MIN_COLS_FOR_GRAPHICS)
+            .then_some(sprite)
+            .flatten();
+        let show_logo = visible_sprite.is_some();
+        let kitty_escape = visible_sprite.map(|sprite| {
             graphics
-                .image_escape(sprite.unwrap(), MASCOT_COLS as u16, MASCOT_ROWS as u16)
+                .image_escape(sprite, MASCOT_COLS as u16, MASCOT_ROWS as u16)
                 .unwrap_or_default()
         });
         let logo_cols = if show_logo { MASCOT_COLS } else { 0 };

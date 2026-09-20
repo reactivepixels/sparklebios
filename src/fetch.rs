@@ -86,8 +86,9 @@ pub fn render_screen(
     }
 
     let show_color = mode != ColorMode::None;
-    let show_mascot =
-        mode == ColorMode::TrueColor && graphics == Graphics::Kitty && sprite.is_some();
+    let visible_sprite = (mode == ColorMode::TrueColor && graphics == Graphics::Kitty)
+        .then_some(sprite)
+        .flatten();
 
     // What appears beside (or, with no mascot, simply after) the header: the fact lines, then,
     // when colour is on, a blank separator and the two palette rows.
@@ -98,17 +99,16 @@ pub fn render_screen(
         panel.push(palette_row(8));
     }
 
-    if !show_mascot {
+    let Some(sprite) = visible_sprite else {
         out.push('\n');
         for line in &panel {
             out.push_str(line);
             out.push('\n');
         }
         return out;
-    }
+    };
 
-    let kitty_escape =
-        crate::sprite::kitty_image(sprite.unwrap(), MASCOT_COLS as u16, MASCOT_ROWS as u16);
+    let kitty_escape = crate::sprite::kitty_image(sprite, MASCOT_COLS as u16, MASCOT_ROWS as u16);
 
     out.push('\n');
     let total_rows = MASCOT_ROWS.max(panel.len());

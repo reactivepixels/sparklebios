@@ -4,43 +4,71 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+/// A step's colour, chosen from the machine's `fg`, `bright` or `accent` palette entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Style {
+    /// The machine's ordinary foreground colour.
     #[default]
     Normal,
+    /// The machine's bright colour.
     Bright,
+    /// The machine's accent colour.
     Accent,
 }
 
+/// One line of a boot screen, in the order it plays.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
+    /// A plain line of text.
     Print {
+        /// The text to print, before template substitution.
         text: String,
+        /// Which colour to print it in.
         style: Style,
+        /// How long to pause after this step, in milliseconds.
         ms: u64,
     },
+    /// A counting line, like the memory test tally.
     Count {
+        /// The line template, with `{n}` standing in for the count so far.
         template: String,
+        /// The final count to count up to, before template substitution.
         to: String,
+        /// Text appended once the count reaches its target.
         suffix: String,
+        /// How long to pause after this step, in milliseconds.
         ms: u64,
     },
+    /// A label and its detection result, like a disk or OS probe.
     Detect {
+        /// The label printed before the result.
         label: String,
+        /// The detection result, before template substitution.
         result: String,
+        /// Which colour to print the result in.
         style: Style,
+        /// How long to pause after this step, in milliseconds.
         ms: u64,
     },
+    /// The flavour's rotating one-line quip, or the day's calendar line.
     Quip {
+        /// Which colour to print it in.
         style: Style,
+        /// How long to pause after this step, in milliseconds.
         ms: u64,
     },
+    /// The health check findings, if any.
     Findings {
+        /// Which colour to print them in.
         style: Style,
+        /// How long to pause after this step, in milliseconds.
         ms: u64,
     },
+    /// The "Press F1 to continue" style footer line.
     F1 {
+        /// Which colour to print it in.
         style: Style,
+        /// How long to pause after this step, in milliseconds.
         ms: u64,
     },
 }
@@ -50,10 +78,15 @@ pub enum Step {
 /// `day`, or `day_of_year` says which day that is.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalendarRule {
+    /// The month this rule fires on, paired with `day`.
     pub month: Option<u32>,
+    /// The day of the month this rule fires on, paired with `month` or `weekday`.
     pub day: Option<u32>,
+    /// The weekday name this rule fires on, paired with `day`.
     pub weekday: Option<String>,
+    /// The day of the year (1 to 366) this rule fires on, used alone.
     pub day_of_year: Option<u32>,
+    /// The line to show in place of the quip on the day this rule matches.
     pub text: String,
 }
 
@@ -84,32 +117,56 @@ pub fn matching_calendar_text(machine: &Machine, year: i32, month: u32, day: u32
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// A boot screen, loaded from `machines/*.toml`: its palette, layout and the steps it plays.
 pub struct Machine {
+    /// The machine's id, used by `--machine` and in file names.
     pub id: String,
+    /// The machine's display name.
     pub name: String,
+    /// The screen's fixed column width.
     pub cols: u16,
+    /// The ordinary foreground colour, as a hex string.
     pub fg: String,
+    /// The bright colour, as a hex string.
     pub bright: String,
+    /// The accent colour, as a hex string.
     pub accent: String,
+    /// The background colour, as a hex string, if the screen paints one.
     pub bg: Option<String>,
+    /// Whether the screen paints its background at all.
     pub paint: bool,
+    /// The border colour, as a hex string, if the screen draws one.
     pub border: Option<String>,
+    /// Horizontal padding inside the border, in columns.
     pub pad_x: u8,
+    /// Vertical padding inside the border, in rows.
     pub pad_y: u8,
+    /// Whether printed lines are upper cased.
     pub uppercase: bool,
+    /// The sprite drawn as the machine's logo, if any, unless a flavour overrides it.
     pub logo: Option<String>,
+    /// Lines of a small badge drawn alongside the logo.
     pub badge: Vec<String>,
+    /// The machine's own quip pool, used when a flavour does not supply one.
     pub quips: Vec<String>,
+    /// Whether a flavour's wording and sprite apply to this machine.
     pub flavoured: bool,
+    /// The column width detection result lines are padded to.
     pub detect_width: Option<u16>,
+    /// This machine's own wording for each finding id, used when a flavour does not supply one.
     pub findings: BTreeMap<String, String>,
+    /// The machine's calendar rules, in file order.
     pub calendar: Vec<CalendarRule>,
+    /// The steps this screen plays, in order.
     pub steps: Vec<Step>,
 }
 
 #[derive(Debug, PartialEq)]
+/// Why a machine TOML file failed to load.
 pub enum MachineError {
+    /// The TOML itself did not parse.
     Parse(String),
+    /// The TOML parsed but the machine it describes is not valid.
     Invalid(String),
 }
 
@@ -192,6 +249,7 @@ struct RawStep {
 
 const PC95_TOML: &str = include_str!("../machines/pc95.toml");
 
+/// Parses and validates a machine TOML file's contents.
 pub fn parse(src: &str) -> Result<Machine, MachineError> {
     let raw: RawMachine = toml::from_str(src).map_err(|e| MachineError::Parse(e.to_string()))?;
     validate(raw)

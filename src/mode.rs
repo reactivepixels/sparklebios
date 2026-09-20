@@ -1,28 +1,44 @@
 //! The BootMode decision, a pure function.
 
+/// What a boot should do this time: nothing, a quiet replay, a fast screen or the full show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootMode {
+    /// Print nothing and do no work.
     Off,
+    /// Redraw the last full screen instantly, no animation.
     Quiet,
+    /// Draw the full screen without the animation delay.
     Fast,
+    /// Draw the full screen with the normal animation.
     Full,
 }
 
+/// Everything `decide` needs to pick a `BootMode`, gathered so the decision stays a pure function.
 #[derive(Debug, Clone)]
 pub struct BootInputs {
+    /// Whether stdout is a real terminal, not a pipe or file.
     pub stdout_is_tty: bool,
+    /// The shell's `$TERM`, if set.
     pub term: Option<String>,
+    /// The `SPARKLEBIOS_BOOT` environment variable, if set.
     pub kill_switch: Option<String>,
     /// The config file's master switch. The environment variable still wins for one shell.
     pub boot_enabled: bool,
+    /// Whether this shell has already booted once (the `SPARKLEBIOS_BOOTED` marker).
     pub already_booted: bool,
+    /// The current time, in seconds since the epoch.
     pub now: u64,
+    /// Today's date, as `YYYY-MM-DD`.
     pub today: String,
+    /// When the last boot happened, in seconds since the epoch.
     pub last_boot: Option<u64>,
+    /// The date of the last full (non-quiet) boot.
     pub last_full_day: Option<String>,
+    /// How many seconds count as "the same burst" of new tabs.
     pub burst_window_secs: u64,
 }
 
+/// Decide which `BootMode` a boot should use, from `inputs` alone.
 pub fn decide(i: &BootInputs) -> BootMode {
     let off = !i.stdout_is_tty
         || i.term.as_deref() == Some("dumb")

@@ -6,10 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::checks::Finding;
 
+/// The last findings gathered by `bios refresh`, plus the trend history checks carry over.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Cache {
+    /// When these findings were gathered, in seconds since the epoch.
     pub generated: u64,
+    /// The findings themselves, as last reported by `bios refresh`.
     pub findings: Vec<Finding>,
     /// Free space over the last fortnight, so the disk trend check has something to trend.
     #[serde(default)]

@@ -6,10 +6,15 @@ use std::process::Stdio;
 
 use crate::mode::BootMode;
 
+/// Arguments to `bios boot`.
 pub struct BootArgs {
+    /// Preview this machine id instead of the configured one (hidden flag).
     pub machine: Option<String>,
+    /// Called from the shell hook, so unusual conditions stay silent rather than erroring.
     pub hook: bool,
+    /// Skip the animation and draw the final frame directly.
     pub no_animate: bool,
+    /// Preview this flavour instead of the configured one.
     pub flavour: Option<String>,
 }
 

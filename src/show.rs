@@ -12,13 +12,17 @@ use crate::sprinkles;
 /// the machine and facts.
 #[derive(Debug, Clone, Copy)]
 pub struct Geometry {
+    /// Whether the terminal supports colour, and how much.
     pub mode: ColorMode,
+    /// The terminal's width, if known.
     pub term_cols: Option<u16>,
+    /// How much graphical detail to draw.
     pub graphics: Graphics,
 }
 
 /// Keys pressed during the show, in the order they arrived, unfiltered.
 pub struct ShowOutcome {
+    /// The raw bytes typed.
     pub typed: Vec<u8>,
 }
 

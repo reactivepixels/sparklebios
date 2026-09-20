@@ -7,20 +7,35 @@ use serde::Deserialize;
 use crate::facts::Facts;
 use crate::template;
 
+/// A boot screen's personality: its own wording for every line the machine draws, plus the
+/// facts each finding reports.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Flavour {
+    /// The flavour's id, used in `--flavour` and `bios use`.
     pub id: String,
+    /// The flavour's display name.
     pub name: String,
+    /// Which sprite this flavour draws in its corner of the screen.
     pub sprite: String,
+    /// The firmware line, in place of a real BIOS's version string.
     pub firmware: String,
+    /// The vendor line, in place of a real BIOS's copyright string.
     pub vendor: String,
+    /// The board name line.
     pub board: String,
+    /// The joke that stands in for the CPU line.
     pub cpu_gag: String,
+    /// What this flavour calls its signature peripheral.
     pub part: String,
+    /// The detection result line for `part`.
     pub part_result: String,
+    /// The boot streak line template.
     pub streak: String,
+    /// The footer line at the very bottom of the screen.
     pub footer: String,
+    /// The pool of one-line quips the screen picks from.
     pub quips: Vec<String>,
+    /// This flavour's wording for each finding id a check can report.
     pub findings: BTreeMap<String, String>,
     /// What the flavour says away from the boot screen: the tab title, the line after a long
     /// command, the goodbye, and so on. A built-in has all eight; a user flavour may omit any,
@@ -452,6 +467,29 @@ quips = ["a", "b", "c"]
                         rendered.chars().count()
                     );
                 }
+            }
+        }
+    }
+
+    /// The CI job greps the flavour files on disk for these; this pins the same rule on the
+    /// parsed `Flavour` data instead, so it also covers a flavour loaded from a user's own
+    /// flavours directory, not only the ones built into the binary.
+    #[test]
+    fn no_builtin_flavours_presence_or_findings_line_has_an_em_or_en_dash() {
+        for f in builtins() {
+            for (event, line) in &f.presence {
+                assert!(
+                    !line.contains('\u{2014}') && !line.contains('\u{2013}'),
+                    "{}: presence.{event} {line:?} has an em or en dash",
+                    f.id
+                );
+            }
+            for (id, line) in &f.findings {
+                assert!(
+                    !line.contains('\u{2014}') && !line.contains('\u{2013}'),
+                    "{}: findings.{id} {line:?} has an em or en dash",
+                    f.id
+                );
             }
         }
     }

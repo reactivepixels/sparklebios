@@ -26,6 +26,33 @@ fn version_prints_crate_version() {
         .stdout(predicate::str::contains("0.1.0"));
 }
 
+/// `main.rs`'s whole panic policy: a panic anywhere prints nothing and exits 0, so a bug on the
+/// boot path never breaks or slows somebody's shell. Triggered here through
+/// `SPARKLEBIOS_PANIC_TEST`, a debug-only test hatch documented on `cli::run`; it does not exist
+/// in a release build.
+#[test]
+fn a_panic_prints_nothing_and_exits_zero_without_debug() {
+    bios()
+        .env("SPARKLEBIOS_PANIC_TEST", "1")
+        .assert()
+        .success()
+        .stdout("")
+        .stderr("");
+}
+
+/// The other half of the same policy: with `SPARKLEBIOS_DEBUG=1`, the panic message reaches
+/// stderr instead of being swallowed, so a developer can see what broke.
+#[test]
+fn a_panic_reaches_stderr_under_debug() {
+    bios()
+        .env("SPARKLEBIOS_PANIC_TEST", "1")
+        .env("SPARKLEBIOS_DEBUG", "1")
+        .assert()
+        .success()
+        .stdout("")
+        .stderr(predicate::str::contains("SPARKLEBIOS_PANIC_TEST"));
+}
+
 #[test]
 fn help_and_bare_invocation_print_the_exact_top_level_help() {
     let version = env!("CARGO_PKG_VERSION");
@@ -333,6 +360,22 @@ fn hook_still_honours_the_booted_env_var_and_never_writes_state() {
         .success()
         .stdout("");
     assert!(!state.path().join("sparklebios/state.json").exists());
+}
+
+/// `SPARKLEBIOS_BOOT=0` is the kill switch a shell sets to stop `bios boot --hook` from ever
+/// drawing a screen there (see the top level help). Like `SPARKLEBIOS_BOOTED` above, only the
+/// hook honours it: the hand typed `bios boot` is a viewing command and ignores it on purpose
+/// (see `run_preview`'s doc comment in `boot.rs`), so this is pinned against `--hook`.
+#[test]
+fn sparklebios_boot_zero_silences_the_hook() {
+    bios()
+        .args(["boot", "--hook"])
+        .env("SPARKLEBIOS_BOOT", "0")
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout("")
+        .stderr("");
 }
 
 #[test]

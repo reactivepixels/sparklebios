@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! Module declarations only.
 
 pub mod boot;
@@ -15,6 +16,9 @@ pub mod paths;
 pub mod presence;
 pub mod render;
 pub mod setup;
+// Owned by another agent during this pass; excluded from the missing-docs
+// survey below so this file can enforce doc coverage on the modules we do own.
+#[allow(missing_docs)]
 pub mod shell;
 pub mod show;
 pub mod sprinkles;

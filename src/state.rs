@@ -4,12 +4,17 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+/// Boot history: streaks and the last boot time, persisted between runs.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct State {
+    /// When the last boot happened, in seconds since the epoch.
     pub last_boot: Option<u64>,
+    /// The date of the last full (non-quiet) boot.
     pub last_full_day: Option<String>,
+    /// How many consecutive days a boot has happened.
     pub streak_days: u32,
+    /// The last day counted toward `streak_days`.
     pub streak_last_day: Option<String>,
     /// The Memory Test easter egg's high score: the most K ever cleared in one game.
     pub memory_test_best_kb: u64,

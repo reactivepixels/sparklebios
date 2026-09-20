@@ -7,6 +7,7 @@ use super::model::{Dialog, State};
 /// check lives in `mod.rs`. The frame itself has no size of its own: it always spans whatever
 /// terminal it is given, so long as it meets this floor. See `render`.
 pub const MIN_WIDTH: usize = 80;
+/// The smallest terminal height `bios setup` runs in. See `MIN_WIDTH`.
 pub const MIN_HEIGHT: usize = 24;
 
 /// The help pane's fixed width, at every terminal size. The left pane takes whatever is left.

@@ -515,6 +515,12 @@ fn save(state: &State) -> i32 {
         eprintln!("bios: cannot find a config directory");
         return 1;
     };
+    save_to(&dir, state)
+}
+
+/// `save`'s actual work, against an explicit config directory rather than the real one, so a
+/// test can point it at a sandboxed directory instead of the user's own.
+fn save_to(dir: &std::path::Path, state: &State) -> i32 {
     let user_dir = crate::paths::user_flavours_dir();
     let mut theme: Option<String> = None;
 
@@ -524,22 +530,22 @@ fn save(state: &State) -> i32 {
                 .into_iter()
                 .find(|f| f.name == value)
             {
-                Some(f) => crate::config::set_flavour(&dir, &f.id),
+                Some(f) => crate::config::set_flavour(dir, &f.id),
                 None => Ok(()),
             },
             Setting::Mascot => crate::config::set_key(
-                &dir,
+                dir,
                 "graphics",
                 &format!("\"{}\"", if value == "Hidden" { "off" } else { "auto" }),
             ),
             Setting::Sprinkles => {
-                crate::config::set_key(&dir, "sprinkles", &format!("\"{}\"", value.to_lowercase()))
+                crate::config::set_key(dir, "sprinkles", &format!("\"{}\"", value.to_lowercase()))
             }
             Setting::DailyShow => {
-                crate::config::set_key(&dir, "animate", bool_str(value == "Enabled"))
+                crate::config::set_key(dir, "animate", bool_str(value == "Enabled"))
             }
             Setting::BootScreen => {
-                crate::config::set_key(&dir, "boot", bool_str(value == "Enabled"))
+                crate::config::set_key(dir, "boot", bool_str(value == "Enabled"))
             }
             Setting::Theme => {
                 theme = Some(value.to_lowercase());
@@ -611,6 +617,61 @@ mod tests {
         let state = State::new(rows_for(&crate::config::Config::default()));
         assert!(!state.dirty());
         assert!(state.changes().is_empty());
+    }
+
+    /// The full round trip `bios config reset`, `bios setup`, F10 with nothing changed is
+    /// supposed to leave alone: reads back the just-reset file, builds the same rows `bios
+    /// setup` would from it, and saves with nothing touched. Drives `save_to` (the writer
+    /// `save` delegates to once it has resolved a real config directory) directly against a
+    /// sandboxed directory, rather than the real one `save` would resolve from the environment.
+    #[test]
+    fn reset_then_setup_then_f10_with_nothing_changed_is_byte_identical() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::config::reset(dir.path()).unwrap();
+        let before = std::fs::read(dir.path().join("config.toml")).unwrap();
+
+        let config = crate::config::load(Some(dir.path()));
+        let state = State::new(rows_for(&config));
+        assert!(state.changes().is_empty());
+
+        assert_eq!(save_to(dir.path(), &state), 0);
+
+        let after = std::fs::read(dir.path().join("config.toml")).unwrap();
+        assert_eq!(before, after);
+    }
+
+    /// The setup save is `save_to`, composed from `set_flavour` and `set_key`; this is its own
+    /// unknown-key claim (see `config::set_sprinkles_preserves_an_unknown_key` and
+    /// `config::set_key_preserves_an_unknown_key` for the two writers it is built from), pinned
+    /// at the level a real `bios setup` session actually calls: change one setting, save, and
+    /// confirm a key the code has never heard of is still there afterward.
+    #[test]
+    fn the_setup_save_preserves_an_unknown_key() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.toml"),
+            "future_field = true\nboot = true\n",
+        )
+        .unwrap();
+
+        let config = crate::config::load(Some(dir.path()));
+        let mut state = State::new(rows_for(&config));
+        let boot_screen = state
+            .rows
+            .iter()
+            .position(|r| r.setting == Setting::BootScreen)
+            .unwrap();
+        while state.selected != boot_screen {
+            state.key(model::Key::Down);
+        }
+        state.key(model::Key::Right);
+        assert!(state.current().changed());
+
+        assert_eq!(save_to(dir.path(), &state), 0);
+
+        let contents = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert!(contents.contains("future_field = true"));
+        assert!(!crate::config::load(Some(dir.path())).boot);
     }
 
     #[test]

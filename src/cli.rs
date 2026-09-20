@@ -58,7 +58,7 @@ fn top_level_help() -> String {
 #[command(
     name = "bios",
     version,
-    about = "A 1995 POST screen for your terminal that is secretly a health check"
+    about = "Boot every terminal tab like a 1995 PC. It counts your RAM, detects a unicorn, and runs a real health check."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -244,8 +244,18 @@ enum ConfigCommand {
     Reset,
 }
 
-/// Parse args and dispatch. Never panics outward.
+/// Parse args and dispatch. Never panics outward, except through the `SPARKLEBIOS_PANIC_TEST`
+/// hatch below.
 pub fn run() -> i32 {
+    // A test hatch, not a feature: it only exists so an integration test can pin `main.rs`'s
+    // panic policy (nothing printed and exit 0, unless `SPARKLEBIOS_DEBUG=1`) without adding a
+    // real panic to the boot path. `cfg!(debug_assertions)` compiles the check out of a release
+    // build entirely, so a shipped binary has no way to trigger it; `cargo test` builds in debug,
+    // which is what lets the tests in `tests/cli.rs` reach it.
+    if cfg!(debug_assertions) && std::env::var("SPARKLEBIOS_PANIC_TEST").as_deref() == Ok("1") {
+        panic!("SPARKLEBIOS_PANIC_TEST");
+    }
+
     let args: Vec<String> = std::env::args().collect();
     let is_bare = args.len() == 1;
     let is_top_help = args.len() == 2 && matches!(args[1].as_str(), "--help" | "-h" | "help");
@@ -472,6 +482,7 @@ fn streak_days() -> u32 {
         .map_or(0, |state| state.streak_days)
 }
 
+/// Arguments to `bios setup`.
 #[derive(Args, Debug)]
 pub struct SetupCliArgs {
     /// Go straight to the memory test.

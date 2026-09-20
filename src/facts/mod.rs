@@ -6,21 +6,26 @@ mod macos;
 mod other;
 
 #[derive(Debug, Clone, Default, PartialEq)]
+/// A machine's probed facts, key to value, gathered once per `bios refresh`.
 pub struct Facts(std::collections::BTreeMap<String, String>);
 
 impl Facts {
+    /// An empty set of facts.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Records `value` under `key`, replacing any previous value.
     pub fn insert(&mut self, key: &str, value: impl Into<String>) {
         self.0.insert(key.to_string(), value.into());
     }
 
+    /// The value stored under `key`, if any.
     pub fn get(&self, key: &str) -> Option<&str> {
         self.0.get(key).map(String::as_str)
     }
 
+    /// Drops `key` and its value, if present.
     pub fn remove(&mut self, key: &str) {
         self.0.remove(key);
     }

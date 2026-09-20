@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+/// The ten theme variants, as `(name, file contents)` pairs.
 pub const THEMES: [(&str, &str); 10] = [
     (
         "rainbows-and-unicorns",

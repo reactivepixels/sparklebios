@@ -55,7 +55,7 @@ fn base64_encode(data: &[u8]) -> String {
 
 /// Kitty graphics protocol: transmit and display the PNG scaled into `cols` x `rows` cells,
 /// without moving the cursor (C=1). Base64 payload split into chunks of at most 4096 bytes
-/// (m=1 on all but the last). First chunk keys: a=T,f=100,q=2,C=1,c=<cols>,r=<rows>.
+/// (m=1 on all but the last). First chunk keys: `a=T,f=100,q=2,C=1,c=<cols>,r=<rows>`.
 pub fn kitty_image(png: &[u8], cols: u16, rows: u16) -> String {
     let payload = base64_encode(png);
     let chunks: Vec<&[u8]> = payload.as_bytes().chunks(4096).collect();
@@ -68,8 +68,9 @@ pub fn kitty_image(png: &[u8], cols: u16, rows: u16) -> String {
         } else {
             out.push_str(&format!("\x1b_Gm={m};"));
         }
-        // Base64 output is pure ASCII, so every chunk is valid UTF-8: no unsafe code needed.
-        out.push_str(std::str::from_utf8(chunk).unwrap());
+        // Base64 output is pure ASCII, so this is always a lossless copy; `from_utf8_lossy`
+        // keeps the conversion total without an unwrap that could never actually fail.
+        out.push_str(&String::from_utf8_lossy(chunk));
         out.push_str("\x1b\\");
     }
     out
@@ -89,8 +90,9 @@ pub fn kitty_transmit(png: &[u8], id: u32) -> String {
         } else {
             out.push_str(&format!("\x1b_Gm={m};"));
         }
-        // Base64 is pure ASCII, so every chunk is valid UTF-8.
-        out.push_str(std::str::from_utf8(chunk).unwrap());
+        // Base64 is pure ASCII, so this is always a lossless copy; `from_utf8_lossy` keeps
+        // the conversion total without an unwrap that could never actually fail.
+        out.push_str(&String::from_utf8_lossy(chunk));
         out.push_str("\x1b\\");
     }
     out

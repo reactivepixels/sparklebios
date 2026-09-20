@@ -6,7 +6,9 @@ use serde::Deserialize;
 /// image protocol, and not at all otherwise; `Off` never shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphicsPref {
+    /// Show the mascot as a real image where the terminal supports it, otherwise not at all.
     Auto,
+    /// Never show the mascot.
     Off,
 }
 
@@ -24,12 +26,19 @@ impl GraphicsPref {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// The user's own settings, read from `config.toml`.
 pub struct Config {
+    /// Whether the boot screen animates or draws straight to the final frame.
     pub animate: bool,
+    /// Which flavour boots by default.
     pub flavour: String,
+    /// Whether `bios boot` spawns a detached `bios refresh` to keep findings current.
     pub checks: bool,
+    /// Directories `bios resume` and the presence line look for a project in.
     pub project_dirs: Vec<String>,
+    /// How the boot mascot is drawn.
     pub graphics: GraphicsPref,
+    /// The sprinkles dial.
     pub sprinkles: crate::sprinkles::Level,
     /// The master switch. False means a new tab prints nothing at all.
     pub boot: bool,
@@ -565,5 +574,40 @@ mod tests {
         let loaded = load(Some(dir.path()));
         assert_eq!(loaded.sprinkles, Level::Full);
         assert_eq!(loaded.flavour, "sumo");
+    }
+
+    /// A key a user has added that the code has never heard of: `set_flavour` and `set_sprinkles`
+    /// above only prove that a config file's *known* keys survive a write. This is the sharper
+    /// claim, and the one that matters for forward compatibility: an edit never drops a key it
+    /// does not recognise, because `set_top_level_key` only ever touches the one line it was
+    /// asked to change.
+    #[test]
+    fn set_sprinkles_preserves_an_unknown_key() {
+        use crate::sprinkles::Level;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.toml"),
+            "future_field = true\nflavour = \"sumo\"\n",
+        )
+        .unwrap();
+        set_sprinkles(dir.path(), Level::Full).unwrap();
+        let contents = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert!(contents.contains("future_field = true"));
+    }
+
+    /// `set_key` is the setup screen's writer for every setting that has no setter of its own
+    /// (Mascot, Sprinkles, Daily Show, Boot Screen): see `setup::save_to`. Same claim as above.
+    #[test]
+    fn set_key_preserves_an_unknown_key() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.toml"),
+            "future_field = true\nanimate = true\n",
+        )
+        .unwrap();
+        set_key(dir.path(), "animate", "false").unwrap();
+        let contents = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert!(contents.contains("future_field = true"));
+        assert!(!load(Some(dir.path())).animate);
     }
 }

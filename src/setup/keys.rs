@@ -6,7 +6,9 @@ use super::model::Key;
 /// is decoded the same way wherever it arrives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {
+    /// A navigation or command key.
     Key(Key),
+    /// A yes or no answer to the open dialog.
     Answer(bool),
 }
 

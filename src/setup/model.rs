@@ -4,13 +4,21 @@
 /// A key the setup screen understands. Anything else is ignored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
+    /// Move the selection up.
     Up,
+    /// Move the selection down.
     Down,
+    /// Cycle the current row's value backward.
     Left,
+    /// Cycle the current row's value forward.
     Right,
+    /// Confirm the highlighted dialog choice.
     Enter,
+    /// Save and leave.
     F10,
+    /// Cancel a dialog, or open the quit dialog from the main screen.
     Esc,
+    /// Leave at once, saving nothing.
     CtrlC,
 }
 
@@ -19,6 +27,7 @@ pub enum Key {
 pub enum Effect {
     /// Nothing changed; the screen does not need redrawing.
     Nothing,
+    /// The screen changed and should be redrawn.
     Redraw,
     /// Leave the alternate screen, draw the boot screen as it would look, wait for a key.
     Preview,
@@ -31,19 +40,28 @@ pub enum Effect {
 /// Which dialog, if any, is over the screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dialog {
+    /// No dialog is open.
     None,
+    /// Confirming whether to save before leaving.
     Save,
+    /// Confirming whether to leave without saving.
     Quit,
 }
 
 /// The setting a row writes, or `None` for a row that is not saved at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Setting {
+    /// Which flavour boots.
     Flavour,
+    /// Which Ghostty theme is active.
     Theme,
+    /// The mascot graphics preference.
     Mascot,
+    /// The sprinkles dial.
     Sprinkles,
+    /// Whether the once-a-day animated show is allowed to play.
     DailyShow,
+    /// The boot screen's master switch.
     BootScreen,
     /// Turbo. Engages nothing, saves nothing, and has done since 1995.
     Turbo,
@@ -52,19 +70,27 @@ pub enum Setting {
 /// One line of the left pane: a label, the values it cycles through, and where it started.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
+    /// The label shown in the left pane.
     pub label: &'static str,
+    /// The setting this row writes, if any.
     pub setting: Setting,
+    /// The values this row cycles through, in order.
     pub values: Vec<String>,
+    /// The index into `values` currently shown.
     pub selected: usize,
+    /// The index the row started at, so `changed` can tell if it moved.
     pub initial: usize,
+    /// The help text shown in the right pane while this row is highlighted.
     pub help: &'static str,
 }
 
 impl Row {
+    /// The currently selected value.
     pub fn value(&self) -> &str {
         &self.values[self.selected]
     }
 
+    /// Whether the user has moved this row away from its starting value.
     pub fn changed(&self) -> bool {
         self.selected != self.initial
     }
@@ -83,14 +109,19 @@ impl Row {
     }
 }
 
+/// The setup screen's whole state: its rows and whatever dialog is open.
 #[derive(Debug, Clone, PartialEq)]
 pub struct State {
+    /// Every row on the left pane, in display order.
     pub rows: Vec<Row>,
+    /// The index into `rows` currently highlighted.
     pub selected: usize,
+    /// Which dialog, if any, is over the screen.
     pub dialog: Dialog,
 }
 
 impl State {
+    /// A fresh screen over `rows`, nothing highlighted but the first row, no dialog open.
     pub fn new(rows: Vec<Row>) -> Self {
         State {
             rows,
@@ -114,10 +145,12 @@ impl State {
         !self.changes().is_empty()
     }
 
+    /// The currently highlighted row.
     pub fn current(&self) -> &Row {
         &self.rows[self.selected]
     }
 
+    /// Applies one key press, returning what the caller should do next.
     pub fn key(&mut self, key: Key) -> Effect {
         // Ctrl-C leaves at once from anywhere, saving nothing. It is the one key that does not
         // stop to ask, because somebody pressing it wants out.

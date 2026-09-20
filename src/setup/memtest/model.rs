@@ -6,8 +6,11 @@
 /// here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
+    /// Move the paddle left.
     Left,
+    /// Move the paddle right.
     Right,
+    /// Launch the ball, when it is resting on the paddle.
     Space,
     /// Give up. The game ends as a loss and whatever was cleared still counts.
     Esc,
@@ -20,6 +23,7 @@ pub enum Key {
 pub enum Effect {
     /// Nothing worth redrawing happened.
     Nothing,
+    /// The game changed and should be redrawn.
     Redraw,
     /// The game has just reached its one true ending: every ball lost, or every brick cleared.
     /// This is the single moment the result should be saved. Giving up never produces this.
@@ -34,9 +38,13 @@ pub const FIELD_WIDTH_MARGIN: usize = 4;
 /// Rows subtracted from the terminal's height to get the field's inner height: the header, the
 /// top frame, the bottom frame, the help line, and one spare row.
 pub const FIELD_HEIGHT_MARGIN: usize = 5;
+/// How many rows of bricks the field starts with.
 pub const BRICK_ROWS: usize = 5;
+/// How many bricks make up one row.
 pub const BRICKS_PER_ROW: usize = 12;
+/// How many bricks the field starts with in total.
 pub const TOTAL_BRICKS: usize = BRICK_ROWS * BRICKS_PER_ROW;
+/// The paddle's width, in field columns.
 pub const PADDLE_WIDTH: usize = 10;
 
 /// Brick row colours, top to bottom: red, yellow, green, cyan, blue. The rainbow order used
@@ -80,9 +88,12 @@ const SPEED_CAP: f64 = 1.5;
 /// One second at the tick rate: how long the header holds `FAIL` before the result screen.
 const FAIL_PAUSE_TICKS: u8 = TICKS_PER_SECOND as u8;
 
+/// One brick on the field.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Brick {
+    /// Whether this brick has yet to be broken.
     pub alive: bool,
+    /// How many K clearing this brick counts toward the score.
     pub kb: u64,
 }
 
@@ -91,19 +102,24 @@ pub struct Brick {
 pub enum Phase {
     /// The ball rests on the paddle, waiting for Space.
     Ready,
+    /// The ball is in motion.
     Playing,
     /// The header holds `FAIL` for a beat before the result screen appears.
     FailPause {
+        /// Ticks left before the result screen appears.
         ticks_left: u8,
     },
     /// The result screen: waiting for any key to leave.
     Result {
+        /// Whether every brick was cleared.
         won: bool,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// One game of the Memory Test easter egg, and everything it needs to keep playing.
 pub struct Game {
+    /// Every brick on the field, in row major order.
     pub bricks: Vec<Brick>,
     /// The field's inner width in columns, fixed for the life of the game: the terminal's width
     /// at construction, minus `FIELD_WIDTH_MARGIN`.
@@ -111,16 +127,27 @@ pub struct Game {
     /// The field's inner height in rows, fixed for the life of the game: the terminal's height at
     /// construction, minus `FIELD_HEIGHT_MARGIN`.
     pub field_rows: usize,
+    /// The paddle's leftmost column.
     pub paddle_col: usize,
+    /// The ball's horizontal position, in field cells.
     pub ball_x: f64,
+    /// The ball's vertical position, in field cells.
     pub ball_y: f64,
+    /// The ball's horizontal step per tick.
     pub ball_dx: f64,
+    /// The ball's vertical step per tick.
     pub ball_dy: f64,
+    /// Balls left before the game is lost.
     pub balls_left: u8,
+    /// The machine's total memory, in K: the game's target score.
     pub mem_kb: u64,
+    /// K left to clear to win.
     pub remaining_kb: u64,
+    /// How many bricks have been broken so far.
     pub bricks_broken: u32,
+    /// The ball's current speed multiplier over its base speed.
     pub speed: f64,
+    /// Which part of the game is showing.
     pub phase: Phase,
     /// The best K ever cleared before this game started. Never changed by play; the result
     /// screen compares this game's score against it to decide whether to say `New record.`
@@ -178,6 +205,7 @@ impl Game {
         self.score() > self.best_kb
     }
 
+    /// Applies one key press, returning what the caller should do next.
     pub fn key(&mut self, key: Key) -> Effect {
         match self.phase {
             Phase::Result { .. } => Effect::Exit,
@@ -218,6 +246,7 @@ impl Game {
         }
     }
 
+    /// Advances the game by one tick, returning what the caller should do next.
     pub fn tick(&mut self) -> Effect {
         match self.phase {
             Phase::Result { .. } => Effect::Nothing,

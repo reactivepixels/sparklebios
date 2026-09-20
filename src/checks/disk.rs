@@ -16,7 +16,9 @@ const WARN_WITHIN_DAYS: u64 = 30;
 /// One day's free space, in whole GB.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reading {
+    /// When this reading was taken, in seconds since the epoch.
     pub at: u64,
+    /// Free space at that time, in whole GB.
     pub free_gb: u64,
 }
 

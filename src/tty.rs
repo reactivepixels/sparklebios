@@ -10,6 +10,7 @@ pub struct RawGuard {
 }
 
 impl RawGuard {
+    /// Puts `fd` into raw mode, per the struct's own doc comment.
     pub fn new(fd: i32) -> Option<RawGuard> {
         // SAFETY: `fd` is the caller's file descriptor; `isatty` only reads it.
         if unsafe { libc::isatty(fd) } == 0 {

@@ -7,12 +7,16 @@
 /// override, reads as `Off`, the same tolerant way every other config key does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
+    /// No sprinkles at all.
     Off,
+    /// A light touch of extra delight.
     Light,
+    /// Every sprinkle the show has.
     Full,
 }
 
 impl Level {
+    /// Reads a `sprinkles` dial value, tolerantly: anything unrecognised is `Off`.
     pub fn parse(s: &str) -> Level {
         match s {
             "light" => Level::Light,
@@ -21,6 +25,7 @@ impl Level {
         }
     }
 
+    /// This level's config file spelling.
     pub fn as_str(self) -> &'static str {
         match self {
             Level::Off => "off",
