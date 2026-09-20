@@ -600,7 +600,7 @@ fn flavour_new(id: &str) -> i32 {
         return 1;
     }
     if crate::flavour::is_builtin_id(id) {
-        eprintln!("bios: {id} is a built in flavour. Pick another name.");
+        eprintln!("bios: {id} is a built-in flavour. Pick another name.");
         return 1;
     }
     let Some(dir) = crate::paths::user_flavours_dir() else {

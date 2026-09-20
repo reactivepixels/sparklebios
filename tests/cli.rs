@@ -2061,7 +2061,7 @@ fn flavour_new_rejects_a_built_in_id_and_writes_nothing() {
         .assert()
         .failure()
         .code(1)
-        .stderr("bios: unicorn is a built in flavour. Pick another name.\n");
+        .stderr("bios: unicorn is a built-in flavour. Pick another name.\n");
     assert!(!config.path().join("sparklebios").exists());
 }
 

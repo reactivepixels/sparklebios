@@ -36,7 +36,7 @@ pub(super) fn run(screen: &mut super::Screen, session: Session) {
         cleared_before,
         seed,
     } = session;
-    let mut game = Game::new(mem_kb, best_kb, cleared_before, seed);
+    let mut game = Game::new(mem_kb, best_kb, cleared_before, seed, cols, rows);
     let redraw = |screen: &mut super::Screen, game: &Game| {
         screen.draw(&view::render(game, cols as usize, rows as usize));
     };

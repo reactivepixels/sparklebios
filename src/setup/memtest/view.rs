@@ -2,18 +2,18 @@
 //! string. Nothing here touches a terminal, so every pixel of it can be tested directly.
 
 use super::model::{
-    Game, Phase, BRICKS_PER_ROW, BRICK_COLOURS, BRICK_ROWS, BRICK_WIDTH, FIELD_COLS, FIELD_ROWS,
-    PADDLE_WIDTH,
+    brick_widths, Game, Phase, BRICKS_PER_ROW, BRICK_COLOURS, BRICK_ROWS, FIELD_HEIGHT_MARGIN,
+    FIELD_WIDTH_MARGIN, PADDLE_WIDTH,
 };
 
-/// The screen is drawn at a fixed size and centred in anything larger, same as setup.
-pub const WIDTH: usize = 80;
-pub const HEIGHT: usize = 24;
-
-/// The frame's own width: `+` or `|`, seventy two columns, `+` or `|`.
-const CONTENT_WIDTH: usize = FIELD_COLS + 2;
-/// The frame plus its one column left margin, before the trailing pad out to `WIDTH`.
-const FRAMED_WIDTH: usize = CONTENT_WIDTH + 1;
+/// The smallest terminal `setup::run` ever lets this screen see, and so the default size the
+/// tests below build a game and render at. The field itself is not this size: it fills whatever
+/// terminal `Game::new` was actually given, which grows the field in both directions on a bigger
+/// one.
+#[cfg(test)]
+const MIN_COLS: usize = 80;
+#[cfg(test)]
+const MIN_ROWS: usize = 24;
 
 /// Cuts `s` to `width` visible characters and pads it out to exactly that. `s` must not contain
 /// any escape sequence: this measures with `chars().count()`, which an escape code would throw
@@ -41,20 +41,22 @@ fn centre_plain(s: &str, width: usize) -> String {
     )
 }
 
-/// Wraps a seventy four column wide `core` (the frame's own content, `+---+`, `|####|`, or a
-/// centred message) in its one column left margin and the trailing pad out to `WIDTH`. Safe to
-/// call with a `core` that carries ANSI colour codes: the padding here is a fixed count, never a
-/// measurement of `core` itself.
+/// Wraps `core`, the frame's own content (`+---+`, `|####|`, or a centred message), in the one
+/// column margin that sits on each side of it. Safe to call with a `core` that carries ANSI
+/// colour codes: the margin here is a fixed two characters, never a measurement of `core` itself.
 fn framed(core: &str) -> String {
-    format!(" {core}{}", " ".repeat(WIDTH - FRAMED_WIDTH))
+    format!(" {core} ")
 }
 
-/// The whole screen, as lines that each occupy exactly `WIDTH` cells, centred inside `cols` by
-/// `rows` when the terminal is bigger than the screen.
+/// The whole screen, as lines that each occupy exactly as many cells as the field this `game` was
+/// built for needs, centred inside `cols` by `rows` on the rare chance the terminal has grown
+/// since. Ordinarily the two already match, since `Game::new` was handed the same size.
 pub fn render(game: &Game, cols: usize, rows: usize) -> String {
-    let body = screen(game);
-    let pad_left = cols.saturating_sub(WIDTH) / 2;
-    let pad_top = rows.saturating_sub(HEIGHT) / 2;
+    let width = game.field_cols + FIELD_WIDTH_MARGIN;
+    let height = game.field_rows + FIELD_HEIGHT_MARGIN;
+    let body = screen(game, width, height);
+    let pad_left = cols.saturating_sub(width) / 2;
+    let pad_top = rows.saturating_sub(height) / 2;
     let indent = " ".repeat(pad_left);
     let mut out = String::new();
     for _ in 0..pad_top {
@@ -72,12 +74,12 @@ pub fn render(game: &Game, cols: usize, rows: usize) -> String {
     out
 }
 
-fn screen(game: &Game) -> Vec<String> {
+fn screen(game: &Game, width: usize, height: usize) -> Vec<String> {
     let content = content_lines(game);
-    let blank_line = " ".repeat(WIDTH);
-    let top_pad = (HEIGHT - content.len()) / 2;
-    let bottom_pad = HEIGHT - content.len() - top_pad;
-    let mut lines = Vec::with_capacity(HEIGHT);
+    let blank_line = " ".repeat(width);
+    let top_pad = (height - content.len()) / 2;
+    let bottom_pad = height - content.len() - top_pad;
+    let mut lines = Vec::with_capacity(height);
     for _ in 0..top_pad {
         lines.push(blank_line.clone());
     }
@@ -88,26 +90,27 @@ fn screen(game: &Game) -> Vec<String> {
     lines
 }
 
-/// The fourteen lines of the game itself: the header, the frame, the ten field rows, and the
-/// footer, which becomes the result line once the game has ended.
+/// The header, the frame, the field's own rows, and the footer, which becomes the result line
+/// once the game has ended. `field_rows + 4` lines long, whatever the field's height.
 fn content_lines(game: &Game) -> Vec<String> {
-    let mut lines = Vec::with_capacity(2 + FIELD_ROWS + 2);
-    lines.push(framed(&header_core(game)));
-    lines.push(framed(&border_core()));
-    for row in 0..FIELD_ROWS {
+    let content_width = game.field_cols + 2;
+    let mut lines = Vec::with_capacity(2 + game.field_rows + 2);
+    lines.push(framed(&header_core(game, content_width)));
+    lines.push(framed(&border_core(game.field_cols)));
+    for row in 0..game.field_rows {
         lines.push(framed(&field_core(game, row)));
     }
     let bottom = if matches!(game.phase, Phase::Result { .. }) && game.is_new_record() {
-        framed(&centre_plain("New record.", CONTENT_WIDTH))
+        framed(&centre_plain("New record.", content_width))
     } else {
-        framed(&border_core())
+        framed(&border_core(game.field_cols))
     };
     lines.push(bottom);
-    lines.push(footer_or_result_row(game));
+    lines.push(footer_or_result_row(game, content_width + 2));
     lines
 }
 
-fn header_core(game: &Game) -> String {
+fn header_core(game: &Game, content_width: usize) -> String {
     let (left_kb, left_suffix) = match game.phase {
         Phase::Result { won: true } => (game.mem_kb, " OK"),
         Phase::FailPause { .. } | Phase::Result { won: false } => (game.remaining_kb, " FAIL"),
@@ -118,25 +121,25 @@ fn header_core(game: &Game) -> String {
     let best_suffix = if game.cleared { " OK" } else { "" };
     let right = format!("Best: {}K{best_suffix}", game.best_kb);
 
-    let gap = CONTENT_WIDTH
+    let gap = content_width
         .saturating_sub(left.chars().count() + right.chars().count())
         .max(1);
-    fit_plain(&format!("{left}{}{right}", " ".repeat(gap)), CONTENT_WIDTH)
+    fit_plain(&format!("{left}{}{right}", " ".repeat(gap)), content_width)
 }
 
-fn border_core() -> String {
-    format!("+{}+", "-".repeat(FIELD_COLS))
+fn border_core(field_cols: usize) -> String {
+    format!("+{}+", "-".repeat(field_cols))
 }
 
-/// One of the ten field rows: a brick row for the first five, otherwise blank except for the
+/// One of the field's rows: a brick row for the first five, otherwise blank except for the
 /// paddle and, while it is in play, the ball.
 fn field_core(game: &Game, row: usize) -> String {
     if row < BRICK_ROWS {
         return brick_row_core(game, row);
     }
 
-    let mut cells = vec![' '; FIELD_COLS];
-    if row == FIELD_ROWS - 1 {
+    let mut cells = vec![' '; game.field_cols];
+    if row == game.field_rows - 1 {
         for i in 0..PADDLE_WIDTH {
             if let Some(c) = cells.get_mut(game.paddle_col + i) {
                 *c = '=';
@@ -144,9 +147,9 @@ fn field_core(game: &Game, row: usize) -> String {
         }
     }
     if matches!(game.phase, Phase::Ready | Phase::Playing) {
-        let ball_row = game.ball_y.round().clamp(0.0, (FIELD_ROWS - 1) as f64) as usize;
+        let ball_row = game.ball_y.round().clamp(0.0, (game.field_rows - 1) as f64) as usize;
         if ball_row == row {
-            let ball_col = game.ball_x.round().clamp(0.0, (FIELD_COLS - 1) as f64) as usize;
+            let ball_col = game.ball_x.round().clamp(0.0, (game.field_cols - 1) as f64) as usize;
             if let Some(c) = cells.get_mut(ball_col) {
                 *c = 'o';
             }
@@ -157,13 +160,14 @@ fn field_core(game: &Game, row: usize) -> String {
 
 fn brick_row_core(game: &Game, row: usize) -> String {
     let colour = BRICK_COLOURS[row];
-    let mut inner = String::with_capacity(FIELD_COLS);
-    for col in 0..BRICKS_PER_ROW {
+    let widths = brick_widths(game.field_cols);
+    let mut inner = String::with_capacity(game.field_cols);
+    for (col, &width) in widths.iter().enumerate() {
         let brick = &game.bricks[row * BRICKS_PER_ROW + col];
         if brick.alive {
-            inner.push_str(&format!("\x1b[{colour}m{}\x1b[0m", "#".repeat(BRICK_WIDTH)));
+            inner.push_str(&format!("\x1b[{colour}m{}\x1b[0m", "#".repeat(width)));
         } else {
-            inner.push_str(&" ".repeat(BRICK_WIDTH));
+            inner.push_str(&" ".repeat(width));
         }
     }
     format!("|{inner}|")
@@ -171,7 +175,7 @@ fn brick_row_core(game: &Game, row: usize) -> String {
 
 const HELP_LINE: &str = "Left/Right or A/D: move   Space: launch   Esc: give up";
 
-fn footer_or_result_row(game: &Game) -> String {
+fn footer_or_result_row(game: &Game, width: usize) -> String {
     let text = match game.phase {
         Phase::Result { won: true } => {
             "All memory tested. It was fine the whole time. Any key.".to_string()
@@ -182,7 +186,7 @@ fn footer_or_result_row(game: &Game) -> String {
         ),
         Phase::Ready | Phase::Playing | Phase::FailPause { .. } => HELP_LINE.to_string(),
     };
-    fit_plain(&format!("  {text}"), WIDTH)
+    fit_plain(&format!("  {text}"), width)
 }
 
 #[cfg(test)]
@@ -213,72 +217,104 @@ mod tests {
     }
 
     #[test]
-    fn every_line_is_exactly_eighty_cells_at_the_smallest_size() {
-        let g = Game::new(18874368, 18874368, true, 1);
-        let out = render(&g, WIDTH, HEIGHT);
+    fn every_line_is_exactly_as_wide_as_the_terminal_at_the_smallest_size() {
+        let g = Game::new(
+            18874368,
+            18874368,
+            true,
+            1,
+            MIN_COLS as u16,
+            MIN_ROWS as u16,
+        );
+        let out = render(&g, MIN_COLS, MIN_ROWS);
         for (i, line) in visible_lines(&out).iter().enumerate() {
-            assert_eq!(line.chars().count(), WIDTH, "line {i}: {line:?}");
+            assert_eq!(line.chars().count(), MIN_COLS, "line {i}: {line:?}");
         }
-        assert_eq!(out.lines().count(), HEIGHT);
+        assert_eq!(out.lines().count(), MIN_ROWS);
     }
 
     #[test]
-    fn a_bigger_terminal_centres_rather_than_stretches() {
-        let g = Game::new(18874368, 18874368, true, 1);
+    fn a_taller_wider_terminal_grows_the_field_rather_than_stretching_a_fixed_one() {
+        let g = Game::new(18874368, 18874368, true, 1, 120, 40);
+        let out = render(&g, 120, 40);
+        let lines = visible_lines(&out);
+        assert_eq!(lines.len(), 40);
+        for (i, line) in lines.iter().enumerate() {
+            assert_eq!(line.chars().count(), 120, "line {i}: {line:?}");
+        }
+        // The field fills almost the whole terminal: five brick rows plus thirty of open space
+        // above a bat sitting one row from the very bottom.
+        assert_eq!(g.field_cols, 116);
+        assert_eq!(g.field_rows, 35);
+    }
+
+    #[test]
+    fn a_terminal_grown_since_the_game_was_built_centres_the_field_rather_than_stretching_it() {
+        let g = Game::new(
+            18874368,
+            18874368,
+            true,
+            1,
+            MIN_COLS as u16,
+            MIN_ROWS as u16,
+        );
         let out = render(&g, 120, 40);
         let lines: Vec<&str> = out.lines().collect();
-        // Only the top is padded to centre vertically, the same as setup's own screen: the
-        // alternate screen is already blank below, so there is nothing to fill in.
-        let pad_top = (40 - HEIGHT) / 2;
-        assert_eq!(lines.len(), pad_top + HEIGHT);
+        let pad_top = (40 - MIN_ROWS) / 2;
+        assert_eq!(lines.len(), pad_top + MIN_ROWS);
         let blank_top = lines.iter().take_while(|l| l.trim().is_empty()).count();
-        // The screen's own fourteen line block is itself centred inside its nominal 24 rows, so
-        // the blank run at the top is that inner padding as well as the outer one.
-        let inner_pad_top = (HEIGHT - 14) / 2;
+        // The screen's own content is itself centred inside the field's nominal height, so the
+        // blank run at the top is that inner padding as well as the outer one.
+        let inner_pad_top = (MIN_ROWS - (g.field_rows + 4)) / 2;
         assert_eq!(blank_top, pad_top + inner_pad_top);
     }
 
-    /// The initial, freshly opened screen: matches `private/plans/2026-09-20-memory-test.md`
-    /// exactly in wording and numbers. The mock-up's own hand counted spacing put the header one
-    /// column past the frame's right edge and the paddle one column left of centre; both are
-    /// reproduced here flush with the frame and mathematically centred instead, which the plan's
-    /// own numbers (the ball sits exactly above the paddle's centre) confirm was the intent.
+    /// The initial, freshly opened screen at the smallest terminal setup allows: matches
+    /// `private/plans/2026-09-20-memory-test.md` in wording, and the feel fix's own numbers in
+    /// geometry (a taller, wider field; a ten wide bat).
     #[test]
     fn the_initial_screen_matches_the_plan() {
-        let g = Game::new(18874368, 18874368, true, 1);
-        let out = render(&g, WIDTH, HEIGHT);
+        let g = Game::new(
+            18874368,
+            18874368,
+            true,
+            1,
+            MIN_COLS as u16,
+            MIN_ROWS as u16,
+        );
+        let out = render(&g, MIN_COLS, MIN_ROWS);
         let lines = visible_lines(&out);
 
         let expected_header = format!(
-            " Memory Testing : 18874368K{}Best: 18874368K OK",
-            " ".repeat(30)
+            " Memory Testing : 18874368K{}Best: 18874368K OK ",
+            " ".repeat(
+                g.field_cols + 2 - "Memory Testing : 18874368K".len() - "Best: 18874368K OK".len()
+            )
         );
-        assert_eq!(lines[5].trim_end(), expected_header);
+        assert_eq!(lines[0].trim_end(), expected_header.trim_end());
 
-        assert_eq!(
-            lines[6].trim_end(),
-            " +------------------------------------------------------------------------+"
-        );
+        let border = format!(" +{}+ ", "-".repeat(g.field_cols));
+        assert_eq!(lines[1].trim_end(), border.trim_end());
         for r in 0..BRICK_ROWS {
-            let row = &lines[7 + r];
-            assert_eq!(row.matches('#').count(), FIELD_COLS, "brick row {r}");
+            let row = &lines[2 + r];
+            assert_eq!(row.matches('#').count(), g.field_cols, "brick row {r}");
         }
-        assert!(lines[14].contains('o'));
-        assert!(lines[16].contains("========"));
-        assert_eq!(
-            lines[17].trim_end(),
-            " +------------------------------------------------------------------------+"
-        );
-        assert!(lines[18].contains("Left/Right or A/D: move"));
-        assert!(lines[18].contains("Space: launch"));
-        assert!(lines[18].contains("Esc: give up"));
+        let ball_line = 2 + g.field_rows - 1 - 2;
+        let paddle_line = 2 + g.field_rows - 1;
+        assert!(lines[ball_line].contains('o'));
+        assert!(lines[paddle_line].contains(&"=".repeat(PADDLE_WIDTH)));
+        assert_eq!(lines[2 + g.field_rows].trim_end(), border.trim_end());
+        let footer = &lines[2 + g.field_rows + 1];
+        assert!(footer.contains("Left/Right or A/D: move"));
+        assert!(footer.contains("Space: launch"));
+        assert!(footer.contains("Esc: give up"));
     }
 
     #[test]
     fn the_header_counts_down_as_bricks_go() {
-        let mut g = Game::new(600, 0, false, 1);
+        let mut g = Game::new(600, 0, false, 1, MIN_COLS as u16, MIN_ROWS as u16);
         g.remaining_kb -= 10;
-        let out = render(&g, WIDTH, HEIGHT);
+        let out = render(&g, MIN_COLS, MIN_ROWS);
         assert!(out.contains("Memory Testing : 590K"));
         assert!(!out.contains("OK"));
         assert!(!out.contains("FAIL"));
@@ -286,36 +322,38 @@ mod tests {
 
     #[test]
     fn the_header_shows_ok_once_the_game_is_won() {
-        let mut g = Game::new(60, 0, false, 1);
+        let mut g = Game::new(60, 0, false, 1, MIN_COLS as u16, MIN_ROWS as u16);
         for b in &mut g.bricks {
             b.alive = false;
         }
         g.bricks[TOTAL_BRICKS - 1].alive = true;
         g.remaining_kb = g.bricks[TOTAL_BRICKS - 1].kb;
         g.phase = Phase::Playing;
-        g.ball_x = 70.0;
-        g.ball_y = 4.0;
+        let widths = brick_widths(g.field_cols);
+        let start: usize = widths[..BRICKS_PER_ROW - 1].iter().sum();
+        g.ball_x = (start + widths[BRICKS_PER_ROW - 1] / 2) as f64;
+        g.ball_y = (BRICK_ROWS - 1) as f64;
         g.ball_dx = 0.0;
         g.ball_dy = 0.0;
         assert_eq!(g.tick(), crate::setup::memtest::model::Effect::Ended);
-        let out = render(&g, WIDTH, HEIGHT);
+        let out = render(&g, MIN_COLS, MIN_ROWS);
         assert!(out.contains("Memory Testing : 60K OK"));
         assert!(out.contains("All memory tested. It was fine the whole time. Any key."));
     }
 
     #[test]
     fn the_header_shows_fail_after_the_last_ball_is_lost() {
-        let mut g = Game::new(600, 0, false, 1);
+        let mut g = Game::new(600, 0, false, 1, MIN_COLS as u16, MIN_ROWS as u16);
         g.balls_left = 1;
         g.phase = Phase::Playing;
         g.paddle_col = 32;
         g.ball_x = 10.0;
-        g.ball_y = 8.6;
+        g.ball_y = (g.field_rows - 1) as f64 - 0.4;
         g.ball_dx = 0.0;
         g.ball_dy = 0.5;
         g.tick();
         assert!(matches!(g.phase, Phase::FailPause { .. }));
-        let out = render(&g, WIDTH, HEIGHT);
+        let out = render(&g, MIN_COLS, MIN_ROWS);
         assert!(out.contains(&format!("Memory Testing : {}K FAIL", g.remaining_kb)));
         assert!(
             out.contains("Left/Right or A/D: move"),
@@ -325,12 +363,12 @@ mod tests {
 
     #[test]
     fn the_lost_result_screen_shows_the_remaining_k_and_any_key() {
-        let mut g = Game::new(600, 0, false, 1);
+        let mut g = Game::new(600, 0, false, 1, MIN_COLS as u16, MIN_ROWS as u16);
         g.balls_left = 1;
         g.phase = Phase::Playing;
         g.paddle_col = 32;
         g.ball_x = 10.0;
-        g.ball_y = 8.6;
+        g.ball_y = (g.field_rows - 1) as f64 - 0.4;
         g.ball_dx = 0.0;
         g.ball_dy = 0.5;
         g.tick();
@@ -338,7 +376,7 @@ mod tests {
             g.tick();
         }
         assert_eq!(g.phase, Phase::Result { won: false });
-        let out = render(&g, WIDTH, HEIGHT);
+        let out = render(&g, MIN_COLS, MIN_ROWS);
         assert!(out.contains(&format!(
             "{}K untested. The BIOS will assume the best. Any key.",
             g.remaining_kb
@@ -347,20 +385,22 @@ mod tests {
 
     #[test]
     fn a_new_record_prints_above_the_result_line() {
-        let mut g = Game::new(60, 0, false, 1);
+        let mut g = Game::new(60, 0, false, 1, MIN_COLS as u16, MIN_ROWS as u16);
         for b in &mut g.bricks {
             b.alive = false;
         }
         g.bricks[TOTAL_BRICKS - 1].alive = true;
         g.remaining_kb = g.bricks[TOTAL_BRICKS - 1].kb;
         g.phase = Phase::Playing;
-        g.ball_x = 70.0;
-        g.ball_y = 4.0;
+        let widths = brick_widths(g.field_cols);
+        let start: usize = widths[..BRICKS_PER_ROW - 1].iter().sum();
+        g.ball_x = (start + widths[BRICKS_PER_ROW - 1] / 2) as f64;
+        g.ball_y = (BRICK_ROWS - 1) as f64;
         g.ball_dx = 0.0;
         g.ball_dy = 0.0;
         g.tick();
         assert!(g.is_new_record());
-        let out = render(&g, WIDTH, HEIGHT);
+        let out = render(&g, MIN_COLS, MIN_ROWS);
         let lines: Vec<&str> = out.lines().collect();
         let result_line = lines
             .iter()
@@ -371,13 +411,13 @@ mod tests {
 
     #[test]
     fn no_line_is_ever_wider_than_the_terminal() {
-        let mut g = Game::new(37748736, 0, false, 7);
+        let mut g = Game::new(37748736, 0, false, 7, MIN_COLS as u16, MIN_ROWS as u16);
         g.key(Key::Space);
         for _ in 0..200 {
             g.tick();
-            let out = render(&g, WIDTH, HEIGHT);
+            let out = render(&g, MIN_COLS, MIN_ROWS);
             for line in out.lines() {
-                assert!(strip_sgr(line).chars().count() <= WIDTH);
+                assert!(strip_sgr(line).chars().count() <= MIN_COLS);
             }
         }
     }
@@ -386,13 +426,13 @@ mod tests {
     /// cells.
     #[test]
     fn consecutive_frames_change_fewer_than_a_quarter_of_the_cells() {
-        let mut g = Game::new(37748736, 0, false, 7);
+        let mut g = Game::new(37748736, 0, false, 7, MIN_COLS as u16, MIN_ROWS as u16);
         g.key(Key::Space);
-        let mut previous = visible_lines(&render(&g, WIDTH, HEIGHT));
-        let total_cells = WIDTH * HEIGHT;
+        let mut previous = visible_lines(&render(&g, MIN_COLS, MIN_ROWS));
+        let total_cells = MIN_COLS * MIN_ROWS;
         for _ in 0..200 {
             g.tick();
-            let current = visible_lines(&render(&g, WIDTH, HEIGHT));
+            let current = visible_lines(&render(&g, MIN_COLS, MIN_ROWS));
             let changed: usize = previous
                 .iter()
                 .zip(current.iter())

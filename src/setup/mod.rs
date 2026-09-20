@@ -85,7 +85,7 @@ pub fn run(memory_test: bool) -> i32 {
         eprintln!("{not_a_terminal}");
         return 1;
     };
-    if (cols as usize) < view::WIDTH || (rows as usize) < view::HEIGHT {
+    if (cols as usize) < view::MIN_WIDTH || (rows as usize) < view::MIN_HEIGHT {
         eprintln!("bios: setup needs a terminal of at least 80x24. Yours is {cols}x{rows}.");
         return 1;
     }
@@ -100,6 +100,10 @@ pub fn run(memory_test: bool) -> i32 {
         .get("date.year")
         .unwrap_or("2026")
         .to_string();
+    let truecolor = view::truecolor_capable(
+        std::env::var("COLORTERM").ok().as_deref(),
+        std::env::var("TERM").ok().as_deref(),
+    );
 
     let outcome = {
         let Some(_raw) = crate::tty::RawGuard::new(fd) else {
@@ -111,7 +115,7 @@ pub fn run(memory_test: bool) -> i32 {
             launch_memory_test(&mut screen, fd, cols, rows);
             Outcome::Exit
         } else {
-            run_loop(&mut state, &mut screen, fd, cols, rows, &year)
+            run_loop(&mut state, &mut screen, fd, cols, rows, &year, truecolor)
         }
         // Both guards drop here, so the terminal is itself again before anything below prints.
     };
@@ -129,9 +133,16 @@ fn run_loop(
     cols: u16,
     rows: u16,
     year: &str,
+    truecolor: bool,
 ) -> Outcome {
     let redraw = |screen: &mut Screen, state: &State| {
-        screen.draw(&view::render(state, cols as usize, rows as usize, year));
+        screen.draw(&view::render(
+            state,
+            cols as usize,
+            rows as usize,
+            year,
+            truecolor,
+        ));
     };
     redraw(screen, state);
 
