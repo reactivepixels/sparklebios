@@ -31,3 +31,13 @@ battery_health = "Cold weather: {battery.health} of design after {battery.cycles
 runtime_drift = "Wrong footprint: {runtime.repo} wants {runtime.name} {runtime.wanted}, found {runtime.found}."
 f1 = "Press F1 to continue."
 f1_resume = "Press F1 to continue, or bios resume to return to base camp at {boot.device}."
+
+[presence]
+title = "YETI-8K"
+done = "Yeti: {took}. Tracks lead nowhere."
+failed = "Yeti: {took} and it got away."
+goodbye = "Yeti: was never here. Photo blurry."
+not_found = "Bad command. Sightings unconfirmed."
+refresh = "Yeti: cave swept. Checks refreshed."
+resume = "Yeti: back to base camp at {device}."
+switched = "The yeti is in. Or was. Hard to say."

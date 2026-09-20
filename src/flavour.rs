@@ -22,6 +22,10 @@ pub struct Flavour {
     pub footer: String,
     pub quips: Vec<String>,
     pub findings: BTreeMap<String, String>,
+    /// What the flavour says away from the boot screen: the tab title, the line after a long
+    /// command, the goodbye, and so on. A built-in has all eight; a user flavour may omit any,
+    /// and that moment is then silent for it.
+    pub presence: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,6 +45,8 @@ struct RawFlavour {
     quips: Vec<String>,
     #[serde(default)]
     findings: BTreeMap<String, String>,
+    #[serde(default)]
+    presence: BTreeMap<String, String>,
 }
 
 const UNICORN_TOML: &str = include_str!("../flavours/unicorn.toml");
@@ -118,6 +124,9 @@ fn validate(raw: RawFlavour) -> Result<Flavour, String> {
         ));
     }
     validate_findings(&raw.findings)?;
+    // The presence keys follow the same shape rule as the findings ones: a lowercase name and a
+    // value that says something.
+    validate_findings(&raw.presence)?;
     Ok(Flavour {
         id: raw.id,
         name: raw.name,
@@ -132,6 +141,7 @@ fn validate(raw: RawFlavour) -> Result<Flavour, String> {
         footer: raw.footer,
         quips: raw.quips,
         findings: raw.findings,
+        presence: raw.presence,
     })
 }
 

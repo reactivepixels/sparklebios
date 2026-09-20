@@ -31,3 +31,13 @@ battery_health = "Endurance: {battery.health} of design after {battery.cycles} m
 runtime_drift = "Wrong blade: {runtime.repo} wants {runtime.name} {runtime.wanted}, found {runtime.found}."
 f1 = "Press F1 to continue. Quietly."
 f1_resume = "Press F1 to continue, or bios resume to slip back into {boot.device}."
+
+[presence]
+title = "SHINOBI-0"
+done = "Ninja: done in {took}. Nobody heard it."
+failed = "Ninja: failed after {took}. Nobody saw that either."
+goodbye = "Ninja: you never saw me."
+not_found = "Bad command. If it exists, it is hiding well."
+refresh = "Ninja: checks refreshed. Silently."
+resume = "Ninja: slipping back into {device}."
+switched = "The ninja is here. You will not notice."

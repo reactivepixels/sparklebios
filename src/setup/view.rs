@@ -98,10 +98,14 @@ pub fn render(state: &State, cols: usize, rows: usize, year: &str) -> String {
     for _ in 0..pad_top {
         out.push('\n');
     }
-    for line in body {
+    // Joined, never terminated. A newline after the last row scrolls the whole screen up by one
+    // on a terminal exactly as tall as the screen, losing the title, and again on every redraw.
+    for (i, line) in body.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
         out.push_str(&indent);
-        out.push_str(&line);
-        out.push('\n');
+        out.push_str(line);
     }
     out
 }
@@ -285,6 +289,28 @@ mod tests {
         for (i, line) in visible_lines(&out).iter().enumerate() {
             assert_eq!(line.chars().count(), WIDTH, "line {i}: {line:?}");
         }
+    }
+
+    /// A newline after the last row scrolls a terminal that is exactly as tall as the screen,
+    /// which loses the title line and does it again on every redraw. The snapshot tests did not
+    /// catch this: they compare the string, not what a terminal does with it.
+    #[test]
+    fn the_frame_does_not_end_in_a_newline() {
+        let out = render(&state(), WIDTH, HEIGHT, "2026");
+        assert!(!out.ends_with('\n'), "the last row is newline terminated");
+        assert_eq!(
+            out.matches('\n').count(),
+            HEIGHT - 1,
+            "one newline between rows and none after the last"
+        );
+    }
+
+    /// The same at a larger size, where the padding above contributes its own newlines.
+    #[test]
+    fn a_centred_frame_does_not_end_in_a_newline_either() {
+        let out = render(&state(), 120, 40, "2026");
+        assert!(!out.ends_with('\n'));
+        assert_eq!(out.matches('\n').count(), (40 - HEIGHT) / 2 + HEIGHT - 1);
     }
 
     #[test]

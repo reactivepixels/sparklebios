@@ -32,3 +32,13 @@ battery_health = "Stamina: {battery.health} of design after {battery.cycles} bou
 runtime_drift = "Wrong division: {runtime.repo} wants {runtime.name} {runtime.wanted}, found {runtime.found}."
 f1 = "Press F1 to continue."
 f1_resume = "Press F1 to continue, or bios resume to re-enter {boot.device}."
+
+[presence]
+title = "DOHYO-15"
+done = "Sumo: {took}. Still in the ring."
+failed = "Sumo: pushed out after {took}. Rematch."
+goodbye = "Sumo: bow. Leave the ring."
+not_found = "Bad command. It has been pushed out of the ring."
+refresh = "Sumo: ring purified. Checks refreshed."
+resume = "Sumo: re-entering the ring at {device}."
+switched = "The sumo has entered. The ring is smaller now."

@@ -1621,7 +1621,10 @@ fn config_reset_then_use_preserves_every_comment_and_key_order_and_reads_back_th
             "checks",
             "project_dirs",
             "sprinkles",
-            "boot"
+            "boot",
+            "presence",
+            "presence_after",
+            "title"
         ]
     );
     assert!(contents.contains("flavour = \"sumo\""));

@@ -31,3 +31,13 @@ battery_health = "Rowers tiring: {battery.health} of design after {battery.cycle
 runtime_drift = "Wrong oar: {runtime.repo} wants {runtime.name} {runtime.wanted}, found {runtime.found}."
 f1 = "Press F1 to continue."
 f1_resume = "Press F1 to continue, or bios resume to sail back to {boot.device}."
+
+[presence]
+title = "DRAKKAR-32"
+done = "Viking: {took} at the oars. Landed."
+failed = "Viking: {took}, then the mast went. Row back."
+goodbye = "Viking: sails set. Until next tide."
+not_found = "Bad command. Not found on this shore or the next."
+refresh = "Viking: horizon scanned. Checks refreshed."
+resume = "Viking: sailing back to {device}."
+switched = "The viking is aboard. Mind the oars."

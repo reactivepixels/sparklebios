@@ -31,3 +31,13 @@ battery_health = "Stamina: {battery.health} of design after {battery.cycles} fal
 runtime_drift = "Wrong weight class: {runtime.repo} wants {runtime.name} {runtime.wanted}, found {runtime.found}."
 f1 = "Press F1 to continue."
 f1_resume = "Press F1 to continue, or bios resume for a rematch with {boot.device}."
+
+[presence]
+title = "LUCHA-3"
+done = "Luchador: pinned in {took}."
+failed = "Luchador: counted out after {took}. Best of three."
+goodbye = "Luchador: the mask stays on."
+not_found = "Bad command. It did not make weight."
+refresh = "Luchador: card updated. Checks refreshed."
+resume = "Luchador: rematch at {device}."
+switched = "The luchador is on the card. Mask on."

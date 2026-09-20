@@ -31,3 +31,13 @@ battery_health = "Night vision: {battery.health} of design after {battery.cycles
 runtime_drift = "Wrong bin: {runtime.repo} wants {runtime.name} {runtime.wanted}, found {runtime.found}."
 f1 = "Press F1 to continue."
 f1_resume = "Press F1 to continue, or bios resume to go back through {boot.device}."
+
+[presence]
+title = "BANDIT-5"
+done = "Raccoon: {took}. Got the good stuff."
+failed = "Raccoon: {took} and the lid was locked."
+goodbye = "Raccoon: took the good stuff. Left the lid."
+not_found = "Bad command. Checked every bin."
+refresh = "Raccoon: bins checked again. All of them."
+resume = "Raccoon: back through {device}."
+switched = "The raccoon is in the bin. Your bin."

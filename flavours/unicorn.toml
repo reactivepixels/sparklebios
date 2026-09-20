@@ -25,3 +25,13 @@ quips = [
   "Warning: horn is not hot-swappable.",
   "PC speaker not found. Please imagine a beep.",
 ]
+
+[presence]
+title = "UNI-440BX"
+done = "Unicorn: done in {took}. Sparkles settled."
+failed = "Unicorn: failed after {took}. The horn is fine."
+goodbye = "Unicorn: goodbye. Stay sparkly."
+not_found = "Bad command. The unicorn looked everywhere."
+refresh = "Unicorn: checks refreshed. Glitter recalibrated."
+resume = "Unicorn: booting {device}."
+switched = "The unicorn is loaded. It was always loaded."

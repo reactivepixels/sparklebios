@@ -32,3 +32,13 @@ battery_health = "Mana: {battery.health} of design after {battery.cycles} castin
 runtime_drift = "Wrong edition: {runtime.repo} wants {runtime.name} {runtime.wanted}, found {runtime.found}."
 f1 = "Press F1 to continue."
 f1_resume = "Press F1 to continue, or bios resume to return to your study in {boot.device}."
+
+[presence]
+title = "GRIMOIRE-9"
+done = "Wizard: {took} of casting. It held."
+failed = "Wizard: {took}, then the spell fizzled."
+goodbye = "Wizard: the tower stands. For now."
+not_found = "Bad command. That is not a word of power."
+refresh = "Wizard: scrying done. Checks refreshed."
+resume = "Wizard: returning to the study in {device}."
+switched = "The wizard is in. Questions will be answered obliquely."

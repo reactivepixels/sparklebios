@@ -33,6 +33,12 @@ pub struct Config {
     pub sprinkles: crate::sprinkles::Level,
     /// The master switch. False means a new tab prints nothing at all.
     pub boot: bool,
+    /// Whether the flavour says anything away from the boot screen.
+    pub presence: bool,
+    /// How long a command must run before the flavour comments on it, in seconds.
+    pub presence_after: u64,
+    /// Whether the tab title carries the flavour's board name and the current folder.
+    pub title: bool,
 }
 
 impl Default for Config {
@@ -45,6 +51,9 @@ impl Default for Config {
             graphics: GraphicsPref::Auto,
             sprinkles: crate::sprinkles::Level::Off,
             boot: true,
+            presence: true,
+            presence_after: 10,
+            title: true,
         }
     }
 }
@@ -85,6 +94,13 @@ sprinkles = \"off\"
 # The master switch. False means a new tab prints nothing at all, the same as setting
 # SPARKLEBIOS_BOOT=0, but for every shell rather than one.
 boot = true
+
+# Presence: the flavour speaks after long commands, on typos and at exit. false is silence.
+presence = true
+# Seconds a command must run before the flavour comments on it.
+presence_after = 10
+# Tab title: the flavour's board name and the current folder. false leaves the title alone.
+title = true
 ";
 
 /// `<dir>/config.toml`.
@@ -145,6 +161,9 @@ struct RawConfig {
     graphics: Option<String>,
     sprinkles: Option<String>,
     boot: Option<bool>,
+    presence: Option<bool>,
+    presence_after: Option<u64>,
+    title: Option<bool>,
 }
 
 /// Missing, unreadable or invalid file yields the default. Unknown keys, including the retired
@@ -176,6 +195,9 @@ pub fn load(dir: Option<&std::path::Path>) -> Config {
             .map(crate::sprinkles::Level::parse)
             .unwrap_or(default.sprinkles),
         boot: raw.boot.unwrap_or(default.boot),
+        presence: raw.presence.unwrap_or(default.presence),
+        presence_after: raw.presence_after.unwrap_or(default.presence_after),
+        title: raw.title.unwrap_or(default.title),
     }
 }
 
@@ -265,6 +287,9 @@ mod tests {
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
                 boot: true,
+                presence: true,
+                presence_after: 10,
+                title: true,
             }
         );
     }
@@ -349,6 +374,9 @@ mod tests {
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
                 boot: true,
+                presence: true,
+                presence_after: 10,
+                title: true,
             }
         );
     }
@@ -377,6 +405,9 @@ mod tests {
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
                 boot: true,
+                presence: true,
+                presence_after: 10,
+                title: true,
             }
         );
     }
