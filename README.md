@@ -83,6 +83,11 @@ bios use sumo            # make it permanent
 
 <p align="center">
   <img src="docs/assets/screen-raccoon.png" alt="The raccoon flavour booting in a terminal" width="49%">
+  <img src="docs/assets/screen-wizard.png" alt="The wizard flavour booting in a terminal" width="49%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/screen-caveman.png" alt="The caveman flavour booting in a terminal" width="49%">
 </p>
 
 | Flavour | The BIOS detects | It says things like |
@@ -212,7 +217,8 @@ your shell either.
 devices and names the one you walked away from mid-change. `bios resume` takes
 you back to it.
 
-**No mascot?** Your terminal cannot show images. Ghostty and kitty can.
+**No mascot?** Your terminal cannot show images. Ghostty, kitty, iTerm2 and
+WezTerm can.
 
 ## System requirements
 

@@ -142,14 +142,18 @@ fn resolve_graphics(config: &crate::config::Config) -> Graphics {
         .as_deref()
         .map(crate::config::GraphicsPref::parse)
         .unwrap_or(config.graphics);
-    let supports_kitty = crate::sprite::supports_kitty(
+    let protocol = crate::sprite::detect_image_protocol(
         std::env::var("TERM").ok().as_deref(),
         std::env::var("TERM_PROGRAM").ok().as_deref(),
+        std::env::var("LC_TERMINAL").ok().as_deref(),
     );
-    if pref == crate::config::GraphicsPref::Auto && supports_kitty {
-        Graphics::Kitty
-    } else {
-        Graphics::None
+    if pref != crate::config::GraphicsPref::Auto {
+        return Graphics::None;
+    }
+    match protocol {
+        Some(crate::sprite::ImageProtocol::Kitty) => Graphics::Kitty,
+        Some(crate::sprite::ImageProtocol::Iterm) => Graphics::Iterm,
+        None => Graphics::None,
     }
 }
 

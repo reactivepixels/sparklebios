@@ -109,8 +109,8 @@ screen, so it requires `bg` to be set.
 `graphics` in `~/.config/sparklebios/config.toml` chooses whether the logo
 is drawn on a painted screen wide enough to show one:
 
-- `"auto"` (the default): the mascot image where the terminal speaks the
-  Kitty graphics protocol, and no mascot at all everywhere else.
+- `"auto"` (the default): the mascot image where the terminal speaks an
+  inline image protocol, and no mascot at all everywhere else.
 - `"off"`: never shows the mascot.
 
 An unknown or malformed value, including the retired `"image"` and
@@ -118,6 +118,18 @@ An unknown or malformed value, including the retired `"image"` and
 this option changed shape must keep booting, not error or warn.
 `SPARKLEBIOS_GRAPHICS`, set to `"auto"` or `"off"`, overrides the config
 file the same way, and reads any other value as `"auto"` too.
+
+Two protocols are spoken. Ghostty and kitty get the Kitty graphics protocol,
+which is chosen when `TERM` is `xterm-ghostty` or `xterm-kitty`, or
+`TERM_PROGRAM` is `ghostty`. iTerm2 and WezTerm get the iTerm2 inline image
+protocol, chosen when `TERM_PROGRAM` is `iTerm.app` or `WezTerm`, or
+`LC_TERMINAL` is `iTerm2`. Where a terminal could be read as either, Kitty
+wins. Both draw the mascot into the same box, so the screen's layout does not
+depend on which one is in use.
+
+The choice is made from environment variables alone. The terminal is never
+asked what it supports, because a query means waiting for a reply, and
+nothing on the boot path is allowed to wait.
 
 The mascot is always transmitted at a fixed size, 14 columns by 7 rows,
 whatever the screen's own width.

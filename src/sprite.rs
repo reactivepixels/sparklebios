@@ -82,9 +82,116 @@ pub fn supports_kitty(term: Option<&str>, term_program: Option<&str>) -> bool {
     matches!(term, Some("xterm-ghostty") | Some("xterm-kitty")) || term_program == Some("ghostty")
 }
 
+/// Which inline image protocol a terminal speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageProtocol {
+    /// Kitty graphics, spoken by Ghostty and kitty.
+    Kitty,
+    /// The iTerm2 inline image protocol, also understood by WezTerm.
+    Iterm,
+}
+
+/// The protocol this terminal speaks, decided from the environment alone. Nothing is ever written
+/// to the terminal to ask it, because the boot path cannot wait for a reply. Kitty wins where both
+/// are possible: it is the path with the most tests behind it.
+pub fn detect_image_protocol(
+    term: Option<&str>,
+    term_program: Option<&str>,
+    lc_terminal: Option<&str>,
+) -> Option<ImageProtocol> {
+    if supports_kitty(term, term_program) {
+        return Some(ImageProtocol::Kitty);
+    }
+    let iterm = matches!(term_program, Some("iTerm.app") | Some("WezTerm"))
+        || lc_terminal == Some("iTerm2");
+    iterm.then_some(ImageProtocol::Iterm)
+}
+
+/// iTerm2 inline image protocol: one OSC 1337 sequence, sized in cells, aspect preserved.
+/// Unlike the Kitty path this draws at the cursor and moves it, so the sequence is wrapped in a
+/// save and restore of the cursor position to leave it exactly where it started.
+pub fn iterm_image(png: &[u8], cols: u16, rows: u16) -> String {
+    let payload = base64_encode(png);
+    format!(
+        "\x1b7\x1b]1337;File=inline=1;width={cols};height={rows};preserveAspectRatio=1:{payload}\x07\x1b8"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kitty_terminals_are_detected_as_kitty() {
+        assert_eq!(
+            detect_image_protocol(Some("xterm-ghostty"), None, None),
+            Some(ImageProtocol::Kitty)
+        );
+        assert_eq!(
+            detect_image_protocol(Some("xterm-kitty"), None, None),
+            Some(ImageProtocol::Kitty)
+        );
+        assert_eq!(
+            detect_image_protocol(None, Some("ghostty"), None),
+            Some(ImageProtocol::Kitty)
+        );
+    }
+
+    #[test]
+    fn iterm_and_wezterm_are_detected_as_iterm() {
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), Some("iTerm.app"), None),
+            Some(ImageProtocol::Iterm)
+        );
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), Some("WezTerm"), None),
+            Some(ImageProtocol::Iterm)
+        );
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), None, Some("iTerm2")),
+            Some(ImageProtocol::Iterm)
+        );
+    }
+
+    #[test]
+    fn kitty_wins_when_a_terminal_could_be_read_as_either() {
+        assert_eq!(
+            detect_image_protocol(Some("xterm-kitty"), Some("WezTerm"), Some("iTerm2")),
+            Some(ImageProtocol::Kitty)
+        );
+    }
+
+    #[test]
+    fn a_terminal_that_speaks_neither_protocol_gets_no_image() {
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), None, None),
+            None
+        );
+        assert_eq!(
+            detect_image_protocol(Some("dumb"), Some("Apple_Terminal"), None),
+            None
+        );
+        assert_eq!(detect_image_protocol(None, None, None), None);
+    }
+
+    #[test]
+    fn the_iterm_image_is_one_osc_1337_sized_in_cells_that_leaves_the_cursor_alone() {
+        let out = iterm_image(UNICORN_PNG, 14, 7);
+        assert!(out.starts_with("\x1b7"), "does not save the cursor first");
+        assert!(out.ends_with("\x1b8"), "does not restore the cursor");
+        assert_eq!(out.matches("\x1b]1337;File=").count(), 1);
+        assert!(out.contains("width=14;height=7"));
+        assert!(out.contains("preserveAspectRatio=1"));
+        assert!(out.ends_with("\x07\x1b8"), "the OSC is not BEL terminated");
+        // no stray escape inside the payload, which is what corrupted the Kitty path once
+        let body = out
+            .trim_start_matches("\x1b7")
+            .trim_end_matches("\x1b8")
+            .trim_end_matches('\x07');
+        let payload = body.split_once(':').unwrap().1;
+        assert!(!payload.contains('\x1b'));
+        assert_eq!(base64_decode(payload), UNICORN_PNG);
+    }
 
     /// A tiny, standards-compliant base64 decoder, for round-tripping in tests only.
     fn base64_decode(s: &str) -> Vec<u8> {

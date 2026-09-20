@@ -96,16 +96,19 @@ fn resolve_graphics_pref(
     }
 }
 
-/// Kitty when `pref` is `Auto` and `supports_kitty` is true; no mascot at all otherwise, whether
-/// because the terminal cannot draw one or because `pref` is `Off`.
+/// The image protocol the terminal speaks when `pref` is `Auto`; no mascot at all otherwise,
+/// whether because the terminal speaks neither protocol or because `pref` is `Off`.
 fn graphics_for(
     pref: crate::config::GraphicsPref,
-    supports_kitty: bool,
+    protocol: Option<crate::sprite::ImageProtocol>,
 ) -> crate::render::Graphics {
-    if pref == crate::config::GraphicsPref::Auto && supports_kitty {
-        crate::render::Graphics::Kitty
-    } else {
-        crate::render::Graphics::None
+    if pref != crate::config::GraphicsPref::Auto {
+        return crate::render::Graphics::None;
+    }
+    match protocol {
+        Some(crate::sprite::ImageProtocol::Kitty) => crate::render::Graphics::Kitty,
+        Some(crate::sprite::ImageProtocol::Iterm) => crate::render::Graphics::Iterm,
+        None => crate::render::Graphics::None,
     }
 }
 
@@ -115,11 +118,12 @@ fn graphics_for(
 /// is safe to pass unconditionally.
 fn graphics(config: &crate::config::Config) -> crate::render::Graphics {
     let pref = resolve_graphics_pref(config.graphics, env_var("SPARKLEBIOS_GRAPHICS").as_deref());
-    let supports_kitty = crate::sprite::supports_kitty(
+    let protocol = crate::sprite::detect_image_protocol(
         env_var("TERM").as_deref(),
         env_var("TERM_PROGRAM").as_deref(),
+        env_var("LC_TERMINAL").as_deref(),
     );
-    graphics_for(pref, supports_kitty)
+    graphics_for(pref, protocol)
 }
 
 /// Animation is off when the config or `SPARKLEBIOS_ANIMATE=0` disables it, `--no-animate` was
@@ -459,17 +463,26 @@ mod tests {
     use super::*;
     use crate::config::GraphicsPref;
     use crate::render::Graphics;
+    use crate::sprite::ImageProtocol;
 
     #[test]
-    fn graphics_for_auto_picks_kitty_when_supported_and_none_otherwise() {
-        assert_eq!(graphics_for(GraphicsPref::Auto, true), Graphics::Kitty);
-        assert_eq!(graphics_for(GraphicsPref::Auto, false), Graphics::None);
+    fn graphics_for_auto_follows_whichever_protocol_the_terminal_speaks() {
+        assert_eq!(
+            graphics_for(GraphicsPref::Auto, Some(ImageProtocol::Kitty)),
+            Graphics::Kitty
+        );
+        assert_eq!(
+            graphics_for(GraphicsPref::Auto, Some(ImageProtocol::Iterm)),
+            Graphics::Iterm
+        );
+        assert_eq!(graphics_for(GraphicsPref::Auto, None), Graphics::None);
     }
 
     #[test]
-    fn graphics_for_off_is_always_none_even_when_kitty_is_supported() {
-        assert_eq!(graphics_for(GraphicsPref::Off, true), Graphics::None);
-        assert_eq!(graphics_for(GraphicsPref::Off, false), Graphics::None);
+    fn graphics_for_off_is_always_none_whatever_the_terminal_speaks() {
+        for protocol in [Some(ImageProtocol::Kitty), Some(ImageProtocol::Iterm), None] {
+            assert_eq!(graphics_for(GraphicsPref::Off, protocol), Graphics::None);
+        }
     }
 
     #[test]

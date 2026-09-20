@@ -21,6 +21,26 @@ pub enum Graphics {
     None,
     /// The mascot image, transmitted through the Kitty graphics protocol.
     Kitty,
+    /// The mascot image, transmitted through the iTerm2 inline image protocol.
+    Iterm,
+}
+
+impl Graphics {
+    /// Whether a mascot image is drawn at all. The two protocols differ only in the bytes they
+    /// emit, so every layout decision asks this rather than naming one of them.
+    pub fn draws_image(self) -> bool {
+        matches!(self, Graphics::Kitty | Graphics::Iterm)
+    }
+
+    /// The escape that transmits `png` into a `cols` by `rows` cell box, in whichever protocol
+    /// this is. `None` when no image is drawn.
+    fn image_escape(self, png: &[u8], cols: u16, rows: u16) -> Option<String> {
+        match self {
+            Graphics::None => None,
+            Graphics::Kitty => Some(crate::sprite::kitty_image(png, cols, rows)),
+            Graphics::Iterm => Some(crate::sprite::iterm_image(png, cols, rows)),
+        }
+    }
 }
 
 /// One resolved, styled run of text within a logical line.
@@ -774,15 +794,16 @@ fn render_painted(
     let blank: Vec<Span> = Vec::new();
 
     let sprite = logo_sprite(machine, flavour);
-    let show_logo =
-        graphics == Graphics::Kitty && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
+    let show_logo = graphics.draws_image() && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
     let kitty_escape = show_logo.then(|| {
-        crate::sprite::kitty_image(sprite.unwrap(), MASCOT_COLS as u16, MASCOT_ROWS as u16)
+        graphics
+            .image_escape(sprite.unwrap(), MASCOT_COLS as u16, MASCOT_ROWS as u16)
+            .unwrap_or_default()
     });
     let logo_cols = if show_logo { MASCOT_COLS } else { 0 };
     let logo_rows = if show_logo { MASCOT_ROWS } else { 0 };
     let show_badge =
-        graphics == Graphics::Kitty && cols >= MIN_COLS_FOR_GRAPHICS && !machine.badge.is_empty();
+        graphics.draws_image() && cols >= MIN_COLS_FOR_GRAPHICS && !machine.badge.is_empty();
 
     let mut out = String::new();
     if let Some(border) = border {
@@ -879,16 +900,16 @@ impl<'a> RowGeometry<'a> {
         let pad_x = machine.pad_x as usize;
         let cols = machine.cols as usize;
         let sprite = logo_sprite(machine, flavour);
-        let show_logo =
-            graphics == Graphics::Kitty && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
+        let show_logo = graphics.draws_image() && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
         let kitty_escape = show_logo.then(|| {
-            crate::sprite::kitty_image(sprite.unwrap(), MASCOT_COLS as u16, MASCOT_ROWS as u16)
+            graphics
+                .image_escape(sprite.unwrap(), MASCOT_COLS as u16, MASCOT_ROWS as u16)
+                .unwrap_or_default()
         });
         let logo_cols = if show_logo { MASCOT_COLS } else { 0 };
         let logo_rows = if show_logo { MASCOT_ROWS } else { 0 };
-        let show_badge = graphics == Graphics::Kitty
-            && cols >= MIN_COLS_FOR_GRAPHICS
-            && !machine.badge.is_empty();
+        let show_badge =
+            graphics.draws_image() && cols >= MIN_COLS_FOR_GRAPHICS && !machine.badge.is_empty();
         RowGeometry {
             machine,
             mode: ColorMode::TrueColor,
@@ -1665,6 +1686,57 @@ print = "{long_line}"
         );
         assert_eq!(out.matches("\x1b_Ga=T").count(), 1);
         assert!(!out.contains('\u{2580}'));
+    }
+
+    /// The iTerm2 path draws the same layout through a different protocol: one OSC 1337, no Kitty
+    /// escape anywhere, and the text still starting at the same column as the Kitty path, since
+    /// the mascot box is the same size whichever protocol fills it.
+    #[test]
+    fn painted_pc95_with_iterm_emits_one_osc_image_and_no_kitty_escape() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        let render = |g| {
+            render_static(
+                &m,
+                &facts,
+                ColorMode::TrueColor,
+                0,
+                Some(100),
+                g,
+                Some(&flavour),
+                &[],
+            )
+        };
+        let out = render(Graphics::Iterm);
+        assert_eq!(out.matches("\x1b]1337;File=").count(), 1);
+        assert!(
+            !out.contains("\x1b_G"),
+            "emitted a Kitty escape on the iTerm2 path"
+        );
+        assert!(out.contains("width=14;height=7"));
+
+        // Same layout: strip each protocol's own image bytes and the rows must match.
+        let strip = |s: &str, start: &str, end: &str| {
+            let mut out = String::new();
+            let mut rest = s;
+            while let Some(i) = rest.find(start) {
+                out.push_str(&rest[..i]);
+                let after = &rest[i..];
+                match after.find(end) {
+                    Some(j) => rest = &after[j + end.len()..],
+                    None => {
+                        rest = "";
+                        break;
+                    }
+                }
+            }
+            out.push_str(rest);
+            out
+        };
+        let iterm_stripped = strip(&out, "\x1b7\x1b]1337;File=", "\x07\x1b8");
+        let kitty_stripped = strip(&render(Graphics::Kitty), "\x1b_G", "\x1b\\");
+        assert_eq!(iterm_stripped, kitty_stripped);
     }
 
     #[test]

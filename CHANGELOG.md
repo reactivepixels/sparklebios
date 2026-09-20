@@ -10,6 +10,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The mascot also draws in iTerm2 and WezTerm, through their own inline image protocol. Ghostty and kitty keep using the Kitty graphics protocol, and the terminal is never asked which it speaks: the answer comes from the environment, so nothing on the boot path waits for a reply.
 - Two more mascots, `wizard` and `caveman`, bringing the roster to nine.
 - `bios boot` typed by hand now always plays the full show, whatever the once-a-day and nested-shell rules would have said. Those still apply to the boot your shell runs, and an explicit run leaves the state file alone, so looking at the screen does not use up the day's show.
 - The design, the voice rulebook, the theme palettes and the roadmap.
