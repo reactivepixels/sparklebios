@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.80"
 description = "Boot every terminal tab like a 1995 PC. It counts your RAM, detects a unicorn, and runs a real health check."
 license = "MIT OR Apache-2.0"
+homepage = "https://github.com/reactivepixels/sparklebios"
 repository = "https://github.com/reactivepixels/sparklebios"
 readme = "README.md"
 keywords = ["terminal", "cli", "retro", "bios", "motd"]

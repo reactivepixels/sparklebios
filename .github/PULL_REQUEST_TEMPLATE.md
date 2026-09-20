@@ -14,4 +14,4 @@
 
 ## Screens
 
-<!-- If this changes what anyone sees, paste the output of `bios boot --full` or `bios boot --machine <id>`. -->
+<!-- If this changes what anyone sees, paste the output of `bios boot --flavour <id> --no-animate`. -->

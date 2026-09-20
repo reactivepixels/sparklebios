@@ -1,6 +1,6 @@
 # Sprinkles
 
-An optional delight layer on the once-a-day animated boot. Off by default,
+An optional effects layer on the once-a-day animated boot. Off by default,
 because not everyone wants sprinkles.
 
 ## The dial
@@ -28,8 +28,8 @@ off boot is untouched, byte for byte, whatever the dial is set to.
 - **Twinkle.** While the memory count runs, up to three cells in the blank
   margin beside the mascot show a star, then a plus, then a full stop, then
   nothing, and nothing again after that. Only when a mascot is actually
-  shown: with no mascot there is no margin to twinkle in, so it simply does
-  not run.
+  shown: with no mascot there is no margin to twinkle in, so it does not run
+  at all.
 - **Stripe sweep.** Only when the boot streak lands on a milestone (7, 30,
   100, 365, or a later multiple of 365), the streak line is drawn once,
   rainbow coloured, held briefly, then settles to its normal style.

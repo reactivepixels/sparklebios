@@ -22,8 +22,7 @@ hits all day:
 A third row, **Starting any program at all, for comparison**, runs the exact
 same harness against `/usr/bin/true`. It is not checked against a budget: it
 exists so a reader can see how much of the two rows above is bios deciding
-something, and how much is just what starting any process costs on this
-machine.
+something, and how much is what starting any process costs on this machine.
 
 ## Budget
 

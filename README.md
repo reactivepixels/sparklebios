@@ -21,19 +21,23 @@ Every new terminal tab boots. The screen is period correct, takes milliseconds,
 and every line on it is true: that is your real processor, your real disk, your
 real shell, and one fictional horn.
 
+Sparkle Corp shipped its first BIOS in 1985. The one on your screen is the 1995 model. The first tab of the day plays the whole thing, about three seconds. Every tab after that gets the finished screen in a few milliseconds.
+
 <p align="center">
   <img src="docs/assets/boot.gif" alt="The daily boot: a memory count, four detections and a health check, in about three seconds" width="880">
 </p>
 
-> **Status: pre-alpha, and usable every day.** The boot screen, flavours, themes
-> and the animated show all work from source on macOS. The first three health
-> checks have landed: boot device order, IRQ conflicts and the virus scan.
+> **Status: 0.1.0 is being prepared.** Everything on this page works today on macOS and Linux, built from source. Prebuilt binaries and a Homebrew tap arrive with the first tag.
 
-## Install from source
+## Install
+
+Until the first release ships binaries, this needs a Rust toolchain.
 
 ```
 cargo install --git https://github.com/reactivepixels/sparklebios
 ```
+
+Try it first, without touching your shell: `bios boot --flavour sumo`.
 
 Add this line to the END of your `~/.zshrc`, then open a new tab. It boots.
 
@@ -52,8 +56,6 @@ Fish, in `~/.config/fish/config.fish`:
 ```
 command -v bios >/dev/null 2>&1; and bios init fish | source
 ```
-
-To try it without touching your shell: `bios boot`
 
 ## Flavours
 
@@ -86,9 +88,6 @@ bios use sumo            # make it permanent
   <img src="docs/assets/screen-wizard.png" alt="The wizard flavour booting in a terminal" width="49%">
 </p>
 
-<p align="center">
-</p>
-
 | Flavour | The BIOS detects | It says things like |
 |---|---|---|
 | `unicorn` | Horn: 1 found (7-band, sparkle capable) | Warning: horn is not hot-swappable. |
@@ -114,6 +113,8 @@ bios setup
 Arrow keys move and change, Enter previews the boot screen with your pending
 choices, F10 saves, Esc leaves. Nothing is written until you save.
 
+The same options live in `~/.config/sparklebios/config.toml`; `bios config edit` opens it.
+
 <p align="center">
   <img src="docs/assets/setup.png" alt="bios setup: the CMOS Setup Utility" width="880">
 </p>
@@ -129,6 +130,8 @@ bios theme list          # the ten
 bios theme use miami     # install them and switch Ghostty to one
 ```
 
+`bios theme install` puts the files in place without switching.
+
 <p align="center">
   <img src="docs/assets/themes.png" alt="Ten theme variants side by side" width="880">
 </p>
@@ -137,6 +140,14 @@ Beside the themes, in [extras/](extras/README.md): a cursor trail shader, tool
 colours for `ls`, `bat`, `fzf`, `delta` and friends that follow whichever variant
 you run, and matching starship palettes. All optional.
 
+## Fetch
+
+`bios fetch` prints the machine at a glance: the mascot, a column of facts and the palette. It is the screen you paste into a thread.
+
+<p align="center">
+  <img src="docs/assets/fetch.png" alt="bios fetch: the machine at a glance, with the raccoon" width="880">
+</p>
+
 ## The show
 
 Once a day the boot is animated: the memory count ticks up and each device is
@@ -144,9 +155,9 @@ detected in turn. Press any key to skip it. Whatever you typed during the show
 is waiting on your prompt when it ends, and the terminal is never left in a
 strange state. Every other boot is drawn instantly.
 
-Where the terminal can draw images (Ghostty, kitty) the mascot is a real
-image. Everywhere else, no mascot shows: nothing is reserved for it, and the
-rest of the screen sits flush left in its place.
+Where the terminal can draw images (Ghostty, kitty, iTerm2, WezTerm) the
+mascot is a real image. Everywhere else, no mascot shows: nothing is reserved
+for it, and the rest of the screen sits flush left in its place.
 
 ## Sprinkles
 
@@ -182,8 +193,7 @@ Every line on the screen is backed by a real probe. These ship today.
 Nothing slow runs while your shell is starting. The probes run in a detached
 process afterwards, and the boot screen reads the result from a cache.
 
-Still to come: a disk filling up, a changed `.zshrc`, stashes you forgot, a slow
-shell and a low battery.
+Every check is cached and phrased by your flavour. `bios refresh` runs them again now.
 
 ## Principles
 
@@ -197,29 +207,18 @@ shell and a low battery.
 
 ## Roadmap
 
-| # | Milestone | Status |
-|---|---|---|
-| M0 | The theme: ten Ghostty theme variants, `bios theme use` | done |
-| M1 | BIOS skeleton: shell hook, boot modes, static POST screens | done |
-| M2 | The look and the show: the mascot as a real image, animation, skip keys, typeahead preserved | done |
-| M2.5 | Flavours: `unicorn` and `sumo`, with more mascots to come | done |
-| M3 | Health checks: boot device order, IRQ conflicts, the virus scan | done |
-| M3.5 | More checks: disk trend, changed dotfiles, stale stashes, battery, beep codes | planned |
-| M4 | Sprinkles: optional sound and text effects, off by default, and `bios config edit` | planned |
-| M4.5 | neigh, the rainbow pipe | planned |
-| M5 | `bios setup` | planned |
-| M6 | Project POST when you `cd` into a repo | planned |
-| M7 | More flavours | planned |
-| M8 | Launch readiness: Linux, bash and fish, `bios fetch`, prebuilt binaries | planned |
+Milestones and what is done live in [ROADMAP.md](ROADMAP.md).
 
-Details live in [ROADMAP.md](ROADMAP.md), and the rest of the paperwork is in [the manual](docs/README.md).
+The rest of the paperwork is in [the manual](docs/README.md).
 
 ## Add your childhood mascot
 
-A flavour is one TOML file and one sprite: a mascot, some firmware wording, the
-one part of it a BIOS would detect, and a handful of deadpan quips. If the
-creature or object you grew up with is not on the list, it should be. The format
-is in [docs/flavours.md](docs/flavours.md), the tone is in
+Start with `bios flavour new <id>`: it writes a starter flavour file, ready
+to boot before you have changed a word. A flavour is one TOML file and one
+sprite: a mascot, some firmware wording, the one part of it a BIOS would
+detect, and a handful of deadpan quips. If the creature or object you grew up
+with is not on the list, it should be. The format is in
+[docs/flavours.md](docs/flavours.md), the tone is in
 [docs/voice.md](docs/voice.md), and [CONTRIBUTING.md](CONTRIBUTING.md) has the
 house rules. If you would rather not write TOML, open an issue and tell me what
 the BIOS should detect.
@@ -227,9 +226,9 @@ the BIOS should detect.
 ## Questions people ask
 
 **Will it slow my shell?** It has a time budget, and CI measures it against that
-budget on every push. On an Apple M3 Pro a new tab costs 3.4ms, process start
-included, and 1.7ms of that is what starting any program at all costs. It spawns
-nothing and waits for nothing. The measurements are in
+budget on every push. On an Apple M3 Pro a new tab costs about 4ms, process
+start included, and about half of that is what starting any program at all
+costs. It spawns nothing and waits for nothing. The measurements are in
 [docs/speed.md](docs/speed.md).
 
 **Does it phone home?** No. See principle 7. In 1985 there was nothing to phone.
@@ -254,6 +253,8 @@ WezTerm can.
 - One (1) unicorn. Supplied.
 
 Warranty void if horn is removed. Horn is not hot-swappable.
+
+In practice: macOS or Linux; zsh, bash or fish; and, if you want the mascot, a terminal that draws images (Ghostty, kitty, iTerm2, WezTerm). Everything else works in any terminal.
 
 ## License
 

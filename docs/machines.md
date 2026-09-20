@@ -115,7 +115,7 @@ the Kitty graphics protocol, and the badge is right-aligned in the accent
 colour, its first line on the second text row (never the first, so the
 header line is never cut short) and one line per row after that. A row's
 own text is never truncated to make room for a badge; if it would end
-within 2 cells of where the badge starts, that row simply shows no badge.
+within 2 cells of where the badge starts, that row shows no badge at all.
 Nowhere the mascot is not drawn is any column reserved for it: the text
 starts at the normal left pad, exactly as a screen with no `logo` at all
 always has.
@@ -180,8 +180,8 @@ whatever the screen's own width.
 | `streak.days` | Consecutive days with a boot. Absent in previews | `12` |
 | `streak.label` | The same, ready to print | `12 days` |
 
-A fact that has not been gathered on a given boot is simply absent, and any
-line referencing it is omitted under the rule above.
+A fact that has not been gathered on a given boot is absent, and any line
+referencing it is omitted under the rule above.
 
 ## User screens
 
@@ -197,8 +197,8 @@ path is allowed to complain.
 ## Trying a screen
 
 ```
-bios boot --machine pc95            # preview one, without touching any state
-NO_COLOR=1 bios boot --machine pc95 # the same, as plain text for pasting into an issue
+bios boot --flavour sumo            # preview one, without touching any state
+NO_COLOR=1 bios boot --flavour sumo # the same, as plain text for pasting into an issue
 ```
 
 A preview never reads or writes the streak, so the streak line is absent.

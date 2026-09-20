@@ -12,13 +12,15 @@ SparkleBIOS is pre-alpha. The most useful things right now:
 - **Never slow or break the shell.** Anything on the boot path has a time budget and a test that enforces it.
 - **Jokes carry facts.** A gag line with no real probe behind it does not ship.
 - **No network code.** Not for updates, not for telemetry, not for anything.
-- **Original art and wording only.** No real logos, wordmarks or copied copyright strings. Machines are named by era (`pc95`, `c64`) and real hardware is referenced descriptively ("in the style of").
+- **Original art and wording only.** No real logos, wordmarks or copied copyright strings. Machines are named by era (`pc95`) and real hardware is referenced descriptively ("in the style of").
 - **No em dashes or en dashes** in prose, comments or commit messages. Use a comma, a colon, parentheses, or two sentences.
 
 ## Adding a flavour
 
-A flavour is one TOML file in `flavours/` plus a sprite, a square transparent
-PNG, in `sprites/`. The schema is documented in
+Start with `bios flavour new <id>`. It writes a starter file with every key
+already filled in and a comment above each one, so you have something working
+before you have changed a single word. A flavour is one TOML file plus a
+sprite: a square transparent PNG, nothing else. The schema is documented in
 [docs/flavours.md](docs/flavours.md). Preview yours with
 `bios boot --flavour <id>`, and paste the output into the pull request.
 
