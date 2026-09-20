@@ -1,0 +1,11 @@
+Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally
+
+OS        : macOS 26.5
+Shell     : zsh
+Terminal  : Ghostty
+CPU       : Apple M4 Pro, 14 cores
+Memory    : 36 GB
+Disk      : 994GB, 78% used
+Flavour   : Unicorn
+Theme     : rainbows-and-unicorns-mane
+Streak    : 12 days

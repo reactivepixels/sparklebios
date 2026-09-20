@@ -66,6 +66,37 @@ pub fn gather() -> Facts {
     facts
 }
 
+/// The terminal name for `bios fetch`: `TERM_PROGRAM` when it is set and non-empty, falling back
+/// to `TERM`. Reported exactly as the environment gives it, never prettified: a value neither
+/// probe is confident about is worse than the raw one.
+pub fn terminal_name(term_program: Option<&str>, term: Option<&str>) -> Option<String> {
+    term_program
+        .filter(|s| !s.is_empty())
+        .or_else(|| term.filter(|s| !s.is_empty()))
+        .map(String::from)
+}
+
+/// `kb` kilobytes, rounded to the nearest whole gigabyte, for `bios fetch`'s `Memory` line.
+pub fn kb_to_whole_gb(kb: u64) -> u64 {
+    (kb as f64 / 1024.0 / 1024.0).round() as u64
+}
+
+/// The theme a Ghostty config names, for `bios fetch`'s `Theme` line: the value of the first top
+/// level `theme =` line (the same syntax `theme::set_ghostty_theme` writes and
+/// `theme::pick_config_path` looks for) in whichever of `candidates` `theme::pick_config_path`
+/// picks. `None` when no candidate exists, the winning file has no such line, or the line names
+/// nothing.
+pub fn ghostty_theme(candidates: &[std::path::PathBuf]) -> Option<String> {
+    let path = crate::theme::pick_config_path(candidates)?;
+    let contents = std::fs::read_to_string(path).ok()?;
+    let line = contents.lines().find(|line| {
+        line.strip_prefix("theme")
+            .is_some_and(|rest| rest.trim_start_matches(' ').starts_with('='))
+    })?;
+    let value = line.split_once('=')?.1.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +146,79 @@ mod tests {
             t.elapsed().as_millis() < 50,
             "gather took {:?}",
             t.elapsed()
+        );
+    }
+
+    #[test]
+    fn terminal_name_prefers_term_program_and_falls_back_to_term() {
+        assert_eq!(
+            terminal_name(Some("ghostty"), Some("xterm-256color")),
+            Some("ghostty".to_string())
+        );
+        assert_eq!(
+            terminal_name(None, Some("xterm-256color")),
+            Some("xterm-256color".to_string())
+        );
+        assert_eq!(terminal_name(None, None), None);
+    }
+
+    #[test]
+    fn terminal_name_treats_an_empty_value_as_unset() {
+        assert_eq!(
+            terminal_name(Some(""), Some("xterm-256color")),
+            Some("xterm-256color".to_string())
+        );
+        assert_eq!(terminal_name(Some(""), Some("")), None);
+    }
+
+    #[test]
+    fn kb_to_whole_gb_rounds_to_the_nearest_gigabyte() {
+        assert_eq!(kb_to_whole_gb(37_748_736), 36);
+        assert_eq!(kb_to_whole_gb(0), 0);
+    }
+
+    #[test]
+    fn ghostty_theme_reads_the_top_level_theme_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config");
+        std::fs::write(
+            &path,
+            "font-size = 14\ntheme = rainbows-and-unicorns-mane\n",
+        )
+        .unwrap();
+        assert_eq!(
+            ghostty_theme(&[path]),
+            Some("rainbows-and-unicorns-mane".to_string())
+        );
+    }
+
+    #[test]
+    fn ghostty_theme_is_none_without_a_theme_line_or_a_candidate() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config");
+        std::fs::write(&path, "font-size = 14\n").unwrap();
+        assert_eq!(ghostty_theme(&[path]), None);
+        assert_eq!(ghostty_theme(&[dir.path().join("missing")]), None);
+    }
+
+    #[test]
+    fn ghostty_theme_is_none_when_the_line_names_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config");
+        std::fs::write(&path, "theme =   \n").unwrap();
+        assert_eq!(ghostty_theme(&[path]), None);
+    }
+
+    #[test]
+    fn ghostty_theme_picks_the_candidate_pick_config_path_would_pick() {
+        let dir = tempfile::tempdir().unwrap();
+        let no_theme = dir.path().join("no_theme");
+        let has_theme = dir.path().join("has_theme");
+        std::fs::write(&no_theme, "font-size = 14\n").unwrap();
+        std::fs::write(&has_theme, "theme = rainbows-and-unicorns\n").unwrap();
+        assert_eq!(
+            ghostty_theme(&[no_theme, has_theme]),
+            Some("rainbows-and-unicorns".to_string())
         );
     }
 }

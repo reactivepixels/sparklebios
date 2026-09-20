@@ -38,6 +38,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `graphics` in `config.toml`: `auto` (the default, today's behaviour), `image` (the same choice, named explicitly), or `blocks`, which always draws the half-block mascot even in a Kitty-capable terminal, for terminals that drop the image when a tab goes to sleep. `SPARKLEBIOS_GRAPHICS` overrides it. The half-block mascot also gained a bigger, 28 by 28 grid for every flavour, drawn instead of the original 14 by 14 one whenever the screen is wide enough for it beside the logo; `pc95` stays on the smaller one.
 - `bios theme use <name>` now also points an existing starship prompt at a matching palette from `extras/starship-palette.toml`, `rainbows_and_unicorns_paper` for Paper White and `rainbows_and_unicorns_auto` for every other variant. It only touches a starship config that already has a top level `palette =` line, never creates one, and `--no-prompt` skips it.
 - `bios config path`, `bios config edit` and `bios config reset`: find the config file, open it in `$VISUAL`, `$EDITOR` or `vi`, or restore it to its commented defaults. A reset over a config file that differs from the defaults backs it up to `config.toml.bak` first.
+- `bios fetch`, the neofetch slot: one static screen with the mascot at full size, a column of facts (OS, shell, terminal, processor, memory, disk, flavour, Ghostty theme and boot streak), and a palette swatch of the terminal's own sixteen colours. A missing value simply omits its line.
 
 ### Changed
 

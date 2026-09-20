@@ -37,6 +37,7 @@ Usage: bios <COMMAND>
 
 Everyday:
   boot               Play the boot screen now
+  fetch              Show your machine at a glance
   resume             Change to the project you left work in
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
@@ -296,6 +297,89 @@ fn use_then_boot_preview_picks_up_the_chosen_flavour() {
         .stdout(predicate::str::contains(
             "Yokozuna Modular BIOS v1.991, Immovable",
         ));
+}
+
+#[test]
+fn fetch_prints_the_default_flavours_firmware_line_and_name() {
+    bios()
+        .arg("fetch")
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally",
+        ))
+        .stdout(predicate::str::contains("Flavour   : Unicorn"));
+}
+
+#[test]
+fn fetch_picks_up_the_configured_flavour() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .arg("fetch")
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Flavour   : Sumo"))
+        .stdout(predicate::str::contains(
+            "Yokozuna Modular BIOS v1.991, Immovable",
+        ));
+}
+
+#[test]
+fn fetch_omits_the_theme_line_without_a_ghostty_config() {
+    let home = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .arg("fetch")
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Theme").not());
+}
+
+#[test]
+fn fetch_shows_the_theme_a_ghostty_config_names() {
+    let home = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let ghostty_dir = config.path().join("ghostty");
+    std::fs::create_dir_all(&ghostty_dir).unwrap();
+    std::fs::write(
+        ghostty_dir.join("config"),
+        "theme = rainbows-and-unicorns-mane\n",
+    )
+    .unwrap();
+    bios()
+        .arg("fetch")
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Theme     : rainbows-and-unicorns-mane",
+        ));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn fetch_shows_real_hardware_facts_on_macos() {
+    bios()
+        .arg("fetch")
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("OS        : macOS"))
+        .stdout(predicate::str::contains("CPU       :"))
+        .stdout(predicate::str::contains("Memory    :"));
 }
 
 #[test]

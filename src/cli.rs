@@ -14,6 +14,7 @@ Usage: bios <COMMAND>
 
 Everyday:
   boot               Play the boot screen now
+  fetch              Show your machine at a glance
   resume             Change to the project you left work in
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
@@ -66,6 +67,8 @@ enum Command {
     },
     /// Play the boot screen.
     Boot(BootCliArgs),
+    /// Show your machine at a glance: the mascot, a column of facts, and a palette swatch.
+    Fetch,
     /// Refresh the fact cache used by the boot screen's health checks.
     Refresh(RefreshCliArgs),
     /// Print the path of the project you left work in.
@@ -203,6 +206,7 @@ pub fn run() -> i32 {
             crate::boot::run(&args.into());
             0
         }
+        Command::Fetch => crate::fetch::run(),
         Command::Refresh(args) => refresh(args.force, args.print),
         Command::Resume => resume(),
         Command::Flavours => {
