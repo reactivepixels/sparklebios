@@ -2330,4 +2330,102 @@ print = "{long_line}"
         );
         assert!(!out.contains("Press F1"));
     }
+
+    /// The quip index pinned for `pc95-painted.txt`: seed 6 lands on the unicorn flavour's
+    /// "Shadow RAM enabled. Shadow unicorn also enabled.", picked once and fixed so the golden's
+    /// quip line never drifts to a different one as the flavour's list grows.
+    const PC95_PAINTED_SEED: u64 = 6;
+
+    #[test]
+    fn pc95_painted_matches_golden() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = facts_with_findings();
+        crate::flavour::apply(&flavour, &mut facts);
+        assert_eq!(
+            render_static(
+                &m,
+                &facts,
+                ColorMode::TrueColor,
+                PC95_PAINTED_SEED,
+                Some(100),
+                Graphics::HalfBlocks,
+                Some(&flavour),
+                &fixture_findings(),
+            ),
+            golden("pc95-painted")
+        );
+    }
+
+    /// A second, narrower check on the same screen as `pc95_painted_matches_golden`: it reads the
+    /// mascot's own geometry back out of the rendered escapes (never from `logo_cols`, `LOGO_GAP`
+    /// or any other layout constant), so a break in the logo box or the row builder is reported by
+    /// name here instead of only showing up as "the golden changed".
+    #[test]
+    fn painted_pc95_mascot_shape_is_pinned() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = facts_with_findings();
+        crate::flavour::apply(&flavour, &mut facts);
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::TrueColor,
+            PC95_PAINTED_SEED,
+            Some(100),
+            Graphics::HalfBlocks,
+            Some(&flavour),
+            &fixture_findings(),
+        );
+        let rows: Vec<&str> = out.lines().collect();
+
+        // Every painted row fills the same total display width.
+        let width = visible_width(rows[0]);
+        for row in &rows {
+            assert_eq!(visible_width(row), width, "row {row:?} is not {width} wide");
+        }
+
+        // The mascot occupies the first 7 text rows: however many rows, starting right after the
+        // top padding, carry a half-block glyph.
+        let mascot_rows = logo_row_count(&out, m.pad_y as usize);
+        assert_eq!(mascot_rows, 7);
+
+        let stripped: Vec<String> = rows
+            .iter()
+            .skip(m.pad_y as usize)
+            .take(mascot_rows)
+            .map(|r| strip_ansi(r))
+            .collect();
+
+        // The mascot's own width: the span, in columns, between its leftmost and rightmost
+        // half-block glyph across those rows.
+        let glyph_cols: Vec<usize> = stripped
+            .iter()
+            .flat_map(|row| {
+                row.chars()
+                    .enumerate()
+                    .filter(|(_, c)| *c == '\u{2580}' || *c == '\u{2584}')
+                    .map(|(i, _)| i)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let min_col = *glyph_cols.iter().min().unwrap();
+        let max_col = *glyph_cols.iter().max().unwrap();
+        assert_eq!(max_col - min_col + 1, 14);
+
+        // The text beside the mascot starts at the same column on every mascot row that has any:
+        // the first character, on that row, that is neither a space nor a glyph.
+        let text_cols: Vec<usize> = stripped
+            .iter()
+            .filter_map(|row| {
+                row.chars()
+                    .enumerate()
+                    .find(|(_, c)| *c != ' ' && *c != '\u{2580}' && *c != '\u{2584}')
+                    .map(|(i, _)| i)
+            })
+            .collect();
+        assert!(!text_cols.is_empty());
+        assert!(text_cols.windows(2).all(|w| w[0] == w[1]));
+        assert!(text_cols[0] > max_col);
+    }
 }
