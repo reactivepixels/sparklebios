@@ -5,7 +5,6 @@
 
 use crate::facts::Facts;
 use crate::render::{ColorMode, Graphics};
-use crate::sprite::{Grid, Sprite};
 
 /// The label and value template for each line of the fact panel, in the exact order the screen
 /// shows them. A line whose template does not resolve against the facts is simply absent: never
@@ -24,6 +23,11 @@ const ROWS: [(&str, &str); 9] = [
 
 /// The gap, in cells, between the mascot and the fact panel beside it.
 const MASCOT_GAP: usize = 3;
+
+/// The mascot's fixed footprint on this screen: the width, in cells, and the height, in rows, of
+/// the box the Kitty image is transmitted into.
+const MASCOT_COLS: usize = 14;
+const MASCOT_ROWS: usize = 7;
 
 /// The width, in cells, of one palette swatch block.
 const SWATCH_BLOCK_WIDTH: usize = 3;
@@ -62,31 +66,17 @@ fn palette_row(start: u8) -> String {
         .collect()
 }
 
-/// The wide 28 by 28 grid when a screen `term_cols` cells wide still leaves `widest` (the widest
-/// line of the panel beside it) room after the grid and `MASCOT_GAP`; the original 14 by 14 grid
-/// otherwise. An unknown `term_cols` is treated as room enough, since a caller with no terminal
-/// to measure has no way to know otherwise.
-fn choose_grid(sprite: &Sprite, widest: usize, term_cols: Option<u16>) -> &Grid {
-    let needed = sprite.grid_wide.cols() + MASCOT_GAP + widest;
-    let fits_wide = term_cols.map_or(true, |w| w as usize >= needed);
-    if fits_wide {
-        &sprite.grid_wide
-    } else {
-        &sprite.grid
-    }
-}
-
 /// The finished screen as text. `header`, the current flavour's rendered firmware line, sits on
-/// its own above everything else. `sprite` is the current flavour's mascot; with `None`, or when
-/// `mode` is not `TrueColor`, the screen falls back to a plain column with no mascot (matching the
-/// boot screen's own rule that a logo only ever appears in the truecolor painted path). The
-/// palette swatch is skipped entirely when `mode` is `ColorMode::None`.
+/// its own above everything else. `sprite` is the current flavour's mascot PNG; with `None`, when
+/// `mode` is not `TrueColor`, or when `graphics` is not `Kitty` (no terminal image support, or the
+/// user turned it off), the screen falls back to a plain column with no mascot and no reserved
+/// column where one would have sat. The palette swatch is skipped entirely when `mode` is
+/// `ColorMode::None`.
 pub fn render_screen(
     facts: &Facts,
     header: Option<&str>,
-    sprite: Option<&Sprite>,
+    sprite: Option<&[u8]>,
     mode: ColorMode,
-    term_cols: Option<u16>,
     graphics: Graphics,
 ) -> String {
     let mut out = String::new();
@@ -96,14 +86,13 @@ pub fn render_screen(
     }
 
     let show_color = mode != ColorMode::None;
-    let show_mascot = mode == ColorMode::TrueColor && sprite.is_some();
+    let show_mascot =
+        mode == ColorMode::TrueColor && graphics == Graphics::Kitty && sprite.is_some();
 
     // What appears beside (or, with no mascot, simply after) the header: the fact lines, then,
     // when colour is on, a blank separator and the two palette rows.
     let mut panel = fact_lines(facts);
-    let mut widths: Vec<usize> = panel.iter().map(|l| l.chars().count()).collect();
     if show_color {
-        widths.push(8 * SWATCH_BLOCK_WIDTH);
         panel.push(String::new());
         panel.push(palette_row(0));
         panel.push(palette_row(8));
@@ -118,44 +107,16 @@ pub fn render_screen(
         return out;
     }
 
-    let sprite = sprite.unwrap();
-    let widest = widths.into_iter().max().unwrap_or(0);
-    let grid = choose_grid(sprite, widest, term_cols);
-    let grid_cols = grid.cols();
-    let grid_rows = grid.half_rows();
-
-    let half_rows = if graphics == Graphics::HalfBlocks {
-        crate::sprite::half_blocks(grid, None)
-    } else {
-        Vec::new()
-    };
-    let kitty_escape = if graphics == Graphics::Kitty {
-        Some(crate::sprite::kitty_image(
-            sprite.png,
-            grid_cols as u16,
-            grid_rows as u16,
-        ))
-    } else {
-        None
-    };
+    let kitty_escape =
+        crate::sprite::kitty_image(sprite.unwrap(), MASCOT_COLS as u16, MASCOT_ROWS as u16);
 
     out.push('\n');
-    let total_rows = grid_rows.max(panel.len());
+    let total_rows = MASCOT_ROWS.max(panel.len());
     for i in 0..total_rows {
         if i == 0 {
-            if let Some(escape) = &kitty_escape {
-                out.push_str(escape);
-            }
+            out.push_str(&kitty_escape);
         }
-        if i < grid_rows {
-            if kitty_escape.is_some() {
-                out.push_str(&" ".repeat(grid_cols));
-            } else if let Some(row) = half_rows.get(i) {
-                out.push_str(row);
-            }
-        } else {
-            out.push_str(&" ".repeat(grid_cols));
-        }
+        out.push_str(&" ".repeat(MASCOT_COLS));
         out.push_str(&" ".repeat(MASCOT_GAP));
         if let Some(line) = panel.get(i) {
             out.push_str(line);
@@ -174,7 +135,7 @@ fn resolve_flavour(config_flavour: &str) -> Option<crate::flavour::Flavour> {
 }
 
 /// The effective graphics choice: the same rule `bios boot` uses, kitty on a terminal that
-/// supports it unless `config.graphics` (or `SPARKLEBIOS_GRAPHICS`) is `blocks`.
+/// supports it unless `config.graphics` (or `SPARKLEBIOS_GRAPHICS`) is `off`.
 fn resolve_graphics(config: &crate::config::Config) -> Graphics {
     let pref = std::env::var("SPARKLEBIOS_GRAPHICS")
         .ok()
@@ -185,10 +146,10 @@ fn resolve_graphics(config: &crate::config::Config) -> Graphics {
         std::env::var("TERM").ok().as_deref(),
         std::env::var("TERM_PROGRAM").ok().as_deref(),
     );
-    if pref != crate::config::GraphicsPref::Blocks && supports_kitty {
+    if pref == crate::config::GraphicsPref::Auto && supports_kitty {
         Graphics::Kitty
     } else {
-        Graphics::HalfBlocks
+        Graphics::None
     }
 }
 
@@ -241,17 +202,9 @@ pub fn run() -> i32 {
         std::env::var("NO_COLOR").ok().as_deref(),
         std::env::var("COLORTERM").ok().as_deref(),
     );
-    let term_cols = crate::term::cols(1);
     let graphics = resolve_graphics(&config);
 
-    let output = render_screen(
-        &facts,
-        header.as_deref(),
-        sprite.as_ref(),
-        mode,
-        term_cols,
-        graphics,
-    );
+    let output = render_screen(&facts, header.as_deref(), sprite, mode, graphics);
     print!("{output}");
     0
 }
@@ -337,8 +290,7 @@ mod tests {
             Some(&firmware(&facts)),
             None,
             ColorMode::None,
-            None,
-            Graphics::HalfBlocks,
+            Graphics::None,
         );
         assert_eq!(out, golden("fetch-unicorn"));
     }
@@ -351,8 +303,7 @@ mod tests {
             Some(&firmware(&facts)),
             None,
             ColorMode::None,
-            None,
-            Graphics::HalfBlocks,
+            Graphics::None,
         );
         let columns: Vec<usize> = out.lines().filter_map(|line| line.find(": ")).collect();
         assert!(columns.len() >= 9, "expected 9 labelled lines: {out:?}");
@@ -374,16 +325,14 @@ mod tests {
             Some(&firmware(&with_streak)),
             None,
             ColorMode::None,
-            None,
-            Graphics::HalfBlocks,
+            Graphics::None,
         );
         let without_out = render_screen(
             &without_streak,
             Some(&firmware(&without_streak)),
             None,
             ColorMode::None,
-            None,
-            Graphics::HalfBlocks,
+            Graphics::None,
         );
 
         assert!(with_out.contains("Streak    : 12 days"));
@@ -402,44 +351,40 @@ mod tests {
         }
     }
 
+    /// No reserved mascot column: with no image support (`Graphics::None`), even though a sprite
+    /// is available, the facts sit flush left, at the same column `matches_the_fetch_unicorn_golden`
+    /// (with no sprite at all) already pins, not shifted over by `MASCOT_COLS + MASCOT_GAP`.
     #[test]
-    fn the_wide_mascot_is_used_when_there_is_room() {
+    fn no_image_support_leaves_the_facts_flush_left_even_with_a_sprite() {
         let facts = fixture();
         let sprite = crate::sprite::builtin("unicorn").unwrap();
         let out = render_screen(
             &facts,
             Some(&firmware(&facts)),
-            Some(&sprite),
+            Some(sprite),
             ColorMode::TrueColor,
-            Some(120),
-            Graphics::HalfBlocks,
+            Graphics::None,
         );
-        let block_rows = out
-            .lines()
-            .skip(2)
-            .take_while(|line| line.contains('\u{2580}') || line.contains('\u{2584}'))
-            .count();
-        assert_eq!(block_rows, 14, "expected the wide 14 row mascot: {out}");
+        assert!(!out.contains("\x1b_G"));
+        let cpu_line = out.lines().find(|l| l.contains("CPU")).unwrap();
+        assert!(cpu_line.starts_with("CPU"));
     }
 
     #[test]
-    fn the_narrow_mascot_is_used_when_the_terminal_is_too_narrow() {
+    fn kitty_graphics_reserves_the_fixed_mascot_box_before_the_panel() {
         let facts = fixture();
         let sprite = crate::sprite::builtin("unicorn").unwrap();
         let out = render_screen(
             &facts,
             Some(&firmware(&facts)),
-            Some(&sprite),
+            Some(sprite),
             ColorMode::TrueColor,
-            Some(60),
-            Graphics::HalfBlocks,
+            Graphics::Kitty,
         );
-        let block_rows = out
-            .lines()
-            .skip(2)
-            .take_while(|line| line.contains('\u{2580}') || line.contains('\u{2584}'))
-            .count();
-        assert_eq!(block_rows, 7, "expected the narrow 7 row mascot: {out}");
+        assert_eq!(out.matches("\x1b_Ga=T").count(), 1);
+        let cpu_line = out.lines().find(|l| l.contains("CPU")).unwrap();
+        let cpu_col = cpu_line.find("CPU").unwrap();
+        assert_eq!(cpu_col, MASCOT_COLS + MASCOT_GAP);
     }
 
     #[test]
@@ -449,10 +394,9 @@ mod tests {
         let out = render_screen(
             &facts,
             Some(&firmware(&facts)),
-            Some(&sprite),
+            Some(sprite),
             ColorMode::None,
-            Some(120),
-            Graphics::HalfBlocks,
+            Graphics::Kitty,
         );
         assert!(!out.contains('\x1b'));
         assert_eq!(strip_ansi(&out), out);
@@ -466,8 +410,7 @@ mod tests {
             Some(&firmware(&facts)),
             None,
             ColorMode::None,
-            None,
-            Graphics::HalfBlocks,
+            Graphics::None,
         );
         // The header, the blank separator, and exactly the 9 fact lines: no swatch rows tacked
         // on the end.
@@ -481,12 +424,11 @@ mod tests {
         let out = render_screen(
             &facts,
             Some(&firmware(&facts)),
-            Some(&sprite),
+            Some(sprite),
             ColorMode::Ansi16,
-            Some(120),
-            Graphics::HalfBlocks,
+            Graphics::Kitty,
         );
-        assert!(!out.contains('\u{2580}') && !out.contains('\u{2584}'));
+        assert!(!out.contains("\x1b_G"));
         assert!(out.contains("\x1b[40m"));
     }
 
@@ -497,9 +439,8 @@ mod tests {
         let out = render_screen(
             &facts,
             Some(&firmware(&facts)),
-            Some(&sprite),
+            Some(sprite),
             ColorMode::TrueColor,
-            Some(120),
             Graphics::Kitty,
         );
         assert_eq!(out.matches("\x1b_Ga=T").count(), 1);

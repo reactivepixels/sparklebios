@@ -17,10 +17,10 @@ SparkleBIOS is pre-alpha. The most useful things right now:
 
 ## Adding a flavour
 
-A flavour is one TOML file in `flavours/` plus a sprite pair in `sprites/`.
-The schema is documented in [docs/flavours.md](docs/flavours.md). Preview
-yours with `bios boot --flavour <id>`, and paste the output into the pull
-request.
+A flavour is one TOML file in `flavours/` plus a sprite, a square transparent
+PNG, in `sprites/`. The schema is documented in
+[docs/flavours.md](docs/flavours.md). Preview yours with
+`bios boot --flavour <id>`, and paste the output into the pull request.
 
 ## Development
 

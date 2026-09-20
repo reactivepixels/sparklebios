@@ -277,7 +277,7 @@ src/
   render.rs      static rendering and colour modes
   machine.rs     screen TOML schema, validation, built-ins, lookup
   flavour.rs     flavour TOML schema, validation, built-ins, lookup, slot application
-  sprite.rs      boot logos: half-block grids and Kitty images, one source image per sprite
+  sprite.rs      the mascot: one PNG per sprite, drawn through the kitty graphics protocol
   template.rs    {slot} substitution
   facts/         inline fact probes: macos.rs (real), other.rs (stub, Linux is M8)
   checks/        the three health checks (ports, projects, secrets) and the Finding type
@@ -377,9 +377,10 @@ apart. Each one ends in something usable daily.
 
 - **Boot fatigue.** Mitigated by the mode rules, the burst window and (once
   built) the beige fail-safe. Needs a week of real use to tune.
-- **Kitty graphics support** varies by embedding terminal; `graphics = auto`
-  falls back to half-blocks anywhere it is not reported, and `blocks` opts
-  out of it entirely for terminals that drop the image when a tab sleeps.
+- **Kitty graphics support** varies by embedding terminal. The mascot is an
+  image or it is nothing: where the protocol is not reported, the screen is
+  drawn without it and the text starts at the normal left pad. The text drawn
+  mascot was removed because it did not look good enough to ship.
 - **Keystroke handling** during the show remains the fiddliest part of the
   player. Disabling `ISIG` avoids a separate SIGINT handler, but has not been
   exercised against every terminal emulator.

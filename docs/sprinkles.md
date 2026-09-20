@@ -27,7 +27,9 @@ off boot is untouched, byte for byte, whatever the dial is set to.
   across it left to right, once, then the line returns to its normal style.
 - **Twinkle.** While the memory count runs, up to three cells in the blank
   margin beside the mascot show a star, then a plus, then a full stop, then
-  nothing, and nothing again after that.
+  nothing, and nothing again after that. Only when a mascot is actually
+  shown: with no mascot there is no margin to twinkle in, so it simply does
+  not run.
 - **Stripe sweep.** Only when the boot streak lands on a milestone (7, 30,
   100, 365, or a later multiple of 365), the streak line is drawn once,
   rainbow coloured, held briefly, then settles to its normal style.

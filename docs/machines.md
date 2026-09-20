@@ -86,13 +86,16 @@ frame in the `border` colour. Any line's text is truncated to `cols`
 characters so it always fits the block. When the terminal is not TrueColor,
 is too narrow, or its width is unknown, `paint` is ignored and the screen
 falls back to plain painted-free text. A `logo` and a `badge` only ever
-appear on a painted screen at least 60 columns wide: the logo is drawn as
-half-block characters or, on a terminal that supports it, as an actual
-image, and the badge is right-aligned in the accent colour, its first line
-on the second text row (never the first, so the header line is never cut
-short) and one line per row after that. A row's own text is never
-truncated to make room for a badge; if it would end within 2 cells of
-where the badge starts, that row simply shows no badge.
+appear on a painted screen at least 60 columns wide, and only on a terminal
+that can draw images: the logo is the mascot's own PNG, transmitted through
+the Kitty graphics protocol, and the badge is right-aligned in the accent
+colour, its first line on the second text row (never the first, so the
+header line is never cut short) and one line per row after that. A row's
+own text is never truncated to make room for a badge; if it would end
+within 2 cells of where the badge starts, that row simply shows no badge.
+Nowhere the mascot is not drawn is any column reserved for it: the text
+starts at the normal left pad, exactly as a screen with no `logo` at all
+always has.
 
 A screen with `paint = true` and no `bg` paints transparently: the same
 padding, logo placement and badge placement apply, but no background colour
@@ -103,25 +106,21 @@ screen, so it requires `bg` to be set.
 
 ## Graphics
 
-`graphics` in `~/.config/sparklebios/config.toml` chooses how the logo is
-drawn on a painted screen wide enough to show one:
+`graphics` in `~/.config/sparklebios/config.toml` chooses whether the logo
+is drawn on a painted screen wide enough to show one:
 
-- `"auto"` (the default): a Kitty image where the terminal supports the
-  Kitty graphics protocol, half-block characters everywhere else.
-- `"image"`: the same choice as `"auto"`, named explicitly.
-- `"blocks"`: always the half-block mascot, even in a Kitty-capable
-  terminal. Some terminals drop a Kitty image when the tab it is drawn in
-  goes to sleep in the background, so `"blocks"` is how to opt out of that.
+- `"auto"` (the default): the mascot image where the terminal speaks the
+  Kitty graphics protocol, and no mascot at all everywhere else.
+- `"off"`: never shows the mascot.
 
-An unknown or malformed value reads as `"auto"`. `SPARKLEBIOS_GRAPHICS`, set
-to one of the same three values, overrides the config file; an unknown
-value in it also reads as `"auto"`.
+An unknown or malformed value, including the retired `"image"` and
+`"blocks"` values, reads as `"auto"`, silently: a config file written before
+this option changed shape must keep booting, not error or warn.
+`SPARKLEBIOS_GRAPHICS`, set to `"auto"` or `"off"`, overrides the config
+file the same way, and reads any other value as `"auto"` too.
 
-The half-block mascot itself is drawn from one of two grids: a wide one, 28
-columns and 14 rows of half-block characters, when the screen is wide
-enough for every line beside it still to fit, and the original one, 14
-columns and 7 rows, otherwise. `pc95`, at 80 columns, is not wide enough for
-the wide grid and always uses the small one.
+The mascot is always transmitted at a fixed size, 14 columns by 7 rows,
+whatever the screen's own width.
 
 ## Facts available today
 

@@ -65,6 +65,14 @@ pub fn wide_enough(term_cols: Option<u16>) -> bool {
 /// the splice keeps the colour it had before a sprinkle touched the row. This is the one move
 /// every text effect below makes: shimmer and the stripe sweep splice a stretch of a line's own
 /// text; twinkle splices a single margin cell.
+///
+/// A Kitty graphics APC sequence (`\x1b_G...\x1b\`), should the row carry one, is treated as zero
+/// visible columns and passed through byte for byte, never counted, never split and never
+/// written over: it carries no text and no colour of its own, and a sprinkle landing inside it
+/// would corrupt the image payload it transmits. In practice `RowGeometry` only ever hands a
+/// sprinkle a row carrying one on the single call that first transmits the mascot (never on a
+/// redraw), so this is a second, structural guard rather than the only thing standing between a
+/// sprinkle and the image bytes.
 pub fn splice_visible(row: &str, start: usize, len: usize, replacement: &str) -> String {
     let chars: Vec<char> = row.chars().collect();
     let mut out = String::with_capacity(row.len() + replacement.len());
@@ -83,7 +91,29 @@ pub fn splice_visible(row: &str, start: usize, len: usize, replacement: &str) ->
         (j, chars[i..j].iter().collect())
     }
 
+    /// Consumes one Kitty graphics APC sequence (`\x1b_G...\x1b\`) starting at `i`, if `chars[i]`
+    /// opens one, returning its end index and the sequence itself.
+    fn read_apc(chars: &[char], i: usize) -> Option<(usize, String)> {
+        if chars.get(i) != Some(&'\x1b')
+            || chars.get(i + 1) != Some(&'_')
+            || chars.get(i + 2) != Some(&'G')
+        {
+            return None;
+        }
+        let mut j = i + 3;
+        while j < chars.len() && !(chars[j] == '\x1b' && chars.get(j + 1) == Some(&'\\')) {
+            j += 1;
+        }
+        j = (j + 2).min(chars.len());
+        Some((j, chars[i..j].iter().collect()))
+    }
+
     while i < chars.len() {
+        if let Some((end, seq)) = read_apc(&chars, i) {
+            out.push_str(&seq);
+            i = end;
+            continue;
+        }
         if chars[i] == '\x1b' && chars.get(i + 1) == Some(&'[') {
             let (end, seq) = read_sgr(&chars, i);
             if visible < start || visible >= start + len {
@@ -97,6 +127,11 @@ pub fn splice_visible(row: &str, start: usize, len: usize, replacement: &str) ->
             // Skip exactly `len` visible columns (and any escapes interleaved with them): the
             // replacement fully re-specifies both their text and their colour.
             while visible < start + len && i < chars.len() {
+                if let Some((end, seq)) = read_apc(&chars, i) {
+                    out.push_str(&seq);
+                    i = end;
+                    continue;
+                }
                 if chars[i] == '\x1b' && chars.get(i + 1) == Some(&'[') {
                     let (end, _) = read_sgr(&chars, i);
                     i = end;
@@ -303,6 +338,23 @@ mod tests {
     #[test]
     fn splice_replaces_only_the_targeted_columns() {
         assert_eq!(splice_visible("hello world", 6, 5, "PLANE"), "hello PLANE");
+    }
+
+    /// Even if a row somehow still carried a Kitty APC sequence when an effect spliced into it
+    /// (the real fix is that `render::RowGeometry::line` never lets that happen past the one call
+    /// that transmits the image), the APC must never be counted as visible columns, split, or
+    /// written over: it must pass through byte for byte, with the splice landing only in the
+    /// plain text that follows it.
+    #[test]
+    fn splice_passes_a_kitty_apc_sequence_through_untouched_and_uncounted() {
+        let apc = "\x1b_Ga=T,f=100,q=2,C=1,c=14,r=7,m=0;iVBORw0KGgo=\x1b\\";
+        let row = format!("{apc}Sparkle");
+        let out = splice_visible(&row, 0, 3, "\x1b[97mSpa\x1b[0m");
+        assert!(
+            out.starts_with(apc),
+            "the APC sequence was not passed through untouched: {out:?}"
+        );
+        assert_eq!(out, format!("{apc}\x1b[97mSpa\x1b[0mrkle"));
     }
 
     #[test]

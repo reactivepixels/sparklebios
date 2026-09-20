@@ -96,23 +96,23 @@ fn resolve_graphics_pref(
     }
 }
 
-/// Kitty when `supports_kitty` is true, half-blocks otherwise, unless `pref` is `Blocks`, which
-/// always draws the half-block mascot even in a Kitty-capable terminal (some terminals drop a
-/// Kitty image when their tab goes to sleep, and `Blocks` is how a user opts out of that).
+/// Kitty when `pref` is `Auto` and `supports_kitty` is true; no mascot at all otherwise, whether
+/// because the terminal cannot draw one or because `pref` is `Off`.
 fn graphics_for(
     pref: crate::config::GraphicsPref,
     supports_kitty: bool,
 ) -> crate::render::Graphics {
-    if pref != crate::config::GraphicsPref::Blocks && supports_kitty {
+    if pref == crate::config::GraphicsPref::Auto && supports_kitty {
         crate::render::Graphics::Kitty
     } else {
-        crate::render::Graphics::HalfBlocks
+        crate::render::Graphics::None
     }
 }
 
-/// Kitty on a terminal that supports it, half-blocks otherwise, unless `config.graphics` (or the
-/// `SPARKLEBIOS_GRAPHICS` override) is `Blocks`. `render_static` only draws a logo or badge when
-/// its painted path is actually in use, so this is safe to pass unconditionally.
+/// Kitty on a terminal that supports it, no mascot otherwise, whether because the terminal cannot
+/// draw one or because `config.graphics` (or the `SPARKLEBIOS_GRAPHICS` override) is `off`.
+/// `render_static` only draws a logo or badge when its painted path is actually in use, so this
+/// is safe to pass unconditionally.
 fn graphics(config: &crate::config::Config) -> crate::render::Graphics {
     let pref = resolve_graphics_pref(config.graphics, env_var("SPARKLEBIOS_GRAPHICS").as_deref());
     let supports_kitty = crate::sprite::supports_kitty(
@@ -473,57 +473,47 @@ mod tests {
     use crate::render::Graphics;
 
     #[test]
-    fn graphics_for_auto_and_image_pick_kitty_when_supported() {
-        for pref in [GraphicsPref::Auto, GraphicsPref::Image] {
-            assert_eq!(graphics_for(pref, true), Graphics::Kitty, "{pref:?}");
-            assert_eq!(graphics_for(pref, false), Graphics::HalfBlocks, "{pref:?}");
-        }
+    fn graphics_for_auto_picks_kitty_when_supported_and_none_otherwise() {
+        assert_eq!(graphics_for(GraphicsPref::Auto, true), Graphics::Kitty);
+        assert_eq!(graphics_for(GraphicsPref::Auto, false), Graphics::None);
     }
 
     #[test]
-    fn graphics_for_blocks_is_always_half_blocks_even_when_kitty_is_supported() {
-        assert_eq!(
-            graphics_for(GraphicsPref::Blocks, true),
-            Graphics::HalfBlocks
-        );
-        assert_eq!(
-            graphics_for(GraphicsPref::Blocks, false),
-            Graphics::HalfBlocks
-        );
+    fn graphics_for_off_is_always_none_even_when_kitty_is_supported() {
+        assert_eq!(graphics_for(GraphicsPref::Off, true), Graphics::None);
+        assert_eq!(graphics_for(GraphicsPref::Off, false), Graphics::None);
     }
 
     #[test]
     fn resolve_graphics_pref_falls_back_to_the_config_value_with_no_env_override() {
-        for pref in [
-            GraphicsPref::Auto,
-            GraphicsPref::Image,
-            GraphicsPref::Blocks,
-        ] {
+        for pref in [GraphicsPref::Auto, GraphicsPref::Off] {
             assert_eq!(resolve_graphics_pref(pref, None), pref, "{pref:?}");
         }
     }
 
     #[test]
-    fn resolve_graphics_pref_env_override_wins_and_parses_all_three_values() {
-        for (value, expected) in [
-            ("auto", GraphicsPref::Auto),
-            ("image", GraphicsPref::Image),
-            ("blocks", GraphicsPref::Blocks),
-        ] {
+    fn resolve_graphics_pref_env_override_wins_and_parses_both_values() {
+        for (value, expected) in [("auto", GraphicsPref::Auto), ("off", GraphicsPref::Off)] {
             assert_eq!(
-                resolve_graphics_pref(GraphicsPref::Blocks, Some(value)),
+                resolve_graphics_pref(GraphicsPref::Off, Some(value)),
                 expected,
                 "{value}"
             );
         }
     }
 
+    /// The retired `"image"` and `"blocks"` values, and any unknown value, all read as `Auto`,
+    /// silently, through the environment override the same way they do through the config file
+    /// (see `config::tests::graphics_reads_the_retired_and_unknown_values_as_auto`).
     #[test]
-    fn resolve_graphics_pref_an_unknown_env_value_reads_as_auto_and_still_overrides() {
-        assert_eq!(
-            resolve_graphics_pref(GraphicsPref::Blocks, Some("holographic")),
-            GraphicsPref::Auto
-        );
+    fn resolve_graphics_pref_env_override_reads_retired_and_unknown_values_as_auto() {
+        for value in ["image", "blocks", "holographic"] {
+            assert_eq!(
+                resolve_graphics_pref(GraphicsPref::Off, Some(value)),
+                GraphicsPref::Auto,
+                "{value}"
+            );
+        }
     }
 
     #[test]

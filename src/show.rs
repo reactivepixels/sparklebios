@@ -191,13 +191,10 @@ pub fn play(
 ) -> ShowOutcome {
     let row_geometry = render::row_geometry(
         machine,
-        facts,
-        seed,
         geometry.mode,
         geometry.term_cols,
         geometry.graphics,
         flavour,
-        findings,
     );
     let steps = render::animated_layout(machine, facts, seed, flavour, findings);
     let pad_y = machine.pad_y as usize;
@@ -434,41 +431,6 @@ mod tests {
         rows
     }
 
-    /// The byte index in `s` where its `col`-th visible character begins, skipping SGR and Kitty
-    /// escape sequences. Returns `s.len()` when `s` has fewer than `col` visible characters.
-    fn visible_col_byte_index(s: &str, col: usize) -> usize {
-        let chars: Vec<(usize, char)> = s.char_indices().collect();
-        let mut visible = 0;
-        let mut i = 0;
-        while i < chars.len() {
-            let (byte_idx, c) = chars[i];
-            if c == '\x1b' && chars.get(i + 1).map(|&(_, c2)| c2) == Some('_') {
-                i += 2;
-                while i < chars.len()
-                    && !(chars[i].1 == '\x1b' && chars.get(i + 1).map(|&(_, c2)| c2) == Some('\\'))
-                {
-                    i += 1;
-                }
-                i += 2;
-                continue;
-            }
-            if c == '\x1b' {
-                i += 1;
-                while i < chars.len() && chars[i].1 != 'm' {
-                    i += 1;
-                }
-                i += 1;
-                continue;
-            }
-            if visible == col {
-                return byte_idx;
-            }
-            visible += 1;
-            i += 1;
-        }
-        s.len()
-    }
-
     fn strip_escapes(s: &str) -> String {
         let chars: Vec<char> = s.chars().collect();
         let mut out = String::new();
@@ -492,6 +454,51 @@ mod tests {
             }
         }
         out
+    }
+
+    /// The number of Kitty transmission sequences (`\x1b_Ga=T...`) in `bytes`: the mascot image
+    /// should be sent exactly once per show, never once per redraw of the row it sits in.
+    fn apc_transmit_count(bytes: &[u8]) -> usize {
+        String::from_utf8_lossy(bytes).matches("\x1b_Ga=T").count()
+    }
+
+    /// Every Kitty graphics APC sequence (`\x1b_G...\x1b\`) in `bytes` is well formed: its body
+    /// contains no bare ESC byte (which would mean some other escape, most likely a sprinkle's
+    /// own SGR, has been spliced into the middle of it, corrupting the image payload) and it is
+    /// properly terminated. Applied broadly, not only to sprinkles tests, since a malformed APC
+    /// is a bug in the base show as much as in any effect layered over it.
+    fn assert_apc_sequences_are_well_formed(bytes: &[u8]) {
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == 0x1b
+                && bytes.get(i + 1) == Some(&b'_')
+                && bytes.get(i + 2) == Some(&b'G')
+            {
+                let start = i;
+                i += 3;
+                let mut terminated = false;
+                while i < bytes.len() {
+                    if bytes[i] == 0x1b {
+                        if bytes.get(i + 1) == Some(&b'\\') {
+                            terminated = true;
+                            i += 2;
+                            break;
+                        }
+                        panic!(
+                            "APC sequence starting at byte {start} contains a bare ESC at byte \
+                             {i}: an effect likely spliced into the image payload"
+                        );
+                    }
+                    i += 1;
+                }
+                assert!(
+                    terminated,
+                    "APC sequence starting at byte {start} was never terminated"
+                );
+            } else {
+                i += 1;
+            }
+        }
     }
 
     fn resolved_rows_of_render_static(
@@ -623,7 +630,7 @@ quip = true
             let geometry = Geometry {
                 mode: ColorMode::TrueColor,
                 term_cols: Some(100),
-                graphics: Graphics::HalfBlocks,
+                graphics: Graphics::Kitty,
             };
             let rows = play_to_rows(&m, geometry, flavour.as_ref(), &[]);
             let facts = facts_for(flavour.as_ref());
@@ -758,7 +765,7 @@ quip = true
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
         let mut buf: Vec<u8> = Vec::new();
         play(
@@ -773,29 +780,20 @@ quip = true
             0.0,
             sprinkles::Level::Off,
         );
-        // The screen fill colour must never appear. The one exception is a logo pixel where both
-        // the upper and lower source pixels are opaque: that background belongs to the sprite,
-        // not the screen, and only ever sits inside the 14-cell logo box (7 rows tall, starting
-        // after the machine's pad_y blank rows).
+        // The screen fill colour must never appear anywhere: a transparent painted screen never
+        // emits a background SGR, and the mascot box, drawn as an actual image, never emits one
+        // either.
         let rows = resolve_raw_rows(&buf);
-        let pad_x = m.pad_x as usize;
-        let pad_y = m.pad_y as usize;
-        const LOGO_ROWS: usize = 7;
-        let logo_rows = pad_y..pad_y + LOGO_ROWS;
         for (i, row) in rows.iter().enumerate() {
-            if logo_rows.contains(&i) {
-                let cutoff = visible_col_byte_index(row, pad_x + 14);
-                assert!(
-                    !row[cutoff..].contains("48;2;"),
-                    "row {i} paints a background colour outside the logo box: {row:?}"
-                );
-            } else {
-                assert!(
-                    !row.contains("48;2;"),
-                    "row {i} outside the logo rows paints a background colour: {row:?}"
-                );
-            }
+            assert!(
+                !row.contains("48;2;"),
+                "row {i} paints a background colour: {row:?}"
+            );
         }
+        // This is also the show's own base path, with no sprinkle in sight: the mascot image
+        // must still be sent exactly once and stay well formed.
+        assert_eq!(apc_transmit_count(&buf), 1);
+        assert_apc_sequences_are_well_formed(&buf);
     }
 
     #[test]
@@ -910,13 +908,10 @@ quip = true
     ) -> ShowOutcome {
         let row_geometry = render::row_geometry(
             machine,
-            facts,
-            seed,
             geometry.mode,
             geometry.term_cols,
             geometry.graphics,
             flavour,
-            findings,
         );
         let steps = render::animated_layout(machine, facts, seed, flavour, findings);
         let pad_y = machine.pad_y as usize;
@@ -978,7 +973,7 @@ quip = true
         let wide = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
         let narrow = Geometry {
             mode: ColorMode::None,
@@ -1043,7 +1038,7 @@ quip = true
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
         let mut buf: Vec<u8> = Vec::new();
         play(
@@ -1071,7 +1066,7 @@ quip = true
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
         let mut buf: Vec<u8> = Vec::new();
         play(
@@ -1089,6 +1084,124 @@ quip = true
         let text = String::from_utf8_lossy(&buf);
         assert!(text.contains("\x1b[97m"), "no shimmer highlight found");
         assert!(!buf.contains(&0x07), "light must never beep");
+        // The shimmer sweeps across the firmware line, the same row the mascot's image is
+        // transmitted on: it must never re-send that image, nor splice into it.
+        assert_eq!(
+            apc_transmit_count(&buf),
+            1,
+            "the mascot image was sent more than once"
+        );
+        assert_apc_sequences_are_well_formed(&buf);
+    }
+
+    /// The bug this guards against: a text effect that redraws the logo row (only ever the
+    /// shimmer, since it is the only effect that ever touches row 0) once treated the row's own
+    /// pre-rendered string, image escape and all, as plain text to splice a highlight into,
+    /// landing bright-white SGR bytes in the middle of the image's base64 payload and, because
+    /// that same string was re-rendered on every sweep frame, retransmitting the whole image with
+    /// it each time. `RowGeometry::line` now only ever emits the transmission escape once, so a
+    /// redraw of the logo row after that never carries the image at all for an effect to touch.
+    #[test]
+    fn kitty_sprinkles_full_sends_the_image_once_and_the_stream_stays_a_small_multiple_of_off() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let facts = facts_for(Some(&flavour));
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::Kitty,
+        };
+
+        let mut off: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut off,
+            None,
+            0.0,
+            sprinkles::Level::Off,
+        );
+        assert_eq!(apc_transmit_count(&off), 1);
+        assert_apc_sequences_are_well_formed(&off);
+
+        let mut full: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut full,
+            None,
+            0.0,
+            sprinkles::Level::Full,
+        );
+        assert_eq!(
+            apc_transmit_count(&full),
+            1,
+            "the mascot image should be sent exactly once, sprinkles or not"
+        );
+        assert_apc_sequences_are_well_formed(&full);
+        // Every text effect Full can add (shimmer, twinkle, the stripe sweep, none of which fire
+        // here since there is no streak milestone) redraws the same handful of rows a few more
+        // times over; it must never come close to the ~22x a re-sent image caused before this was
+        // fixed.
+        assert!(
+            full.len() <= off.len() * 4,
+            "sprinkles full is {} bytes against {} off, more than 4x",
+            full.len(),
+            off.len()
+        );
+    }
+
+    /// With no mascot drawn (`Graphics::None`), there is no margin left to twinkle in, so twinkle
+    /// stands down entirely rather than drawing over cells that no longer belong to a logo box or
+    /// panicking on an empty candidate list. Sprinkles otherwise still plays: the shimmer, which
+    /// does not depend on a mascot being present, still sweeps across the firmware line. Seed 1 is
+    /// chosen because it is one `twinkle_positions` would place a glyph at were a mascot on
+    /// screen (see `text_start_col_and_margin_cols_sit_either_side_of_the_pc95_logo_box`'s margin
+    /// columns), so its absence here is not just an artefact of a seed that never twinkles at all.
+    #[test]
+    fn twinkle_does_not_run_with_no_mascot_but_shimmer_still_does() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let facts = facts_for(Some(&flavour));
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::None,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            1,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut buf,
+            None,
+            0.0,
+            sprinkles::Level::Light,
+        );
+        let text = String::from_utf8_lossy(&buf);
+        assert!(
+            text.contains("\x1b[97m"),
+            "shimmer should still run with no mascot"
+        );
+        assert!(
+            !text.contains('*'),
+            "a twinkle star appeared with no mascot drawn"
+        );
+        assert!(
+            !text.contains('+'),
+            "a twinkle plus appeared with no mascot drawn"
+        );
     }
 
     #[test]
@@ -1098,7 +1211,7 @@ quip = true
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
 
         let facts_no_fail = facts_for(Some(&flavour));
@@ -1116,6 +1229,8 @@ quip = true
             sprinkles::Level::Full,
         );
         assert_eq!(buf_no_fail.iter().filter(|&&b| b == 0x07).count(), 1);
+        assert_eq!(apc_transmit_count(&buf_no_fail), 1);
+        assert_apc_sequences_are_well_formed(&buf_no_fail);
 
         let findings = fixture_findings();
         let facts_with_fail = facts_with_findings_for(Some(&flavour));
@@ -1133,6 +1248,8 @@ quip = true
             sprinkles::Level::Full,
         );
         assert_eq!(buf_fail.iter().filter(|&&b| b == 0x07).count(), 4);
+        assert_eq!(apc_transmit_count(&buf_fail), 1);
+        assert_apc_sequences_are_well_formed(&buf_fail);
     }
 
     #[test]
@@ -1144,7 +1261,7 @@ quip = true
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
         let (read_fd, write_fd) = {
             let mut fds = [0i32; 2];
@@ -1189,7 +1306,7 @@ quip = true
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(50),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
         let mut buf: Vec<u8> = Vec::new();
         play(
@@ -1215,7 +1332,7 @@ quip = true
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
 
         let mut milestone_facts = Facts::fixture();
@@ -1238,6 +1355,8 @@ quip = true
         let text = String::from_utf8_lossy(&buf);
         assert!(text.contains("\x1b[31m"), "no red in the rainbow sweep");
         assert!(text.contains("\x1b[35m"), "no magenta in the rainbow sweep");
+        assert_eq!(apc_transmit_count(&buf), 1);
+        assert_apc_sequences_are_well_formed(&buf);
 
         let mut plain_facts = Facts::fixture();
         crate::flavour::apply(&flavour, &mut plain_facts);
@@ -1370,7 +1489,7 @@ quip = true
         let geometry = Geometry {
             mode: ColorMode::TrueColor,
             term_cols: Some(100),
-            graphics: Graphics::HalfBlocks,
+            graphics: Graphics::Kitty,
         };
 
         let events = sim::record(|| {
@@ -1436,13 +1555,10 @@ quip = true
         // sprinkle, and is well outside this milestone's scope.
         let row_geometry = render::row_geometry(
             &m,
-            &facts,
-            0,
             geometry.mode,
             geometry.term_cols,
             geometry.graphics,
             Some(&flavour),
-            &[],
         );
         let steps = render::animated_layout(&m, &facts, 0, Some(&flavour), &[]);
         let prefix_rows = usize::from(m.border.is_some()) + m.pad_y as usize;

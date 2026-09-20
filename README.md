@@ -124,8 +124,9 @@ detected in turn. Press any key to skip it. Whatever you typed during the show
 is waiting on your prompt when it ends, and the terminal is never left in a
 strange state. Every other boot is drawn instantly.
 
-Where the terminal can draw images (Ghostty, kitty) the mascot is a real image.
-Everywhere else it is drawn with half-block characters.
+Where the terminal can draw images (Ghostty, kitty) the mascot is a real
+image. Everywhere else, no mascot shows: nothing is reserved for it, and the
+rest of the screen sits flush left in its place.
 
 ## Sprinkles
 
@@ -209,10 +210,7 @@ your shell either.
 devices and names the one you walked away from mid-change. `bios resume` takes
 you back to it.
 
-**The mascot vanishes when I switch tabs.** Some terminals drop the image when
-a tab goes to sleep. Set `graphics = "blocks"` in
-`~/.config/sparklebios/config.toml` and it is drawn with text instead, which
-survives anything.
+**No mascot?** Your terminal cannot show images. Ghostty and kitty can.
 
 ## System requirements
 

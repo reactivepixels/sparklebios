@@ -2,25 +2,22 @@
 
 use serde::Deserialize;
 
-/// How the boot mascot is drawn: `Auto` picks a Kitty image where the terminal supports it and
-/// the half-block mascot everywhere else (today's behaviour); `Image` names that same choice
-/// explicitly; `Blocks` always draws the half-block mascot, even in a Kitty-capable terminal,
-/// since some terminals drop a Kitty image when their tab goes to sleep.
+/// How the boot mascot is drawn: `Auto` shows it as a real image where the terminal speaks an
+/// image protocol, and not at all otherwise; `Off` never shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphicsPref {
     Auto,
-    Image,
-    Blocks,
+    Off,
 }
 
 impl GraphicsPref {
-    /// An unknown or malformed value reads as `Auto`, the same tolerant way every other key here
-    /// is read. Used for both the config file's `graphics` key and the `SPARKLEBIOS_GRAPHICS`
-    /// environment override.
+    /// `"off"` reads as `Off`; anything else, including the retired `"image"` and `"blocks"`
+    /// values and any unknown or malformed value, reads as `Auto`, the same tolerant way every
+    /// other key here is read. Used for both the config file's `graphics` key and the
+    /// `SPARKLEBIOS_GRAPHICS` environment override.
     pub(crate) fn parse(s: &str) -> GraphicsPref {
         match s {
-            "image" => GraphicsPref::Image,
-            "blocks" => GraphicsPref::Blocks,
+            "off" => GraphicsPref::Off,
             _ => GraphicsPref::Auto,
         }
     }
@@ -66,9 +63,7 @@ flavour = \"unicorn\"
 # instantly.
 animate = true
 
-# How the mascot is drawn. \"auto\" uses an image where the terminal supports one,
-# \"image\" asks for the image, and \"blocks\" always draws it with text. Set this
-# to \"blocks\" if the mascot disappears when a tab goes to sleep.
+# Mascot image: \"auto\" shows it where the terminal can draw images, \"off\" never shows it.
 graphics = \"auto\"
 
 # Whether the health checks run. False turns off the checks, the findings on the
@@ -365,13 +360,9 @@ mod tests {
     }
 
     #[test]
-    fn graphics_defaults_to_auto_and_reads_all_three_values() {
+    fn graphics_defaults_to_auto_and_reads_auto_and_off() {
         assert_eq!(Config::default().graphics, GraphicsPref::Auto);
-        for (value, expected) in [
-            ("auto", GraphicsPref::Auto),
-            ("image", GraphicsPref::Image),
-            ("blocks", GraphicsPref::Blocks),
-        ] {
+        for (value, expected) in [("auto", GraphicsPref::Auto), ("off", GraphicsPref::Off)] {
             let dir = tempfile::tempdir().unwrap();
             std::fs::write(
                 dir.path().join("config.toml"),
@@ -379,6 +370,25 @@ mod tests {
             )
             .unwrap();
             assert_eq!(load(Some(dir.path())).graphics, expected, "{value}");
+        }
+    }
+
+    /// The retired `"image"` and `"blocks"` values, and any unknown value, all read as `Auto`,
+    /// silently: a config file written before this change (or a hand-typo) must keep booting.
+    #[test]
+    fn graphics_reads_the_retired_and_unknown_values_as_auto() {
+        for value in ["image", "blocks", "holographic"] {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                dir.path().join("config.toml"),
+                format!("graphics = \"{value}\"\n"),
+            )
+            .unwrap();
+            assert_eq!(
+                load(Some(dir.path())).graphics,
+                GraphicsPref::Auto,
+                "{value}"
+            );
         }
     }
 
@@ -455,17 +465,6 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, vec!["config.toml", "config.toml.bak"]);
-    }
-
-    #[test]
-    fn an_unknown_graphics_value_reads_as_auto() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("config.toml"),
-            "graphics = \"holographic\"\n",
-        )
-        .unwrap();
-        assert_eq!(load(Some(dir.path())).graphics, GraphicsPref::Auto);
     }
 
     #[test]

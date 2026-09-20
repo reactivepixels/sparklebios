@@ -26,7 +26,7 @@ ignored too, so an old config file never breaks a new `bios`.
 |---|---|---|---|
 | `flavour` | string | `"unicorn"` | Which personality boots. Run `bios flavours` for the roster. Also set with `bios use <flavour>` |
 | `animate` | boolean | `true` | Whether the first boot of the day is animated. Every other boot is drawn instantly |
-| `graphics` | string | `"auto"` | How the mascot is drawn: `"auto"` uses an image where the terminal supports one, `"image"` names that same choice explicitly, `"blocks"` always draws it with text. An unknown value reads as `"auto"` |
+| `graphics` | string | `"auto"` | Whether the mascot image is shown: `"auto"` shows it where the terminal can draw images, `"off"` never shows it. The retired `"image"` and `"blocks"` values, and any unknown value, read as `"auto"` |
 | `checks` | boolean | `true` | Whether the health checks run: the findings shown on the boot screen, and the background refresh that feeds them |
 | `project_dirs` | array of strings | `[]` | Where to look for your git repositories. The boot screen lists the three touched most recently, and `bios resume` takes you to the first. An empty array means the built-in list: `~/Code`, `~/code`, `~/Projects`, `~/projects`, `~/src`, `~/dev`, `~/Developer`, `~/repos`, `~/work` and `~/git` |
 
@@ -59,6 +59,6 @@ A handful of environment variables override the config file, for one run:
 |---|---|---|
 | `SPARKLEBIOS_BOOT` | Whether `bios boot` plays at all | Set to `0` to stop it booting in a given shell |
 | `SPARKLEBIOS_ANIMATE` | `animate` | Set to `0` to skip the animated show, even on the first boot of the day |
-| `SPARKLEBIOS_GRAPHICS` | `graphics` | One of `auto`, `image` or `blocks`, same values and the same fallback to `auto` on an unknown one |
+| `SPARKLEBIOS_GRAPHICS` | `graphics` | Either `auto` or `off`, with the same tolerance for retired and unknown values |
 | `SPARKLEBIOS_BOOTED` | Nothing in the config file | Set by the shell hook once a boot has happened, so a shell started inside another shell does not boot a second time. Any value at all stops the boot, so unset it rather than setting it to `0` |
 | `SPARKLEBIOS_DEBUG` | Nothing in the config file | Set to `1` to print errors that are otherwise silent, since nothing on the boot path is allowed to complain by default |

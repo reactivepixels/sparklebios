@@ -274,8 +274,10 @@ fn an_unknown_graphics_value_does_not_stop_the_boot_screen_from_printing() {
         .stdout(predicate::str::contains("Sparkle Modular BIOS"));
 }
 
+/// The retired `"blocks"` value must keep booting silently, read as `"auto"`: somebody's config
+/// saying `blocks` cannot be allowed to error or warn.
 #[test]
-fn graphics_blocks_in_the_config_file_is_accepted() {
+fn graphics_legacy_blocks_value_in_the_config_file_is_accepted() {
     let config = tempfile::tempdir().unwrap();
     let dir = config.path().join("sparklebios");
     std::fs::create_dir_all(&dir).unwrap();
@@ -290,7 +292,35 @@ fn graphics_blocks_in_the_config_file_is_accepted() {
 }
 
 #[test]
+fn graphics_off_in_the_config_file_is_accepted() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "graphics = \"off\"\n").unwrap();
+    bios()
+        .args(["boot", "--machine", "pc95"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+}
+
+#[test]
 fn sparklebios_graphics_env_override_is_accepted() {
+    bios()
+        .args(["boot", "--machine", "pc95"])
+        .env("SPARKLEBIOS_GRAPHICS", "off")
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+}
+
+/// The retired `"blocks"` value, through the environment override too, must keep booting
+/// silently, read as `"auto"`.
+#[test]
+fn sparklebios_graphics_env_override_accepts_the_legacy_blocks_value() {
     bios()
         .args(["boot", "--machine", "pc95"])
         .env("SPARKLEBIOS_GRAPHICS", "blocks")

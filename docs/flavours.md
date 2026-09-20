@@ -22,7 +22,7 @@ All keys are required:
 |---|---|---|
 | `id` | string | Matches `[a-z0-9_-]+` |
 | `name` | string | A human readable label, shown by `bios flavours` |
-| `sprite` | string | Names a built-in sprite: a square transparent PNG and its 14 by 14 half-block grid file (see below) |
+| `sprite` | string | Names a built-in sprite: a square transparent PNG (see below) |
 | `firmware` | string | The BIOS/firmware banner line |
 | `vendor` | string | The copyright line |
 | `board` | string | The board or chassis revision line |
@@ -90,14 +90,9 @@ never leaves a raw `{slot}` in the output.
 ## Sprites
 
 A flavour names a built-in sprite by its `sprite` key. Every sprite ships as
-a pair of files under `sprites/`:
-
-- `<name>.png`: a square, transparent PNG, shown as an actual image on a
-  terminal with Kitty graphics support.
-- `<name>14.txt`: the same artwork as a 14 by 14 half-block grid, for
-  terminals without it. The file is self-describing: a palette of
-  `X=#RRGGBB` lines (one character key each), a blank line, then 14 rows of
-  14 characters. `.` is always transparent.
+one file under `sprites/`: `<name>.png`, a square, transparent PNG, shown as
+an actual image where the terminal speaks the Kitty graphics protocol, and
+not shown at all otherwise.
 
 A flavour's `sprite` must name a sprite that exists; there is no separate
 list to keep in sync.
