@@ -18,12 +18,26 @@ and even that only runs if you choose to wire it in.
 1. **Tab title.** The window title becomes `{title} {cwd}`, for example
    `SHINOBI-0 ~/Code/sparklebios`, with `$HOME` shown as `~`. Set on every
    prompt, skipped on `TERM=dumb` and `TERM=linux`. Config key: `title`.
-2. **The mascot in the prompt.** Where the terminal can draw an image, the
-   shell hook transmits the mascot once, right after the boot screen, and
-   `SPARKLEBIOS_MASCOT` holds the short escape that places it. Put it at the
-   front of your prompt and it costs only a `printf` of a string the shell
-   already holds. A terminal that cannot draw images leaves the variable
-   empty, so an unmodified prompt is unaffected.
+2. **The mascot in the prompt.** `SPARKLEBIOS_MASCOT` holds what goes in
+   front of your prompt. Put it there and it costs only a `printf` of a
+   string the shell already holds.
+
+   What is in it depends on the terminal. Under the kitty protocol, which
+   Ghostty and kitty speak, the hook sends the picture once at startup and
+   the variable holds the short escape that places it, about 40 bytes a
+   prompt. iTerm2 and WezTerm have no stored image and no placement, so the
+   variable holds the picture itself, about 3KB reprinted each prompt: more
+   bytes, still no process. Anywhere else there is no image at all.
+
+   A boot streak of two days or more is added after the mascot, as `12d`. In
+   a terminal that cannot draw images that is all the variable holds, so a
+   prompt in Terminal.app gets something out of this too. With no image and
+   no streak the variable is empty and an unmodified prompt is unaffected.
+
+   The streak is read once, when the hook is generated, so it is fixed for
+   that shell's lifetime. A tab left open across midnight shows yesterday's
+   number until you open a new one. That is the price of never spawning
+   anything per prompt.
 3. **The finish line.** Once a command has run for at least `presence_after`
    seconds, the next prompt prints a dim line saying so, one of two ways
    depending on whether it succeeded. A command stopped with Ctrl-C is left

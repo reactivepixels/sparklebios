@@ -92,6 +92,33 @@ impl Mascot {
             placement,
         }
     }
+
+    /// An iTerm2 inline image. There is nothing to send once here: the protocol has no stored
+    /// image and no placement, so the variable holds the picture itself and the shell reprints it
+    /// every prompt. That is about 3KB a prompt, which is a lot more than kitty's placement, but
+    /// it is still only a printf of a string the shell already holds, and nothing is spawned.
+    pub fn iterm(png: &[u8], rows: u16, wrap: Wrap) -> Mascot {
+        let cols = rows * 2;
+        Mascot {
+            transmit: String::new(),
+            placement: wrapped(&crate::sprite::iterm_image(png, cols, rows), cols, wrap),
+        }
+    }
+
+    /// Adds the boot streak after the mascot, when there is a streak worth mentioning. One day is
+    /// not a streak, so it starts at two.
+    ///
+    /// This is read once, when the hook is generated, so it is fixed for that shell's lifetime. A
+    /// tab left open across midnight will show yesterday's number until it is reopened. That is
+    /// the price of never spawning anything per prompt, and it is the right way round.
+    pub fn with_streak(mut self, days: u32) -> Mascot {
+        if days >= 2 {
+            // The trailing space is the gap to whatever prompt follows, so the variable can be
+            // put straight in front of one without the user adding spacing of their own.
+            self.placement.push_str(&format!("{days}d "));
+        }
+        self
+    }
 }
 
 /// Wraps an escape that prints nothing so the shell does not count it toward the prompt's width,
@@ -284,6 +311,47 @@ mod tests {
             "the placement is {} bytes, too many to repeat every prompt",
             mascot.placement.len()
         );
+    }
+
+    #[test]
+    fn a_streak_worth_mentioning_follows_the_mascot() {
+        let png = crate::sprite::builtin("ninja").unwrap();
+        let with = Mascot::kitty(png, 7, 1, Wrap::Zsh).with_streak(12);
+        assert!(with.placement.ends_with("12d "), "{}", with.placement);
+        // One day is not a streak.
+        assert_eq!(
+            Mascot::kitty(png, 7, 1, Wrap::Zsh).with_streak(1).placement,
+            Mascot::kitty(png, 7, 1, Wrap::Zsh).placement
+        );
+        assert_eq!(
+            Mascot::kitty(png, 7, 1, Wrap::Zsh).with_streak(0).placement,
+            Mascot::kitty(png, 7, 1, Wrap::Zsh).placement
+        );
+    }
+
+    #[test]
+    fn a_terminal_with_no_images_still_shows_the_streak_on_its_own() {
+        // The variable holds the streak and nothing else, so a prompt in Terminal.app gets
+        // something out of this too.
+        assert_eq!(Mascot::none().with_streak(12).placement, "12d ");
+        assert_eq!(Mascot::none().with_streak(1).placement, "");
+        assert!(Mascot::none().with_streak(12).transmit.is_empty());
+    }
+
+    #[test]
+    fn iterm_has_nothing_to_send_once_because_it_stores_nothing() {
+        let png = crate::sprite::builtin("ninja").unwrap();
+        let mascot = Mascot::iterm(png, 1, Wrap::Zsh);
+        assert!(
+            mascot.transmit.is_empty(),
+            "iTerm2 has no stored image, so there is nothing to transmit up front"
+        );
+        assert!(mascot.placement.contains("1337;File=inline=1"));
+        assert!(
+            mascot.placement.len() > 1000,
+            "the picture itself is what gets reprinted, so it is not small"
+        );
+        assert!(mascot.placement.starts_with("%{"), "still width accounted");
     }
 
     #[test]

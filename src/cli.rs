@@ -409,28 +409,46 @@ fn init(shell: shell::Shell) -> i32 {
     0
 }
 
-/// The mascot placement for the prompt, or nothing where the terminal cannot draw an image.
-/// Only the kitty protocol can send an image once and place it cheaply afterwards; the iTerm2
-/// protocol has no stored image, so a prompt there would have to resend the PNG every time and
-/// is left out rather than made expensive.
+/// What goes in front of the prompt: the mascot where the terminal can draw one, and the boot
+/// streak where there is one worth mentioning. Empty when there is neither, so an untouched
+/// prompt stays untouched.
+///
+/// The two image protocols are not the same deal. Kitty stores an image and places it, so the
+/// picture goes once and each prompt costs a few dozen bytes. iTerm2 has no stored image, so the
+/// picture itself is what the shell reprints every time. Both are worth having; only one is cheap.
 fn mascot_for(flavour: Option<&crate::flavour::Flavour>, wrap: shell::Wrap) -> shell::Mascot {
+    image_for(flavour, wrap).with_streak(streak_days())
+}
+
+fn image_for(flavour: Option<&crate::flavour::Flavour>, wrap: shell::Wrap) -> shell::Mascot {
     let protocol = crate::sprite::detect_image_protocol(
         std::env::var("TERM").ok().as_deref(),
         std::env::var("TERM_PROGRAM").ok().as_deref(),
         std::env::var("LC_TERMINAL").ok().as_deref(),
     );
-    if protocol != Some(crate::sprite::ImageProtocol::Kitty) {
-        return shell::Mascot::none();
-    }
     let Some(flavour) = flavour else {
         return shell::Mascot::none();
     };
     let Some(png) = crate::sprite::builtin(&flavour.sprite) else {
         return shell::Mascot::none();
     };
-    // An id of our own, steady for a flavour, so a second shell reuses the same image.
-    let id = 9000 + (flavour.id.bytes().map(u32::from).sum::<u32>() % 900);
-    shell::Mascot::kitty(png, id, 1, wrap)
+    match protocol {
+        Some(crate::sprite::ImageProtocol::Kitty) => {
+            // An id of our own, steady for a flavour, so a second shell reuses the same image.
+            let id = 9000 + (flavour.id.bytes().map(u32::from).sum::<u32>() % 900);
+            shell::Mascot::kitty(png, id, 1, wrap)
+        }
+        Some(crate::sprite::ImageProtocol::Iterm) => shell::Mascot::iterm(png, 1, wrap),
+        None => shell::Mascot::none(),
+    }
+}
+
+/// The boot streak, read once while the hook is being generated. Read only: generating a hook
+/// must never change what the next boot shows.
+fn streak_days() -> u32 {
+    crate::paths::state_dir()
+        .map(|dir| crate::state::State::load(&dir))
+        .map_or(0, |state| state.streak_days)
 }
 
 fn say(args: SayCliArgs) -> i32 {
