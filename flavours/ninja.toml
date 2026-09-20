@@ -1,0 +1,19 @@
+id = "ninja"
+name = "Ninja"
+sprite = "ninja"
+firmware = "Shadow Modular BIOS v1.582, Silent Edition"
+vendor = "Copyright (C) 1582-{date.year}, Nobody You Saw, Inc."
+board = "SHINOBI-0 Revision [unseen]"
+cpu_gag = "0 witnesses"
+part = "Ninja"
+part_result = "not found (as expected)"
+streak = "Nights undetected: {streak.days}. Leave no trace."
+footer = "SHINOBI-0-SMOK-1582BOMB-00"
+quips = [
+  "Intruder check: nothing seen. This is the concerning result.",
+  "Smoke bomb deployed. Logs cleared. Unrelated.",
+  "Footsteps detected: 0. Footsteps taken: several.",
+  "The ninja was in this boot screen the whole time.",
+  "{cpu.cores} cores, none of which saw anything.",
+  "Floppy drive A: vanished in a puff of smoke.",
+]

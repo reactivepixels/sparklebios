@@ -1,0 +1,19 @@
+id = "yeti"
+name = "Yeti"
+sprite = "yeti"
+firmware = "Abominable Modular BIOS v1.951, Unverified"
+vendor = "Copyright (C) 1951-{date.year}, Himalayan Footprint Co."
+board = "YETI-8K Base Camp Revision 1951"
+cpu_gag = "0 clear photographs"
+part = "Yeti"
+part_result = "1 found (blurry)"
+streak = "Days unsighted: {streak.days}."
+footer = "YETI-8K-BLUR-1951SNOW-00"
+quips = [
+  "Photographic evidence: inconclusive, as always.",
+  "Footprint detected. Size 27. Not yours.",
+  "Altitude: 8000m. Fan speed: unnecessary.",
+  "Sighting logged. Nobody will believe the logs.",
+  "Expedition found {cpu.cores} cores and no yeti.",
+  "Snow detected on the heatsink. Leave it.",
+]

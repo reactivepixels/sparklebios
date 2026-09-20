@@ -1,0 +1,19 @@
+id = "viking"
+name = "Viking"
+sprite = "viking"
+firmware = "Longship Modular BIOS v793, Raiding Edition"
+vendor = "Copyright (C) 793-{date.year}, North Sea Systems"
+board = "DRAKKAR-32 Oar Revision 793"
+cpu_gag = "0 retreats"
+part = "Horns"
+part_result = "2 found (historically inaccurate)"
+streak = "Days at sea: {streak.days}. Row."
+footer = "DRAKKAR-32-SKOL-0793AXE-00"
+quips = [
+  "Destination set: west. Navigation: vibes.",
+  "Pillaging /tmp. Nothing of value found.",
+  "{cpu.cores} cores at the oars. Row.",
+  "Valhalla unreachable: no network code. By design.",
+  "Beard integrity: excellent.",
+  "Booting from {shell.name}. The sagas will mention it.",
+]

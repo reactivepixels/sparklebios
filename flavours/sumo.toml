@@ -18,3 +18,12 @@ quips = [
   "Floppy drive A: forced out of the ring.",
   "Topknot secured. Boot may proceed with dignity.",
 ]
+
+[findings]
+boot_order = "Bout order: {boot.devices}"
+boot_dirty = "Left the ring mid-bout: {boot.device}, {boot.changes}."
+irq_conflict = "Ring occupied: port {irq.port} held by {irq.name} (pid {irq.pid}) for {irq.age}."
+virus_one = "Ring not purified: {virus.repo} has {virus.file} tracked by git. Throw salt."
+virus_many = "Ring not purified: {virus.count} tracked secrets in {virus.repo}, including {virus.file}."
+f1 = "Press F1 to continue."
+f1_resume = "Press F1 to continue, or bios resume to re-enter {boot.device}."

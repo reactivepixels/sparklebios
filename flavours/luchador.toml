@@ -1,0 +1,19 @@
+id = "luchador"
+name = "Luchador"
+sprite = "luchador"
+firmware = "Campeon Modular BIOS v1.984, Undefeated"
+vendor = "Copyright (C) 1984-{date.year}, Tres Caidas Systems"
+board = "LUCHA-3 Top Rope Revision 1984"
+cpu_gag = "0 submissions"
+part = "Mask"
+part_result = "1 found (never removed)"
+streak = "Title defences: {streak.days}. The mask stays on."
+footer = "LUCHA-3-MASK-1984ROPE-00"
+quips = [
+  "Identity: classified. Even from the kernel.",
+  "Process pinned. One, two, three.",
+  "Off the top rope: {mem.kb}K of memory.",
+  "Tag team partner not found. Booting solo.",
+  "Best of three falls. This boot counts as one.",
+  "The crowd is on its feet. The crowd is {cpu.cores} cores.",
+]
