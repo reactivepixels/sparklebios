@@ -2,8 +2,8 @@
 
 ## The short version
 
-SparkleBIOS runs inside your shell startup, so we treat "it did something you
-did not ask for" as a security problem, not a bug.
+SparkleBIOS runs inside your shell startup, so anything it does that you did
+not ask for counts as a security problem, not a bug.
 
 Report privately here:
 **https://github.com/reactivepixels/sparklebios/security/advisories/new**
@@ -34,7 +34,7 @@ nothing that reads a per-project config file.
 - Anything that makes a boot hang, crash a shell, or corrupt a terminal.
 - Anything that writes outside the documented paths (`~/.config/sparklebios`, `~/.local/state/sparklebios`, `~/.cache/sparklebios`, and the Ghostty themes directory when you run `bios theme install`).
 - Escape sequence injection: a way for text from the environment, a file name or a machine file to take control of the terminal.
-- Any network access at all. There is no network code in this project, the build enforces it (`deny.toml`), and finding some would be the most serious report we could receive.
+- Any network access at all. There is no network code in this project, the build enforces it (`deny.toml`), and finding some would be the most serious report this project could get.
 
 ## What does not
 
