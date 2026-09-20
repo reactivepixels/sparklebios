@@ -21,4 +21,5 @@ pub mod state;
 pub mod template;
 pub mod term;
 pub mod theme;
+pub mod tomledit;
 pub mod tty;

@@ -201,115 +201,13 @@ pub fn starship_palette_name(full_name: &str) -> &'static str {
     }
 }
 
-/// Whether `line`, trimmed of leading whitespace, starts a TOML table header (`[table]` or
-/// `[[array-of-tables]]`). A commented out line does not count.
-fn is_table_header(line: &str) -> bool {
-    let trimmed = line.trim_start();
-    !trimmed.starts_with('#') && trimmed.starts_with('[')
-}
-
-/// Whether `line`, trimmed of leading whitespace, is an uncommented `palette` assignment: the
-/// key `palette`, then zero or more spaces, then `=`.
-fn is_palette_line(line: &str) -> bool {
-    let trimmed = line.trim_start();
-    if trimmed.starts_with('#') {
-        return false;
-    }
-    match trimmed.strip_prefix("palette") {
-        Some(rest) => rest.trim_start_matches(' ').starts_with('='),
-        None => false,
-    }
-}
-
-/// Whether byte `i` of `bytes` starts `pat`, an exact byte match (never panics on a UTF-8
-/// character boundary, unlike slicing a `&str`, since `bytes` is treated as plain bytes).
-fn bytes_start_with_at(bytes: &[u8], i: usize, pat: &[u8]) -> bool {
-    i + pat.len() <= bytes.len() && &bytes[i..i + pat.len()] == pat
-}
-
-/// For each of `lines`, whether it is live TOML at the moment it begins, as opposed to sitting
-/// inside a multi-line string (`"""..."""` or `'''...'''`) carried in from an earlier line.
-///
-/// A user's starship config routinely holds a multi-line `format` string full of lines that look
-/// exactly like table headers (starship segment syntax uses `[...]` too), so `is_table_header`
-/// and `is_palette_line` must never be trusted on a line still inside one of those strings. This
-/// is the one scanner both consult, so they can never disagree about where a string ends.
-///
-/// Walks the file byte by byte, toggling into and out of a string on `"""` or `'''` (whichever
-/// opened it; the other delimiter does nothing while inside), so an open and a close on the same
-/// line, or several of either on one line, are all counted rather than assumed to be one each.
-/// Only the state a line is entered with is recorded: a line that closes a string partway through
-/// still counts as "inside a string" for `is_table_header`/`is_palette_line`'s purposes, since
-/// its content up to the close is still string data, not TOML syntax.
-fn live_toml_lines(lines: &[&str]) -> Vec<bool> {
-    #[derive(Clone, Copy, PartialEq)]
-    enum State {
-        None,
-        Basic,
-        Literal,
-    }
-
-    let mut state = State::None;
-    let mut live = Vec::with_capacity(lines.len());
-    for line in lines {
-        live.push(state == State::None);
-        let bytes = line.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() {
-            match state {
-                State::None => {
-                    if bytes_start_with_at(bytes, i, b"\"\"\"") {
-                        state = State::Basic;
-                        i += 3;
-                    } else if bytes_start_with_at(bytes, i, b"'''") {
-                        state = State::Literal;
-                        i += 3;
-                    } else {
-                        i += 1;
-                    }
-                }
-                State::Basic => {
-                    if bytes_start_with_at(bytes, i, b"\"\"\"") {
-                        state = State::None;
-                        i += 3;
-                    } else {
-                        i += 1;
-                    }
-                }
-                State::Literal => {
-                    if bytes_start_with_at(bytes, i, b"'''") {
-                        state = State::None;
-                        i += 3;
-                    } else {
-                        i += 1;
-                    }
-                }
-            }
-        }
-    }
-    live
-}
-
-/// The index of `lines`' top level `palette =` line: one that is live TOML (see
-/// `live_toml_lines`) and appears before any live table header, so a `palette` key nested inside
-/// a table such as `[palettes.foo]` does not count, and nor does anything that merely looks like
-/// one inside a multi-line string. `None` when there is no such line.
+/// The index of `lines`' top level `palette =` line (see
+/// `tomledit::find_top_level_key_line`): one that is live TOML and appears before any live table
+/// header, so a `palette` key nested inside a table such as `[palettes.foo]` does not count, and
+/// nor does anything that merely looks like one inside a multi-line string. `None` when there is
+/// no such line.
 fn find_top_level_palette_line(lines: &[&str]) -> Option<usize> {
-    let live = live_toml_lines(lines);
-    let mut past_first_table = false;
-    for (index, line) in lines.iter().enumerate() {
-        if !live[index] {
-            continue;
-        }
-        if is_table_header(line) {
-            past_first_table = true;
-            continue;
-        }
-        if !past_first_table && is_palette_line(line) {
-            return Some(index);
-        }
-    }
-    None
+    crate::tomledit::find_top_level_key_line(lines, "palette")
 }
 
 /// The quote character used by `line`'s value: the first `'` or `"` found in it, `'` when
@@ -338,7 +236,7 @@ fn extract_palette_table(name: &str) -> String {
         .iter()
         .enumerate()
         .skip(start + 1)
-        .find(|(_, line)| is_table_header(line))
+        .find(|(_, line)| crate::tomledit::is_table_header(line))
         .map(|(index, _)| index)
         .unwrap_or(lines.len());
     while end > start + 1 {
@@ -353,15 +251,15 @@ fn extract_palette_table(name: &str) -> String {
 }
 
 /// Points `path`'s top level `palette =` line (see `find_top_level_palette_line`) at `palette`,
-/// preserving the line's original quote style and leaving every other byte alone, and appends
-/// `palette`'s table (see `extract_palette_table`) when a table of that exact name is not
-/// already present. Does nothing, returning `Ok(false)`, when `path` does not exist, cannot be
-/// read, or has no top level `palette =` line. Writes atomically: temp file then rename.
+/// preserving the line's original quote style and leaving every other byte alone (see
+/// `tomledit::set_top_level_key`), and appends `palette`'s table (see `extract_palette_table`)
+/// when a table of that exact name is not already present. Does nothing, returning `Ok(false)`,
+/// when `path` does not exist, cannot be read, or has no top level `palette =` line. Writes
+/// atomically: temp file then rename.
 pub fn set_starship_palette(path: &Path, palette: &str) -> std::io::Result<bool> {
     let Ok(contents) = std::fs::read_to_string(path) else {
         return Ok(false);
     };
-    let had_trailing_newline = contents.is_empty() || contents.ends_with('\n');
     let body = contents.strip_suffix('\n').unwrap_or(&contents);
     let lines: Vec<&str> = if contents.is_empty() {
         Vec::new()
@@ -374,20 +272,16 @@ pub fn set_starship_palette(path: &Path, palette: &str) -> std::io::Result<bool>
     };
 
     let quote = detect_quote(lines[index]);
-    let mut out_lines: Vec<String> = lines.iter().map(|line| (*line).to_string()).collect();
-    out_lines[index] = format!("palette = {quote}{palette}{quote}");
+    let value = format!("{quote}{palette}{quote}");
+    let mut new_contents = crate::tomledit::set_top_level_key(&contents, "palette", &value);
 
     let table_header = format!("[palettes.{palette}]");
-    let live = live_toml_lines(&lines);
+    let live = crate::tomledit::live_toml_lines(&lines);
     let has_table = lines
         .iter()
         .zip(live.iter())
         .any(|(line, is_live)| *is_live && line.trim() == table_header);
 
-    let mut new_contents = out_lines.join("\n");
-    if had_trailing_newline {
-        new_contents.push('\n');
-    }
     if !has_table {
         if !new_contents.ends_with('\n') {
             new_contents.push('\n');
@@ -537,30 +431,6 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "theme = rainbows-and-unicorns\n"
         );
-    }
-
-    #[test]
-    fn live_toml_lines_marks_the_inside_of_a_multiline_basic_string_and_recovers_after_it() {
-        let source = "a = \"\"\"\n[not a table]\nstill inside\n\"\"\"\nb = 1\n[real_table]";
-        let lines: Vec<&str> = source.split('\n').collect();
-        assert_eq!(
-            live_toml_lines(&lines),
-            vec![true, false, false, false, true, true]
-        );
-    }
-
-    #[test]
-    fn live_toml_lines_treats_a_string_opened_and_closed_on_one_line_as_never_leaving() {
-        let source = "a = \"\"\"one line\"\"\"\nb = 1";
-        let lines: Vec<&str> = source.split('\n').collect();
-        assert_eq!(live_toml_lines(&lines), vec![true, true]);
-    }
-
-    #[test]
-    fn live_toml_lines_handles_a_multiline_literal_string() {
-        let source = "a = '''\nstill inside\n'''\nb = 1";
-        let lines: Vec<&str> = source.split('\n').collect();
-        assert_eq!(live_toml_lines(&lines), vec![true, false, false, true]);
     }
 
     #[test]

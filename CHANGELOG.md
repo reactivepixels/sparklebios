@@ -42,6 +42,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Fast Linux fact probes (processor, memory, disk, OS, hostname, shell, measured shell start time), matching the same fact keys the macOS probes already fill, plus `bios init bash` and `bios init fish` alongside `bios init zsh`. Bash has no way to push keys typed during the boot show back onto the command line this early in shell startup, so it reads and discards them rather than faking it; fish's `commandline` does the same job zsh's `print -z` does.
 - Sprinkles: an optional shimmer, twinkle and beep for the daily boot. Off unless you ask.
 
+### Fixed
+
+- Setting a value no longer throws away the rest of your config file. `bios use` and `bios sprinkles` edit the one line they mean and leave the comments, the blank lines and the key order exactly as they were.
+
 ### Changed
 
 - `bios fetch` names the theme the way the manual does, so it reads `VHS` rather than `rainbows-and-unicorns-vhs`.

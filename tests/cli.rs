@@ -1419,6 +1419,218 @@ fn config_edit_returns_non_zero_when_the_editor_exits_non_zero() {
 }
 
 #[test]
+fn config_reset_then_use_preserves_every_comment_and_key_order_and_reads_back_the_new_flavour() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["config", "reset"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let path = config.path().join("sparklebios/config.toml");
+    let comment_lines = sparklebios::config::TEMPLATE
+        .lines()
+        .filter(|line| line.starts_with('#'))
+        .count();
+    assert_eq!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .filter(|line| line.starts_with('#'))
+            .count(),
+        comment_lines
+    );
+
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        contents
+            .lines()
+            .filter(|line| line.starts_with('#'))
+            .count(),
+        comment_lines,
+        "a comment was lost:\n{contents}"
+    );
+    let keys: Vec<&str> = contents
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(|line| line.split('=').next().unwrap().trim())
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            "flavour",
+            "animate",
+            "graphics",
+            "checks",
+            "project_dirs",
+            "sprinkles"
+        ]
+    );
+    assert!(contents.contains("flavour = \"sumo\""));
+    bios()
+        .arg("use")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Flavour : sumo\n");
+}
+
+#[test]
+fn config_reset_then_sprinkles_light_preserves_every_comment() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["config", "reset"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let path = config.path().join("sparklebios/config.toml");
+    let comment_lines = sparklebios::config::TEMPLATE
+        .lines()
+        .filter(|line| line.starts_with('#'))
+        .count();
+
+    bios()
+        .args(["sprinkles", "light"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        contents
+            .lines()
+            .filter(|line| line.starts_with('#'))
+            .count(),
+        comment_lines,
+        "a comment was lost:\n{contents}"
+    );
+    assert!(contents.contains("sprinkles = \"light\""));
+}
+
+#[test]
+fn use_appends_flavour_to_a_hand_written_file_missing_it_and_the_file_still_parses() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "animate = false\n").unwrap();
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    assert_eq!(contents, "animate = false\nflavour = \"sumo\"\n");
+    bios()
+        .arg("use")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Flavour : sumo\n");
+}
+
+#[test]
+fn use_appends_the_new_flavour_line_before_a_table_header_rather_than_after_it() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("config.toml"),
+        "animate = false\n\n[extra]\nfoo = 1\n",
+    )
+    .unwrap();
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    assert_eq!(
+        contents,
+        "animate = false\n\nflavour = \"sumo\"\n[extra]\nfoo = 1\n"
+    );
+}
+
+#[test]
+fn use_does_not_mistake_a_flavour_line_inside_a_table_for_the_top_level_one() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "[extra]\nflavour = \"inner\"\n").unwrap();
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    assert_eq!(
+        contents,
+        "flavour = \"sumo\"\n[extra]\nflavour = \"inner\"\n"
+    );
+}
+
+#[test]
+fn use_does_not_mistake_a_commented_out_flavour_line_for_the_real_one() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("config.toml"),
+        "# flavour = \"old\"\nanimate = true\n",
+    )
+    .unwrap();
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    assert_eq!(
+        contents,
+        "# flavour = \"old\"\nanimate = true\nflavour = \"sumo\"\n"
+    );
+}
+
+#[test]
+fn use_keeps_the_flavour_lines_original_leading_whitespace() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "  flavour = \"unicorn\"\n").unwrap();
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    assert_eq!(contents, "  flavour = \"sumo\"\n");
+}
+
+#[test]
+fn use_preserves_the_trailing_newline_and_leaves_no_temp_file_behind() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "flavour = \"unicorn\"\n").unwrap();
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    assert!(contents.ends_with('\n'));
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(names, vec!["config.toml".to_string()]);
+}
+
+#[test]
 fn checks_false_shows_no_findings() {
     let sandbox = FindingsSandbox::new();
     sandbox.seed_boot_order(0);

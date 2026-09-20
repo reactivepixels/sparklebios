@@ -175,25 +175,30 @@ pub fn load(dir: Option<&std::path::Path>) -> Config {
     }
 }
 
-/// Sets `flavour` in `<dir>/config.toml`, preserving every other key. Starts from an empty table
-/// when the file is missing or invalid. Creates `dir` if missing, and writes atomically: temp
-/// file then rename, the same way `state::save` does.
+/// The contents to hand-edit `key`'s value into: `path`'s own contents when it exists and parses
+/// as TOML, `TEMPLATE` otherwise (a missing or unparsable file falls back to the commented
+/// template rather than a bare one-liner, so the user ends up with the documented file either
+/// way).
+fn edit_base(path: &std::path::Path) -> String {
+    std::fs::read_to_string(path)
+        .ok()
+        .filter(|contents| contents.parse::<toml::Table>().is_ok())
+        .unwrap_or_else(|| TEMPLATE.to_string())
+}
+
+/// Sets `flavour` in `<dir>/config.toml`, preserving every other key, comment, blank line and the
+/// existing key order: a hand edit of the `flavour` line (see
+/// `tomledit::set_top_level_key`), never a parse-and-reserialise, which would destroy all of
+/// that. Starts from `TEMPLATE` when the file is missing or invalid (see `edit_base`). Creates
+/// `dir` if missing, and writes atomically: temp file then rename, the same way `state::save`
+/// does.
 pub fn set_flavour(dir: &std::path::Path, id: &str) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join("config.toml");
-    let mut table: toml::Table = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|contents| contents.parse::<toml::Table>().ok())
-        .unwrap_or_default();
-
-    table.insert("flavour".to_string(), toml::Value::String(id.to_string()));
-
-    let contents = toml::to_string(&table).map_err(std::io::Error::other)?;
-    let pid = std::process::id();
-    let tmp_path = dir.join(format!("config.toml.{pid}.tmp"));
-    std::fs::write(&tmp_path, contents)?;
-    std::fs::rename(&tmp_path, &path)?;
-    Ok(())
+    let contents = edit_base(&path);
+    let new_contents =
+        crate::tomledit::set_top_level_key(&contents, "flavour", &format!("\"{id}\""));
+    write_atomic(&path, &new_contents)
 }
 
 /// Sets `sprinkles` in `<dir>/config.toml` to `level.as_str()`, preserving every other key, the
@@ -201,22 +206,13 @@ pub fn set_flavour(dir: &std::path::Path, id: &str) -> std::io::Result<()> {
 pub fn set_sprinkles(dir: &std::path::Path, level: crate::sprinkles::Level) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join("config.toml");
-    let mut table: toml::Table = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|contents| contents.parse::<toml::Table>().ok())
-        .unwrap_or_default();
-
-    table.insert(
-        "sprinkles".to_string(),
-        toml::Value::String(level.as_str().to_string()),
+    let contents = edit_base(&path);
+    let new_contents = crate::tomledit::set_top_level_key(
+        &contents,
+        "sprinkles",
+        &format!("\"{}\"", level.as_str()),
     );
-
-    let contents = toml::to_string(&table).map_err(std::io::Error::other)?;
-    let pid = std::process::id();
-    let tmp_path = dir.join(format!("config.toml.{pid}.tmp"));
-    std::fs::write(&tmp_path, contents)?;
-    std::fs::rename(&tmp_path, &path)?;
-    Ok(())
+    write_atomic(&path, &new_contents)
 }
 
 #[cfg(test)]
