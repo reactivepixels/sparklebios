@@ -103,6 +103,17 @@ bios use sumo            # make it permanent
 A flavour is one TOML file and one sprite, so adding yours needs no Rust. See
 [docs/flavours.md](docs/flavours.md).
 
+## SETUP
+
+Every option lives in one blue screen, as nature intended.
+
+```
+bios setup
+```
+
+Arrow keys move and change, Enter previews the boot screen with your pending
+choices, F10 saves, Esc leaves. Nothing is written until you save.
+
 ## Themes
 
 "Rainbows and Unicorns" is a Ghostty theme in ten variants. The name is the

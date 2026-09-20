@@ -49,6 +49,7 @@ Setup:
   init zsh           Print the hook. Add this to the end of ~/.zshrc:
                      command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
   theme install      Install the theme files without switching
+  setup              The CMOS Setup Utility. Blue. Arrow keys. You remember.
   config edit        Open the config file in your editor
 
 Try:

@@ -26,6 +26,7 @@ Setup:
   init zsh           Print the hook. Add this to the end of ~/.zshrc:
                      command -v bios >/dev/null 2>&1 && eval \"$(bios init zsh)\"
   theme install      Install the theme files without switching
+  setup              The CMOS Setup Utility. Blue. Arrow keys. You remember.
   config edit        Open the config file in your editor
 
 Try:
@@ -80,6 +81,8 @@ enum Command {
     Use(UseCliArgs),
     /// Show or set the sprinkles level.
     Sprinkles(SprinklesCliArgs),
+    /// The CMOS Setup Utility.
+    Setup,
     /// Ghostty theme commands.
     Theme {
         #[command(subcommand)]
@@ -245,6 +248,7 @@ pub fn run() -> i32 {
         Command::Theme {
             command: ThemeCommand::Install { dir },
         } => install_theme(dir),
+        Command::Setup => crate::setup::run(),
         Command::Theme {
             command: ThemeCommand::List,
         } => theme_list(),
@@ -532,6 +536,12 @@ fn theme_list() -> i32 {
         println!("{short:<11}{full}");
     }
     0
+}
+
+/// The setup screen's way in to the same theme switch `bios theme use` performs, with the
+/// defaults it would use from the command line.
+pub fn theme_use_for_setup(short: &str) -> i32 {
+    theme_use(short, None, None, None, false)
 }
 
 fn theme_use(

@@ -219,6 +219,16 @@ pub fn set_sprinkles(dir: &std::path::Path, level: crate::sprinkles::Level) -> s
     write_atomic(&path, &new_contents)
 }
 
+/// Sets one top level key to an already formatted TOML value, leaving the rest of the file
+/// exactly as it was. The setup screen uses this for the keys that have no setter of their own.
+pub fn set_key(dir: &std::path::Path, key: &str, value: &str) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join("config.toml");
+    let contents = edit_base(&path);
+    let new_contents = crate::tomledit::set_top_level_key(&contents, key, value);
+    write_atomic(&path, &new_contents)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
