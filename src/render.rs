@@ -162,9 +162,64 @@ fn phrasing<'a>(machine: &'a Machine, flavour: Option<&'a Flavour>, id: &str) ->
     machine.findings.get(id).map(String::as_str)
 }
 
+/// A shortened value never carries fewer than this many visible characters before its `..`.
+const MIN_SHORTENED_VALUE_CHARS: usize = 3;
+
+/// The shortest a value can be and still have anything left to give up: at this length,
+/// dropping the marker's own cost (2 for `..`, plus the 1 character the line needs to shrink by)
+/// still leaves it at the floor.
+const MIN_SHRINKABLE_VALUE_CHARS: usize = MIN_SHORTENED_VALUE_CHARS + 3;
+
+/// Shortens `value` by exactly one rendered character, marking it with a trailing `..` (which
+/// count towards its length). `None` once `value` is already at or below the floor of
+/// `MIN_SHORTENED_VALUE_CHARS` visible characters plus `..`, so the caller knows to stop.
+fn shorten_slot_value(value: &str) -> Option<String> {
+    if value.chars().count() < MIN_SHRINKABLE_VALUE_CHARS {
+        return None;
+    }
+    let keep = value.chars().count() - 3;
+    let content: String = value.chars().take(keep).collect();
+    Some(content + "..")
+}
+
+/// Renders `phrase` against `facts`, shortening the currently longest slot value one character
+/// at a time (instead of truncating the whole line) until it fits `cols`, so the sentence's own
+/// wording, not just some prefix of the line, always survives. Falls back to truncating the
+/// whole rendered line, as before, only once every slot value is already at its floor. `None`
+/// when the phrase has a slot that does not resolve against `facts`.
+pub(crate) fn shorten_finding_line(phrase: &str, facts: &Facts, cols: usize) -> Option<String> {
+    let mut local = facts.clone();
+    let mut rendered = template::render(phrase, &local)?;
+    if rendered.chars().count() <= cols {
+        return Some(rendered);
+    }
+    let keys = template::slot_keys(phrase);
+    loop {
+        let longest = keys
+            .iter()
+            .filter_map(|key| local.get(key).map(|value| (key, value.chars().count())))
+            .filter(|(_, len)| *len >= MIN_SHRINKABLE_VALUE_CHARS)
+            .max_by_key(|(_, len)| *len);
+        let Some((key, _)) = longest else {
+            break;
+        };
+        let value = local.get(key)?.to_string();
+        let Some(shortened) = shorten_slot_value(&value) else {
+            break;
+        };
+        local.insert(key, shortened);
+        rendered = template::render(phrase, &local)?;
+        if rendered.chars().count() <= cols {
+            return Some(rendered);
+        }
+    }
+    Some(rendered.chars().take(cols).collect())
+}
+
 /// One finding's rendered line: its phrasing looked up by id, rendered against the facts, and
-/// truncated to `cols` rather than dropped when it runs long, so a Fail is always visible. `None`
-/// when the id has no phrasing or one of its slots does not resolve.
+/// shortened to fit `cols` (by shrinking its slot values, or truncating the whole line as a last
+/// resort) rather than dropped when it runs long, so a Fail is always visible. `None` when the
+/// id has no phrasing or one of its slots does not resolve.
 fn finding_line(
     machine: &Machine,
     facts: &Facts,
@@ -173,13 +228,7 @@ fn finding_line(
     style: Style,
 ) -> Option<Vec<Span>> {
     let phrase = phrasing(machine, flavour, &finding.id)?;
-    let text = template::render(phrase, facts)?;
-    let cols = machine.cols as usize;
-    let text: String = if text.chars().count() > cols {
-        text.chars().take(cols).collect()
-    } else {
-        text
-    };
+    let text = shorten_finding_line(phrase, facts, machine.cols as usize)?;
     if text.is_empty() {
         return Some(vec![]);
     }
@@ -1957,6 +2006,73 @@ print = "{long_line}"
             .find(|l| l.starts_with("Boot device order:"))
             .unwrap();
         assert_eq!(line.chars().count(), m.cols as usize);
+    }
+
+    #[test]
+    fn a_finding_that_already_fits_is_unchanged_with_no_marker() {
+        let m = machine::find("pc95", None).unwrap();
+        let mut facts = Facts::fixture();
+        facts.insert("virus.repo", "eko-pro");
+        facts.insert("virus.file", ".env.local");
+        let f = finding("virus_one", Severity::Fail, &[]);
+        let text = finding_text(&m, &facts, None, &f).unwrap();
+        assert_eq!(
+            text,
+            "Virus scan: eko-pro has .env.local tracked by git. Quarantine advised."
+        );
+        assert!(!text.contains(".."));
+    }
+
+    #[test]
+    fn a_finding_with_one_very_long_slot_value_fits_exactly_cols_and_keeps_its_final_sentence() {
+        let m = machine::find("pc95", None).unwrap();
+        let mut facts = Facts::fixture();
+        facts.insert("virus.repo", "r".repeat(100));
+        facts.insert("virus.file", ".env.local");
+        let f = finding("virus_one", Severity::Fail, &[]);
+        let text = finding_text(&m, &facts, None, &f).unwrap();
+        assert_eq!(text.chars().count(), m.cols as usize);
+        assert!(text.ends_with("tracked by git. Quarantine advised."));
+        assert!(text.contains(".."));
+    }
+
+    #[test]
+    fn the_longest_of_two_slot_values_is_the_one_shortened() {
+        let m = machine::find("pc95", None).unwrap();
+        let mut facts = Facts::fixture();
+        facts.insert("virus.repo", "z".repeat(30));
+        facts.insert("virus.file", "shortfile1");
+        let f = finding("virus_one", Severity::Fail, &[]);
+        let text = finding_text(&m, &facts, None, &f).unwrap();
+        assert_eq!(
+            text,
+            format!(
+                "Virus scan: {} has shortfile1 tracked by git. Quarantine advised.",
+                "z".repeat(15) + ".."
+            )
+        );
+    }
+
+    #[test]
+    fn a_value_is_never_shortened_below_its_floor_and_falls_back_to_whole_line_truncation() {
+        let mut facts = Facts::new();
+        facts.insert("a", "abcdefghij");
+        // At the floor (3 visible characters plus `..`), the value already fits exactly.
+        let at_floor = shorten_finding_line("{a}", &facts, 5).unwrap();
+        assert_eq!(at_floor, "abc..");
+        // One column tighter than the floor allows, shrinking cannot help any further, so the
+        // whole line is truncated instead, exactly as it was before this change.
+        let below_floor = shorten_finding_line("{a}", &facts, 4).unwrap();
+        assert_eq!(below_floor, "abc.");
+    }
+
+    #[test]
+    fn multi_byte_characters_are_shortened_by_character_count_not_bytes() {
+        let mut facts = Facts::new();
+        facts.insert("a", "café".repeat(10));
+        let text = shorten_finding_line("{a}", &facts, 20).unwrap();
+        assert_eq!(text.chars().count(), 20);
+        assert!(text.ends_with(".."));
     }
 
     #[test]

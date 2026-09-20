@@ -354,18 +354,48 @@ quips = ["a", "b", "c"]
         facts
     }
 
+    /// `boot.*`, `irq.*` and `virus.*` with deliberately long values, on top of `Facts::fixture()`,
+    /// so a finding whose slots resolve to something short today cannot hide a shortening bug.
+    fn finding_facts_with_long_values() -> Facts {
+        let mut facts = Facts::fixture();
+        facts.insert(
+            "boot.devices",
+            "side-project, another-long-repo, third-repo-here",
+        );
+        facts.insert("boot.device", "side-project");
+        facts.insert("boot.changes", "3 uncommitted changes");
+        facts.insert("irq.port", "3000");
+        facts.insert("irq.name", "node");
+        facts.insert("irq.pid", "4821");
+        facts.insert("irq.age", "3 days");
+        facts.insert("virus.repo", "side-project");
+        facts.insert("virus.file", ".env.production.local");
+        facts.insert("virus.count", "3");
+        facts
+    }
+
     #[test]
     fn every_builtin_finding_phrasing_fits_80_columns_against_fixture_facts() {
-        let facts = finding_facts();
-        for f in builtins() {
-            for (key, value) in &f.findings {
-                if let Some(rendered) = template::render(value, &facts) {
+        for facts in [finding_facts(), finding_facts_with_long_values()] {
+            for f in builtins() {
+                for (key, value) in &f.findings {
+                    let Some(rendered) = crate::render::shorten_finding_line(value, &facts, 80)
+                    else {
+                        continue;
+                    };
                     assert!(
                         rendered.chars().count() <= 80,
-                        "{}: finding {key} {:?} is {} chars",
+                        "{}: finding {key} {:?} rendered to {} chars: {rendered:?}",
                         f.id,
-                        rendered,
+                        value,
                         rendered.chars().count()
+                    );
+                    let tail = value.rsplit_once('}').map_or(value.as_str(), |(_, t)| t);
+                    assert!(
+                        rendered.ends_with(tail),
+                        "{}: finding {key} {:?} lost its final sentence, rendered {rendered:?}",
+                        f.id,
+                        value
                     );
                 }
             }

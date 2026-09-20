@@ -33,6 +33,35 @@ pub fn render(template: &str, facts: &Facts) -> Option<String> {
     Some(out)
 }
 
+/// Every `{key}` a template references, once each, in the order it first appears. Uses the same
+/// scanning rules as `render`, including its treatment of malformed braces, so a key `render`
+/// would ignore is never reported here either.
+pub fn slot_keys(template: &str) -> Vec<String> {
+    let chars: Vec<char> = template.chars().collect();
+    let mut keys = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '{' {
+            let mut j = i + 1;
+            while j < chars.len() && is_key_char(chars[j]) {
+                j += 1;
+            }
+            if j > i + 1 && j < chars.len() && chars[j] == '}' {
+                let key: String = chars[i + 1..j].iter().collect();
+                if seen.insert(key.clone()) {
+                    keys.push(key);
+                }
+                i = j + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    keys
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +102,26 @@ mod tests {
             Some("{ not a key }")
         );
         assert_eq!(render("open { only", &f).as_deref(), Some("open { only"));
+    }
+
+    #[test]
+    fn slot_keys_finds_each_key_once_in_order() {
+        assert_eq!(
+            slot_keys("{a} {b} {a} {c}"),
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
+    }
+
+    #[test]
+    fn slot_keys_ignores_malformed_braces_like_render_does() {
+        assert!(slot_keys("{}").is_empty());
+        assert!(slot_keys("{ not a key }").is_empty());
+        assert!(slot_keys("open { only").is_empty());
+    }
+
+    #[test]
+    fn slot_keys_is_empty_for_a_template_with_no_slots() {
+        assert!(slot_keys("Ok").is_empty());
+        assert!(slot_keys("").is_empty());
     }
 }
