@@ -13,6 +13,7 @@ pub mod machine;
 pub mod mode;
 pub mod paths;
 pub mod render;
+pub mod setup;
 pub mod shell;
 pub mod show;
 pub mod sprinkles;
