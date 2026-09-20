@@ -47,6 +47,7 @@ Setup:
   init zsh           Print the hook. Add this to the end of ~/.zshrc:
                      command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
   theme install      Install the theme files without switching
+  config edit        Open the config file in your editor
 
 Try:
   bios boot --flavour sumo     Preview a flavour without changing anything
@@ -1030,6 +1031,149 @@ fn a_finding_past_its_own_ttl_is_not_shown() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Boot device order:").not());
+}
+
+#[test]
+fn config_path_prints_the_expected_path() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["config", "path"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout(format!(
+            "{}\n",
+            config.path().join("sparklebios/config.toml").display()
+        ));
+}
+
+#[test]
+fn config_path_prints_the_expected_path_when_the_file_is_absent() {
+    let config = tempfile::tempdir().unwrap();
+    assert!(!config.path().join("sparklebios/config.toml").exists());
+    bios()
+        .args(["config", "path"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout(format!(
+            "{}\n",
+            config.path().join("sparklebios/config.toml").display()
+        ));
+}
+
+#[test]
+fn config_reset_writes_the_template_and_prints_the_exact_line() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["config", "reset"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Factory defaults restored. The unicorn has been notified.\n");
+    let contents = std::fs::read_to_string(config.path().join("sparklebios/config.toml")).unwrap();
+    assert_eq!(contents, sparklebios::config::TEMPLATE);
+}
+
+#[test]
+fn config_reset_over_a_different_existing_file_leaves_a_backup_with_the_old_contents() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "flavour = \"sumo\"\n").unwrap();
+    bios()
+        .args(["config", "reset"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let backup = std::fs::read_to_string(dir.join("config.toml.bak")).unwrap();
+    assert_eq!(backup, "flavour = \"sumo\"\n");
+}
+
+#[test]
+fn config_reset_over_a_file_identical_to_the_template_writes_no_backup() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), sparklebios::config::TEMPLATE).unwrap();
+    bios()
+        .args(["config", "reset"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    assert!(!dir.join("config.toml.bak").exists());
+}
+
+#[test]
+fn config_reset_leaves_no_temp_file_behind() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "flavour = \"sumo\"\n").unwrap();
+    bios()
+        .args(["config", "reset"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["config.toml", "config.toml.bak"]);
+}
+
+#[test]
+fn config_edit_creates_the_file_from_the_template_when_absent() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["config", "edit"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("VISUAL", "/usr/bin/true")
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(config.path().join("sparklebios/config.toml")).unwrap();
+    assert_eq!(contents, sparklebios::config::TEMPLATE);
+}
+
+#[test]
+fn config_edit_does_not_overwrite_an_existing_files_contents() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "flavour = \"sumo\"\n").unwrap();
+    bios()
+        .args(["config", "edit"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("VISUAL", "/usr/bin/true")
+        .assert()
+        .success();
+    let contents = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+    assert_eq!(contents, "flavour = \"sumo\"\n");
+}
+
+#[test]
+fn config_edit_prefers_visual_over_editor() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["config", "edit"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("VISUAL", "/usr/bin/true")
+        .env("EDITOR", "/usr/bin/false")
+        .assert()
+        .success();
+}
+
+#[test]
+fn config_edit_returns_non_zero_when_the_editor_exits_non_zero() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["config", "edit"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("VISUAL", "/usr/bin/false")
+        .assert()
+        .failure()
+        .code(1);
 }
 
 #[test]

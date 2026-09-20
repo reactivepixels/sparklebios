@@ -24,6 +24,7 @@ Setup:
   init zsh           Print the hook. Add this to the end of ~/.zshrc:
                      command -v bios >/dev/null 2>&1 && eval \"$(bios init zsh)\"
   theme install      Install the theme files without switching
+  config edit        Open the config file in your editor
 
 Try:
   bios boot --flavour sumo     Preview a flavour without changing anything
@@ -77,6 +78,11 @@ enum Command {
     Theme {
         #[command(subcommand)]
         command: ThemeCommand,
+    },
+    /// Config file commands.
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
     },
 }
 
@@ -159,6 +165,22 @@ enum ThemeCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum ConfigCommand {
+    /// Print the path of the config file.
+    Path,
+    /// Open the config file in your editor.
+    ///
+    /// Creates the file from the commented defaults first if it does not exist yet. Uses
+    /// $VISUAL, then $EDITOR, then vi.
+    Edit,
+    /// Restore the config file to its commented defaults.
+    ///
+    /// If a config file already exists and differs from the defaults, its old contents are
+    /// saved to config.toml.bak first, replacing any previous backup.
+    Reset,
+}
+
 /// Parse args and dispatch. Never panics outward.
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().collect();
@@ -206,6 +228,15 @@ pub fn run() -> i32 {
                     no_prompt,
                 },
         } => theme_use(&name, dir, config, starship_config, no_prompt),
+        Command::Config {
+            command: ConfigCommand::Path,
+        } => config_path(),
+        Command::Config {
+            command: ConfigCommand::Edit,
+        } => config_edit(),
+        Command::Config {
+            command: ConfigCommand::Reset,
+        } => config_reset(),
     }
 }
 
@@ -330,6 +361,58 @@ fn use_flavour(args: UseCliArgs) -> i32 {
     .map(|f| f.id)
     .unwrap_or_else(|| "unicorn".to_string());
     println!("Flavour : {flavour_id}");
+    0
+}
+
+/// Prints the absolute path of the config file, whether or not it exists.
+fn config_path() -> i32 {
+    let Some(dir) = crate::paths::config_dir() else {
+        eprintln!("bios: cannot find a config directory");
+        return 1;
+    };
+    println!("{}", crate::config::path(&dir).display());
+    0
+}
+
+/// Opens the config file in `$VISUAL`, then `$EDITOR`, then `vi`, creating it from the template
+/// first if it does not exist. Runs the editor in the foreground with stdio inherited.
+fn config_edit() -> i32 {
+    let Some(dir) = crate::paths::config_dir() else {
+        eprintln!("bios: cannot find a config directory");
+        return 1;
+    };
+    if crate::config::ensure_exists(&dir).is_err() {
+        return 1;
+    }
+    let path = crate::config::path(&dir);
+    let editor = std::env::var("VISUAL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("EDITOR").ok().filter(|s| !s.is_empty()))
+        .unwrap_or_else(|| "vi".to_string());
+    match std::process::Command::new(&editor)
+        .arg(&path)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+    {
+        Ok(status) if status.success() => 0,
+        _ => 1,
+    }
+}
+
+/// Overwrites the config file with the commented defaults, backing up a differing existing file
+/// to config.toml.bak first.
+fn config_reset() -> i32 {
+    let Some(dir) = crate::paths::config_dir() else {
+        eprintln!("bios: cannot find a config directory");
+        return 1;
+    };
+    if crate::config::reset(&dir).is_err() {
+        return 1;
+    }
+    println!("Factory defaults restored. The unicorn has been notified.");
     0
 }
 

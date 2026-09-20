@@ -47,6 +47,87 @@ impl Default for Config {
     }
 }
 
+/// The commented default config file: what `bios config reset` writes, and what
+/// `bios config edit` creates when no config file exists yet. Every value here matches
+/// `Config::default()`; `the_template_parses_to_exactly_the_default` asserts that.
+pub const TEMPLATE: &str = "\
+# SparkleBIOS configuration.
+#
+# Every key is optional. A missing key falls back to the default shown here, and
+# a file that cannot be read or parsed is ignored rather than reported, because
+# nothing on the boot path is allowed to complain.
+
+# Which personality boots. Run `bios flavours` for the roster.
+flavour = \"unicorn\"
+
+# Whether the first boot of the day is animated. Every other boot is drawn
+# instantly.
+animate = true
+
+# How the mascot is drawn. \"auto\" uses an image where the terminal supports one,
+# \"image\" asks for the image, and \"blocks\" always draws it with text. Set this
+# to \"blocks\" if the mascot disappears when a tab goes to sleep.
+graphics = \"auto\"
+
+# Whether the health checks run. False turns off the checks, the findings on the
+# boot screen, and the background refresh that feeds them.
+checks = true
+
+# Where to look for your git repositories. The boot screen lists the three
+# touched most recently. Empty means the built-in list: ~/Code, ~/code,
+# ~/Projects, ~/projects, ~/src, ~/dev, ~/Developer, ~/repos, ~/work and ~/git.
+project_dirs = []
+";
+
+/// `<dir>/config.toml`.
+pub fn path(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join("config.toml")
+}
+
+/// Writes `contents` to `path` atomically: a temp file beside it, then rename. Leaves no temp
+/// file behind.
+fn write_atomic(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("config.toml");
+    let pid = std::process::id();
+    let tmp_path = dir.join(format!("{file_name}.{pid}.tmp"));
+    std::fs::write(&tmp_path, contents)?;
+    std::fs::rename(&tmp_path, path)?;
+    Ok(())
+}
+
+/// Creates `<dir>/config.toml` from `TEMPLATE` when it does not already exist, creating `dir`
+/// too. An existing file, of any contents, is left untouched. Returns whether a file was
+/// created.
+pub fn ensure_exists(dir: &std::path::Path) -> std::io::Result<bool> {
+    std::fs::create_dir_all(dir)?;
+    let file = path(dir);
+    if file.exists() {
+        return Ok(false);
+    }
+    write_atomic(&file, TEMPLATE)?;
+    Ok(true)
+}
+
+/// Resets `<dir>/config.toml` to `TEMPLATE`, creating `dir` if missing. When a config file
+/// already exists and its contents differ from `TEMPLATE`, its old contents are preserved first
+/// at `<dir>/config.toml.bak`, replacing any previous backup; a file already identical to the
+/// template produces no backup. Both files are written atomically: a temp file beside the
+/// target, then rename.
+pub fn reset(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let file = path(dir);
+    if let Ok(existing) = std::fs::read_to_string(&file) {
+        if existing != TEMPLATE {
+            write_atomic(&dir.join("config.toml.bak"), &existing)?;
+        }
+    }
+    write_atomic(&file, TEMPLATE)
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct RawConfig {
     animate: Option<bool>,
@@ -265,6 +346,81 @@ mod tests {
             .unwrap();
             assert_eq!(load(Some(dir.path())).graphics, expected, "{value}");
         }
+    }
+
+    #[test]
+    fn the_template_parses_to_exactly_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), TEMPLATE).unwrap();
+        assert_eq!(load(Some(dir.path())), Config::default());
+    }
+
+    #[test]
+    fn ensure_exists_creates_the_template_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("a/b");
+        assert!(ensure_exists(&nested).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(nested.join("config.toml")).unwrap(),
+            TEMPLATE
+        );
+    }
+
+    #[test]
+    fn ensure_exists_leaves_an_existing_file_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "flavour = \"sumo\"\n").unwrap();
+        assert!(!ensure_exists(dir.path()).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+            "flavour = \"sumo\"\n"
+        );
+    }
+
+    #[test]
+    fn reset_writes_the_template() {
+        let dir = tempfile::tempdir().unwrap();
+        reset(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+            TEMPLATE
+        );
+    }
+
+    #[test]
+    fn reset_over_a_different_file_leaves_a_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "flavour = \"sumo\"\n").unwrap();
+        reset(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("config.toml.bak")).unwrap(),
+            "flavour = \"sumo\"\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+            TEMPLATE
+        );
+    }
+
+    #[test]
+    fn reset_over_a_file_identical_to_the_template_writes_no_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), TEMPLATE).unwrap();
+        reset(dir.path()).unwrap();
+        assert!(!dir.path().join("config.toml.bak").exists());
+    }
+
+    #[test]
+    fn reset_leaves_no_temp_file_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "flavour = \"sumo\"\n").unwrap();
+        reset(dir.path()).unwrap();
+        let mut names: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["config.toml", "config.toml.bak"]);
     }
 
     #[test]
