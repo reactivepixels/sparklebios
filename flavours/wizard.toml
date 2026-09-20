@@ -1,0 +1,29 @@
+id = "wizard"
+name = "Wizard"
+sprite = "wizard"
+firmware = "Arcane Modular BIOS v1.001, Long Beard Edition"
+vendor = "Copyright (C) 1001-{date.year}, Tower & Sons Thaumaturgy"
+board = "GRIMOIRE-9 Staff Revision 1001"
+cpu_gag = "0 straight answers"
+part = "Hat"
+part_result = "1 found (pointy, load bearing)"
+streak = "Days the tower has remained standing: {streak.days}."
+footer = "GRIMOIRE-9-HEX-1001STAFF-00"
+quips = [
+  "{cpu.cores} cores. In my day we had one candle.",
+  "Memory checked by counting it aloud. All {mem.kb}K.",
+  "Floppy drive A: transmuted. Now a toad.",
+  "Booting from {shell.name}. An old incantation, but it holds.",
+  "Sufficiently advanced technology detected. Unimpressed.",
+  "No network code. Scrying is done by hand.",
+  "Spellbook indexed. Several pages are just recipes.",
+]
+
+[findings]
+boot_order = "Order of the day: {boot.devices}"
+boot_dirty = "Spell left half cast: {boot.device}, {boot.changes}."
+irq_conflict = "Tower occupied: port {irq.port} held by {irq.name} (pid {irq.pid}) for {irq.age}."
+virus_one = "True name written down: {virus.repo} has {virus.file} tracked by git. Unwrite it."
+virus_many = "True names written down: {virus.count} tracked secrets in {virus.repo}, including {virus.file}."
+f1 = "Press F1 to continue."
+f1_resume = "Press F1 to continue, or bios resume to return to your study in {boot.device}."

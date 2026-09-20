@@ -1,0 +1,29 @@
+id = "caveman"
+name = "Caveman"
+sprite = "caveman"
+firmware = "Rock Modular BIOS v0.001, Stone Edition"
+vendor = "Copyright (C) 40000 BC-{date.year}, Big Rock Small Rock Co."
+board = "FLINT-2 Slab Revision 1"
+cpu_gag = "0 wheels"
+part = "Fire"
+part_result = "1 found (do not touch)"
+streak = "Suns in a row: {streak.days}. Make mark on wall."
+footer = "FLINT-2-UGH-0001ROCK-00"
+quips = [
+  "{cpu.cores} cores. More than fingers on one hand. Possibly two.",
+  "Memory: {mem.kb}K. Cave wall holds about 12.",
+  "Floppy drive A: is rock. Most things are rock.",
+  "Wheel not found. Expected in a later revision.",
+  "Booting from {shell.name}. Shell is good. Shell is home.",
+  "No network code. Shouting distance only.",
+  "Fire: on. Do not put laptop near fire.",
+]
+
+[findings]
+boot_order = "Hunting grounds: {boot.devices}"
+boot_dirty = "Kill left outside cave: {boot.device}, {boot.changes}."
+irq_conflict = "Bear in cave: port {irq.port} held by {irq.name} (pid {irq.pid}) for {irq.age}."
+virus_one = "Food left out: {virus.repo} has {virus.file} tracked by git. Bear will find."
+virus_many = "Food left out: {virus.count} tracked secrets in {virus.repo}, including {virus.file}."
+f1 = "Press F1 to continue."
+f1_resume = "Press F1 to continue, or bios resume to go back to cave at {boot.device}."
