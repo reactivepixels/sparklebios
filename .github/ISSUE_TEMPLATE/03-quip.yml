@@ -28,6 +28,8 @@ body:
         - luchador
         - yeti
         - raccoon
+        - wizard
+        - caveman
         - Another flavour (say which below)
     validations:
       required: true

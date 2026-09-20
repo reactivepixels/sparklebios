@@ -436,6 +436,12 @@ fn sprinkles(args: SprinklesCliArgs) -> i32 {
             return 1;
         }
         println!("{}", sprinkles_set_message(parsed));
+        if matches!(
+            parsed,
+            crate::sprinkles::Level::Light | crate::sprinkles::Level::Full
+        ) {
+            println!("Preview it now: bios boot");
+        }
         return 0;
     }
 

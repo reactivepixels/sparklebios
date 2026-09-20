@@ -10,6 +10,8 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Two more mascots, `wizard` and `caveman`, bringing the roster to nine.
+- `bios boot` typed by hand now always plays the full show, whatever the once-a-day and nested-shell rules would have said. Those still apply to the boot your shell runs, and an explicit run leaves the state file alone, so looking at the screen does not use up the day's show.
 - The design, the voice rulebook, the theme palettes and the roadmap.
 - The crate scaffold: the `bios` binary, its command surface, the zsh hook, and a panic policy that never lets an error reach your terminal.
 - POST, the continuous integration workflow, which is exactly what it sounds like.

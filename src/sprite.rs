@@ -8,6 +8,8 @@ const VIKING_PNG: &[u8] = include_bytes!("../sprites/viking.png");
 const LUCHADOR_PNG: &[u8] = include_bytes!("../sprites/luchador.png");
 const YETI_PNG: &[u8] = include_bytes!("../sprites/yeti.png");
 const RACCOON_PNG: &[u8] = include_bytes!("../sprites/raccoon.png");
+const WIZARD_PNG: &[u8] = include_bytes!("../sprites/wizard.png");
+const CAVEMAN_PNG: &[u8] = include_bytes!("../sprites/caveman.png");
 
 /// The built-in sprite named `name`, as its PNG bytes, or `None` if there is no sprite by that
 /// name.
@@ -20,6 +22,8 @@ pub fn builtin(name: &str) -> Option<&'static [u8]> {
         "luchador" => Some(LUCHADOR_PNG),
         "yeti" => Some(YETI_PNG),
         "raccoon" => Some(RACCOON_PNG),
+        "wizard" => Some(WIZARD_PNG),
+        "caveman" => Some(CAVEMAN_PNG),
         _ => None,
     }
 }
@@ -187,7 +191,8 @@ mod tests {
     fn every_builtin_sprite_png_starts_with_the_png_signature() {
         const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
         for name in [
-            "unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon",
+            "unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon", "wizard",
+            "caveman",
         ] {
             let png = builtin(name).unwrap();
             assert!(

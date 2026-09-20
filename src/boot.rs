@@ -208,14 +208,21 @@ fn resolve_flavour(
 /// Never panics outward and never returns an error: a boot that cannot happen prints nothing.
 pub fn run(args: &BootArgs) {
     if args.hook {
-        run_shell_boot(args, true);
-    } else if args.machine.is_some() || args.flavour.is_some() {
-        run_preview(args);
+        run_shell_boot(args);
     } else {
-        run_shell_boot(args, false);
+        run_preview(args);
     }
 }
 
+/// `bios boot` typed by hand, with or without `--machine` or `--flavour`: a viewing command, not
+/// the real boot. Always plays the `Full` show (never Off, Quiet or Fast): it ignores
+/// `SPARKLEBIOS_BOOTED`, the burst window and the once-a-day rule entirely, and never touches the
+/// state file, so looking at the screen never consumes the day's real boot or advances the
+/// streak. It still respects everything about what the terminal can do rather than about boot
+/// policy: a non-tty stdout draws the final screen instead of animating, same as `NO_COLOR`,
+/// `SPARKLEBIOS_ANIMATE=0`, `--no-animate` and the `graphics` setting. The streak line shows the
+/// streak already on disk, read without advancing it; a preview's `shell.boot_ms` is never a real
+/// shell startup, so it is dropped rather than shown.
 fn run_preview(args: &BootArgs) {
     let user_dir = crate::paths::user_machines_dir();
     let config = crate::config::load(crate::paths::config_dir().as_deref());
@@ -231,6 +238,14 @@ fn run_preview(args: &BootArgs) {
     let mut facts = crate::facts::gather();
     // A preview is not a real shell startup, so a stale or meaningless boot time never appears.
     facts.remove("shell.boot_ms");
+
+    // Read only: a preview shows the streak already on disk without advancing it.
+    let state = match &crate::paths::state_dir() {
+        Some(dir) => crate::state::State::load(dir),
+        None => crate::state::State::default(),
+    };
+    facts.insert("streak.days", state.streak_days.to_string());
+    facts.insert("streak.label", state.streak_label());
 
     let now = crate::clock::now_unix();
     let cache = load_cache(&config);
@@ -276,29 +291,23 @@ fn run_preview(args: &BootArgs) {
     refresh_if_stale(cache.as_ref(), now);
 }
 
-/// The real boot: `bios boot` (writes to stdout, keys discarded) or `bios boot --hook` (writes
-/// to `/dev/tty`, and prints only the filtered typed bytes to stdout). Both share the same
-/// decision, screen (always `pc95`), streak and state handling; only the target, whether the
-/// screen animates (only on a `Full` decision) and what happens to the typed bytes differ.
-fn run_shell_boot(args: &BootArgs, hook: bool) {
-    let tty_file = if hook {
-        match std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("/dev/tty")
-        {
-            Ok(file) => Some(file),
-            Err(_) => return,
-        }
-    } else {
-        None
+/// The real boot, run only by the shell hook as `bios boot --hook`: writes to `/dev/tty` and
+/// prints only the filtered typed bytes to stdout. The Off, Quiet, Fast and Full decision
+/// (`mode::decide`, including `SPARKLEBIOS_BOOTED` and the burst window), the screen (always
+/// `pc95`), the streak and the state handling are all unchanged from before the hand-typed
+/// viewing command split off into `run_preview`.
+fn run_shell_boot(args: &BootArgs) {
+    let mut tty_file = match std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+    {
+        Ok(file) => file,
+        Err(_) => return,
     };
 
-    let is_tty = match &tty_file {
-        // SAFETY: `f` is a valid, open file; `isatty` only reads its fd.
-        Some(f) => unsafe { libc::isatty(f.as_raw_fd()) != 0 },
-        None => std::io::stdout().is_terminal(),
-    };
+    // SAFETY: `tty_file` is a valid, open file; `isatty` only reads its fd.
+    let is_tty = unsafe { libc::isatty(tty_file.as_raw_fd()) != 0 };
 
     let now = crate::clock::now_unix();
     let today = crate::clock::day_string(now as i64);
@@ -361,26 +370,16 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
     }
 
     let mode = color_mode();
-    let cols_fd = tty_file.as_ref().map_or(1, |f| f.as_raw_fd());
-    let term_cols = crate::term::cols(cols_fd);
+    let term_cols = crate::term::cols(tty_file.as_raw_fd());
     // Fast is the same screen drawn instantly: only a Full decision ever animates.
     let animate =
         decision == BootMode::Full && animate_enabled(&config, args.no_animate, mode, is_tty);
-    let key_fd = tty_file
-        .as_ref()
-        .map(|f| f.as_raw_fd())
-        .or_else(|| std::io::stdin().is_terminal().then_some(0));
+    let key_fd = Some(tty_file.as_raw_fd());
 
     let sprinkles = resolve_sprinkles(
         config.sprinkles,
         env_var("SPARKLEBIOS_SPRINKLES").as_deref(),
     );
-    let mut stdout_handle = std::io::stdout();
-    let mut tty_write = tty_file;
-    let out: &mut dyn Write = match &mut tty_write {
-        Some(f) => f,
-        None => &mut stdout_handle,
-    };
     let typed = play_or_render(
         &machine,
         &facts,
@@ -391,13 +390,11 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
         flavour.as_ref(),
         &findings,
         animate,
-        out,
+        &mut tty_file,
         key_fd,
         sprinkles,
     );
-    if hook {
-        write_stdout_bytes(&crate::show::filter_typed(&typed));
-    }
+    write_stdout_bytes(&crate::show::filter_typed(&typed));
 
     state.last_boot = Some(now);
     if decision == BootMode::Full {
@@ -414,15 +411,11 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
 
 /// The whole of what a `Quiet` decision does: nothing, unless `config.checks` is true and a fresh
 /// `Fail` finding is sitting in the cache, in which case its rendered line (flavour phrasing
-/// first, then the machine's) is written to `target` (the same `/dev/tty` or stdout a real boot
-/// would use) as plain text: no paint, no border, no padding, no colour, and no F1 line. Spawns a
-/// detached refresh when the cache is stale either way. Never touches state; that stays exactly
-/// as the `Fast` and `Full` paths leave it.
-fn run_quiet_fail_line(
-    config: &crate::config::Config,
-    now: u64,
-    mut target: Option<std::fs::File>,
-) {
+/// first, then the machine's) is written to `target` (the `/dev/tty` a real boot writes to) as
+/// plain text: no paint, no border, no padding, no colour, and no F1 line. Spawns a detached
+/// refresh when the cache is stale either way. Never touches state; that stays exactly as the
+/// `Fast` and `Full` paths leave it.
+fn run_quiet_fail_line(config: &crate::config::Config, now: u64, mut target: std::fs::File) {
     if !config.checks {
         return;
     }
@@ -451,13 +444,8 @@ fn run_quiet_fail_line(
             {
                 let mut line = text;
                 line.push('\n');
-                let mut stdout_handle = std::io::stdout();
-                let out: &mut dyn Write = match &mut target {
-                    Some(f) => f,
-                    None => &mut stdout_handle,
-                };
-                let _ = out.write_all(line.as_bytes());
-                let _ = out.flush();
+                let _ = target.write_all(line.as_bytes());
+                let _ = target.flush();
             }
         }
     }

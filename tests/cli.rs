@@ -170,12 +170,89 @@ fn hook_is_valid_fish() {
     }
 }
 
+/// `bios boot` typed by hand is a viewing command, not the real boot: stdout not being a tty only
+/// stops the show from animating (see `boot_draws_the_final_screen_even_when_stdout_is_not_a_tty`
+/// below), it never suppresses the screen the way the real boot's `Off` decision does.
 #[test]
-fn boot_prints_nothing_when_stdout_is_not_a_tty() {
+fn boot_draws_the_final_screen_even_when_stdout_is_not_a_tty() {
     let state = tempfile::tempdir().unwrap();
     bios()
         .arg("boot")
         .env("XDG_STATE_HOME", state.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+    assert!(!state.path().join("sparklebios/state.json").exists());
+}
+
+/// The bug: the shell hook exports `SPARKLEBIOS_BOOTED=1` so a shell started inside another shell
+/// does not boot twice, but a hand typed `bios boot` must ignore it entirely and still draw.
+#[test]
+fn boot_with_the_booted_env_var_set_still_draws_the_screen() {
+    bios()
+        .arg("boot")
+        .env("SPARKLEBIOS_BOOTED", "1")
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+}
+
+/// A hand typed `bios boot` ignores the burst window entirely: two runs back to back both draw
+/// the full screen, unlike two real boots inside the same shell startup.
+#[test]
+fn boot_twice_in_a_row_both_draw_the_full_screen() {
+    for _ in 0..2 {
+        bios()
+            .arg("boot")
+            .env("NO_COLOR", "1")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+    }
+}
+
+/// A hand typed `bios boot` never creates or modifies the state file: absent stays absent, and an
+/// existing file comes out byte for byte the same.
+#[test]
+fn boot_never_creates_or_modifies_the_state_file() {
+    let state = tempfile::tempdir().unwrap();
+    let state_file = state.path().join("sparklebios/state.json");
+
+    bios()
+        .arg("boot")
+        .env("XDG_STATE_HOME", state.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success();
+    assert!(!state_file.exists());
+
+    std::fs::create_dir_all(state_file.parent().unwrap()).unwrap();
+    let before = br#"{"last_boot":1000,"last_full_day":"2026-09-19","streak_days":5,"streak_last_day":"2026-09-19"}"#;
+    std::fs::write(&state_file, before).unwrap();
+
+    bios()
+        .arg("boot")
+        .env("XDG_STATE_HOME", state.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success();
+
+    assert_eq!(std::fs::read(&state_file).unwrap(), before);
+}
+
+/// `bios boot --hook`, unlike the hand typed viewing command above, still honours
+/// `SPARKLEBIOS_BOOTED` (part of the `Off` decision `mode::decide` makes; see `mode.rs`'s
+/// `off_conditions` test for the full set) and so never writes the state file either.
+#[test]
+fn hook_still_honours_the_booted_env_var_and_never_writes_state() {
+    let state = tempfile::tempdir().unwrap();
+    bios()
+        .args(["boot", "--hook"])
+        .env("XDG_STATE_HOME", state.path())
+        .env("SPARKLEBIOS_BOOTED", "1")
+        .env("NO_COLOR", "1")
         .assert()
         .success()
         .stdout("");
@@ -209,15 +286,39 @@ fn preview_shows_the_memory_count_on_macos() {
 }
 
 #[test]
-fn preview_omits_the_streak_line() {
+fn preview_shows_zero_days_when_there_is_no_state_file_yet() {
+    let state = tempfile::tempdir().unwrap();
     bios()
         .args(["boot", "--flavour", "unicorn"])
+        .env("XDG_STATE_HOME", state.path())
         .env("NO_COLOR", "1")
         .assert()
         .success()
         .stdout(predicate::str::contains("Sparkle Modular BIOS"))
-        .stdout(predicate::str::contains("Boot streak").not())
+        .stdout(predicate::str::contains("Boot streak: 0 days"))
         .stdout(predicate::str::contains("{").not());
+    assert!(!state.path().join("sparklebios/state.json").exists());
+}
+
+/// The streak line shows the streak already on disk, read without advancing it: a preview never
+/// increments it, and never writes it back either.
+#[test]
+fn preview_shows_the_stored_streak_without_advancing_it() {
+    let state = tempfile::tempdir().unwrap();
+    let state_dir = state.path().join("sparklebios");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    let before = br#"{"last_boot":1000,"last_full_day":"2026-09-19","streak_days":5,"streak_last_day":"2026-09-19"}"#;
+    std::fs::write(state_dir.join("state.json"), before).unwrap();
+
+    bios()
+        .args(["boot", "--flavour", "unicorn"])
+        .env("XDG_STATE_HOME", state.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Boot streak: 5 days"));
+
+    assert_eq!(std::fs::read(state_dir.join("state.json")).unwrap(), before);
 }
 
 #[test]
@@ -417,14 +518,14 @@ fn sprinkles_with_no_level_prints_the_current_level() {
 }
 
 #[test]
-fn sprinkles_light_prints_the_tasteful_line_and_persists() {
+fn sprinkles_light_prints_the_tasteful_line_then_the_preview_hint_and_persists() {
     let config = tempfile::tempdir().unwrap();
     bios()
         .args(["sprinkles", "light"])
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success()
-        .stdout("Sprinkles : light. Tasteful.\n");
+        .stdout("Sprinkles : light. Tasteful.\nPreview it now: bios boot\n");
     bios()
         .arg("sprinkles")
         .env("XDG_CONFIG_HOME", config.path())
@@ -434,18 +535,18 @@ fn sprinkles_light_prints_the_tasteful_line_and_persists() {
 }
 
 #[test]
-fn sprinkles_full_prints_you_asked_for_this() {
+fn sprinkles_full_prints_you_asked_for_this_then_the_preview_hint() {
     let config = tempfile::tempdir().unwrap();
     bios()
         .args(["sprinkles", "full"])
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success()
-        .stdout("Sprinkles : full. You asked for this.\n");
+        .stdout("Sprinkles : full. You asked for this.\nPreview it now: bios boot\n");
 }
 
 #[test]
-fn sprinkles_off_prints_the_bios_is_not_hurt_line() {
+fn sprinkles_off_prints_the_bios_is_not_hurt_line_with_no_preview_hint() {
     let config = tempfile::tempdir().unwrap();
     bios()
         .args(["sprinkles", "off"])

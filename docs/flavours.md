@@ -5,7 +5,7 @@ flavour is the mascot, the firmware and vendor wording, one signature
 "Detecting" line, the streak wording, the footer code and the quips. A
 flavoured machine (`flavoured = true`, see [machines.md](machines.md)) draws
 these from the current flavour instead of hardcoding them; `pc95` is the only
-built-in machine that does. SparkleBIOS ships seven flavours, `unicorn` (the
+built-in machine that does. SparkleBIOS ships nine flavours, `unicorn` (the
 default), `sumo`, `ninja`, `viking`, `luchador`, `yeti` and `raccoon`, and can
 load more from disk.
 
