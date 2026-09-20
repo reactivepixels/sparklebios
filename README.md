@@ -218,9 +218,11 @@ the BIOS should detect.
 
 ## Questions people ask
 
-**Will it slow my shell?** It has a time budget and the budget is tested. Measured
-on an Apple M3 Pro: 2.5ms for a whole boot, process start included. It spawns
-nothing and waits for nothing.
+**Will it slow my shell?** It has a time budget, and CI measures it against that
+budget on every push. On an Apple M3 Pro a new tab costs 3.4ms, process start
+included, and 1.7ms of that is what starting any program at all costs. It spawns
+nothing and waits for nothing. The measurements are in
+[docs/speed.md](docs/speed.md).
 
 **Does it phone home?** No. See principle 7. In 1985 there was nothing to phone.
 
