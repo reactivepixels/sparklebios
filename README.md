@@ -41,6 +41,18 @@ Add this line to the END of your `~/.zshrc`, then open a new tab. It boots.
 command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
 ```
 
+Bash, in `~/.bashrc`:
+
+```
+command -v bios >/dev/null 2>&1 && eval "$(bios init bash)"
+```
+
+Fish, in `~/.config/fish/config.fish`:
+
+```
+command -v bios >/dev/null 2>&1; and bios init fish | source
+```
+
 To try it without touching your shell: `bios boot`
 
 ## Flavours

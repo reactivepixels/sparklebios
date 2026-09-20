@@ -106,6 +106,70 @@ fn hook_is_valid_zsh() {
 }
 
 #[test]
+fn init_bash_prints_the_hook() {
+    bios()
+        .args(["init", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bios boot --hook"))
+        .stdout(predicate::str::contains("SPARKLEBIOS_BOOTED"));
+}
+
+#[test]
+fn init_bash_defines_the_resume_wrapper_and_keeps_the_boot_hook_call() {
+    bios()
+        .args(["init", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bios boot --hook"))
+        .stdout(predicate::str::contains("bios() {"))
+        .stdout(predicate::str::contains("command bios resume"))
+        .stdout(predicate::str::contains("builtin cd --"));
+}
+
+#[test]
+fn hook_is_valid_bash() {
+    let bash = std::process::Command::new("bash")
+        .args(["-n", "shell/init.bash"])
+        .status();
+    if let Ok(status) = bash {
+        assert!(status.success(), "shell/init.bash has a syntax error");
+    }
+}
+
+#[test]
+fn init_fish_prints_the_hook() {
+    bios()
+        .args(["init", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bios boot --hook"))
+        .stdout(predicate::str::contains("SPARKLEBIOS_BOOTED"));
+}
+
+#[test]
+fn init_fish_defines_the_resume_wrapper_and_keeps_the_boot_hook_call() {
+    bios()
+        .args(["init", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bios boot --hook"))
+        .stdout(predicate::str::contains("function bios"))
+        .stdout(predicate::str::contains("command bios resume"))
+        .stdout(predicate::str::contains("builtin cd --"));
+}
+
+#[test]
+fn hook_is_valid_fish() {
+    let fish = std::process::Command::new("fish")
+        .args(["--no-execute", "shell/init.fish"])
+        .status();
+    if let Ok(status) = fish {
+        assert!(status.success(), "shell/init.fish has a syntax error");
+    }
+}
+
+#[test]
 fn boot_prints_nothing_when_stdout_is_not_a_tty() {
     let state = tempfile::tempdir().unwrap();
     bios()
@@ -364,9 +428,7 @@ fn fetch_shows_the_theme_a_ghostty_config_names() {
         .env("NO_COLOR", "1")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Theme     : rainbows-and-unicorns-mane",
-        ));
+        .stdout(predicate::str::contains("Theme     : Mane"));
 }
 
 #[cfg(target_os = "macos")]

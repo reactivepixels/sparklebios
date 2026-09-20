@@ -93,6 +93,10 @@ enum Command {
 enum InitShell {
     /// Print the zsh hook.
     Zsh,
+    /// Print the bash hook.
+    Bash,
+    /// Print the fish hook.
+    Fish,
 }
 
 #[derive(Debug, Args)]
@@ -200,6 +204,18 @@ pub fn run() -> i32 {
             shell: InitShell::Zsh,
         } => {
             print!("{}", shell::ZSH_HOOK);
+            0
+        }
+        Command::Init {
+            shell: InitShell::Bash,
+        } => {
+            print!("{}", shell::BASH_HOOK);
+            0
+        }
+        Command::Init {
+            shell: InitShell::Fish,
+        } => {
+            print!("{}", shell::FISH_HOOK);
             0
         }
         Command::Boot(args) => {

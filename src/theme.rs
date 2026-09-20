@@ -84,6 +84,31 @@ pub fn resolve_name(name: &str) -> Option<&'static str> {
         .map(|(full, _)| *full)
 }
 
+/// The display name `bios fetch`'s Theme row shows for each of our ten themes: the section
+/// headings of `docs/theme.md`, the canonical display names.
+pub const DISPLAY_NAMES: [(&str, &str); 10] = [
+    ("rainbows-and-unicorns", "Six Stripes"),
+    ("rainbows-and-unicorns-paper", "Paper White"),
+    ("rainbows-and-unicorns-ega", "EGA '85"),
+    ("rainbows-and-unicorns-workbench", "Workbench 1.0"),
+    ("rainbows-and-unicorns-mane", "Mane"),
+    ("rainbows-and-unicorns-miami", "Miami"),
+    ("rainbows-and-unicorns-arcade", "Arcade"),
+    ("rainbows-and-unicorns-vhs", "VHS"),
+    ("rainbows-and-unicorns-den", "Den"),
+    ("rainbows-and-unicorns-sorbet", "Sorbet"),
+];
+
+/// The display name for `full_name`, one of ours. `None` when `full_name` is not one of ours,
+/// for instance an unrelated Ghostty theme the user has configured: the caller should fall back
+/// to showing `full_name` itself rather than omitting it or guessing a prettier form.
+pub fn display_name(full_name: &str) -> Option<&'static str> {
+    DISPLAY_NAMES
+        .iter()
+        .find(|(name, _)| *name == full_name)
+        .map(|(_, display)| *display)
+}
+
 /// Whether `line` starts with `theme`, then zero or more spaces, then `=`: Ghostty's own syntax
 /// for setting the theme.
 fn is_theme_line(line: &str) -> bool {
@@ -383,6 +408,47 @@ pub fn set_starship_palette(path: &Path, palette: &str) -> std::io::Result<bool>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_name_returns_the_display_name_for_each_theme() {
+        assert_eq!(display_name("rainbows-and-unicorns"), Some("Six Stripes"));
+        assert_eq!(
+            display_name("rainbows-and-unicorns-paper"),
+            Some("Paper White")
+        );
+        assert_eq!(display_name("rainbows-and-unicorns-ega"), Some("EGA '85"));
+        assert_eq!(
+            display_name("rainbows-and-unicorns-workbench"),
+            Some("Workbench 1.0")
+        );
+        assert_eq!(display_name("rainbows-and-unicorns-mane"), Some("Mane"));
+        assert_eq!(display_name("rainbows-and-unicorns-miami"), Some("Miami"));
+        assert_eq!(display_name("rainbows-and-unicorns-arcade"), Some("Arcade"));
+        assert_eq!(display_name("rainbows-and-unicorns-vhs"), Some("VHS"));
+        assert_eq!(display_name("rainbows-and-unicorns-den"), Some("Den"));
+        assert_eq!(display_name("rainbows-and-unicorns-sorbet"), Some("Sorbet"));
+    }
+
+    #[test]
+    fn display_name_is_none_for_a_theme_that_is_not_one_of_ours() {
+        assert_eq!(display_name("gruvbox_dark"), None);
+    }
+
+    #[test]
+    fn every_theme_and_every_display_name_pair_up_with_no_gaps_on_either_side() {
+        for (full_name, _) in THEMES {
+            assert!(
+                DISPLAY_NAMES.iter().any(|(name, _)| *name == full_name),
+                "{full_name} is in THEMES but has no display name"
+            );
+        }
+        for (full_name, _) in DISPLAY_NAMES {
+            assert!(
+                THEMES.iter().any(|(name, _)| *name == full_name),
+                "{full_name} has a display name but is not in THEMES"
+            );
+        }
+    }
 
     #[test]
     fn resolve_name_accepts_short_and_full_names() {

@@ -192,6 +192,16 @@ fn resolve_graphics(config: &crate::config::Config) -> Graphics {
     }
 }
 
+/// The value the Theme row shows for a raw Ghostty theme name (see `crate::facts::ghostty_theme`):
+/// its display name (`crate::theme::display_name`) for one of ours, `raw` itself otherwise, since
+/// an unrecognised theme is still a true answer, not something to omit or guess a prettier form
+/// for.
+fn theme_display(raw: &str) -> String {
+    crate::theme::display_name(raw)
+        .map(str::to_string)
+        .unwrap_or_else(|| raw.to_string())
+}
+
 /// `bios fetch`: gathers the real facts and prints the screen once. Never panics outward.
 pub fn run() -> i32 {
     let config = crate::config::load(crate::paths::config_dir().as_deref());
@@ -208,7 +218,7 @@ pub fn run() -> i32 {
         facts.insert("terminal.name", terminal);
     }
     if let Some(theme) = crate::facts::ghostty_theme(&crate::paths::ghostty_config_candidates()) {
-        facts.insert("ghostty.theme", theme);
+        facts.insert("ghostty.theme", theme_display(&theme));
     }
     if let Some(dir) = crate::paths::state_dir() {
         let state = crate::state::State::load(&dir);
@@ -269,7 +279,7 @@ mod tests {
         let mut facts = Facts::fixture();
         facts.insert("mem.gb", "36");
         facts.insert("terminal.name", "Ghostty");
-        facts.insert("ghostty.theme", "rainbows-and-unicorns-mane");
+        facts.insert("ghostty.theme", "Mane");
         facts.insert("flavour.name", "Unicorn");
         facts
     }
@@ -303,6 +313,20 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn theme_display_uses_the_display_name_for_one_of_ours() {
+        assert_eq!(theme_display("rainbows-and-unicorns-mane"), "Mane");
+    }
+
+    #[test]
+    fn an_unrecognised_theme_in_a_sandboxed_ghostty_config_is_shown_verbatim() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config");
+        std::fs::write(&path, "theme = gruvbox_dark\n").unwrap();
+        let raw = crate::facts::ghostty_theme(&[path]).unwrap();
+        assert_eq!(theme_display(&raw), "gruvbox_dark");
     }
 
     #[test]

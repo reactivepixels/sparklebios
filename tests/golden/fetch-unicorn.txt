@@ -7,5 +7,5 @@ CPU       : Apple M4 Pro, 14 cores
 Memory    : 36 GB
 Disk      : 994GB, 78% used
 Flavour   : Unicorn
-Theme     : rainbows-and-unicorns-mane
+Theme     : Mane
 Streak    : 12 days

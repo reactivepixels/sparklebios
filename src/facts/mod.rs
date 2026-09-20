@@ -137,6 +137,18 @@ mod tests {
         assert!(!f.get("shell.name").unwrap().starts_with('-'));
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn gather_reads_real_hardware_on_linux() {
+        let f = gather();
+        assert!(f.get("mem.kb").unwrap().parse::<u64>().unwrap() > 1_000_000);
+        assert!(f.get("cpu.cores").unwrap().parse::<u32>().unwrap() >= 1);
+        assert!(f.get("disk.used_pct").unwrap().parse::<u32>().unwrap() <= 100);
+        assert!(f.get("disk.size_gb").unwrap().parse::<u64>().unwrap() > 0);
+        assert!(!f.get("os.name").unwrap().is_empty());
+        assert!(!f.get("shell.name").unwrap().starts_with('-'));
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn gather_is_fast() {
