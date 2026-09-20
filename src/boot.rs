@@ -141,8 +141,9 @@ fn animate_enabled(
 /// `animate` is true and, if a key is to be polled, raw mode can actually be entered; the final
 /// static screen otherwise. `flavour`, for a flavoured machine, supplies its quips and its logo
 /// sprite. `findings` supplies the `Findings` and `F1` lines, empty when checks are off or there
-/// is nothing fresh in the cache. Returns the raw bytes read from `key_fd` while the show played,
-/// in order, empty when it did not animate or nothing was typed.
+/// is nothing fresh in the cache. `sprinkles` is only ever read once the show actually animates:
+/// the static path never spends a cycle on it. Returns the raw bytes read from `key_fd` while the
+/// show played, in order, empty when it did not animate or nothing was typed.
 #[allow(clippy::too_many_arguments)]
 fn play_or_render(
     machine: &crate::machine::Machine,
@@ -156,6 +157,7 @@ fn play_or_render(
     animate: bool,
     out: &mut dyn Write,
     key_fd: Option<i32>,
+    sprinkles: crate::sprinkles::Level,
 ) -> Vec<u8> {
     if animate {
         let guard = key_fd.and_then(crate::tty::RawGuard::new);
@@ -167,7 +169,7 @@ fn play_or_render(
                 graphics,
             };
             return crate::show::play(
-                machine, facts, seed, geometry, flavour, findings, out, key_fd, 1.0,
+                machine, facts, seed, geometry, flavour, findings, out, key_fd, 1.0, sprinkles,
             )
             .typed;
         }
@@ -178,6 +180,16 @@ fn play_or_render(
     let _ = out.write_all(output.as_bytes());
     let _ = out.flush();
     Vec::new()
+}
+
+/// The effective sprinkles level: `SPARKLEBIOS_SPRINKLES`, when set, wins over
+/// `config_sprinkles`, even when it does not parse to a known level (it then reads as `Off`), the
+/// same rule `resolve_graphics_pref` follows for `graphics`.
+fn resolve_sprinkles(
+    config_sprinkles: crate::sprinkles::Level,
+    sprinkles_env: Option<&str>,
+) -> crate::sprinkles::Level {
+    crate::sprinkles::resolve(config_sprinkles, sprinkles_env)
 }
 
 /// Resolves the flavour to use: the explicit id when given and known, else the configured one,
@@ -241,6 +253,10 @@ fn run_preview(args: &BootArgs) {
     let term_cols = crate::term::cols(1);
     let animate = animate_enabled(&config, args.no_animate, mode, stdout_is_tty);
     let key_fd = std::io::stdin().is_terminal().then_some(0);
+    let sprinkles = resolve_sprinkles(
+        config.sprinkles,
+        env_var("SPARKLEBIOS_SPRINKLES").as_deref(),
+    );
     let mut stdout = std::io::stdout();
     play_or_render(
         &machine,
@@ -254,6 +270,7 @@ fn run_preview(args: &BootArgs) {
         animate,
         &mut stdout,
         key_fd,
+        sprinkles,
     );
 
     refresh_if_stale(cache.as_ref(), now);
@@ -354,6 +371,10 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
         .map(|f| f.as_raw_fd())
         .or_else(|| std::io::stdin().is_terminal().then_some(0));
 
+    let sprinkles = resolve_sprinkles(
+        config.sprinkles,
+        env_var("SPARKLEBIOS_SPRINKLES").as_deref(),
+    );
     let mut stdout_handle = std::io::stdout();
     let mut tty_write = tty_file;
     let out: &mut dyn Write = match &mut tty_write {
@@ -372,6 +393,7 @@ fn run_shell_boot(args: &BootArgs, hook: bool) {
         animate,
         out,
         key_fd,
+        sprinkles,
     );
     if hook {
         write_stdout_bytes(&crate::show::filter_typed(&typed));
@@ -501,6 +523,17 @@ mod tests {
         assert_eq!(
             resolve_graphics_pref(GraphicsPref::Blocks, Some("holographic")),
             GraphicsPref::Auto
+        );
+    }
+
+    #[test]
+    fn resolve_sprinkles_falls_back_to_config_with_no_env_and_env_wins_including_when_unknown() {
+        use crate::sprinkles::Level;
+        assert_eq!(resolve_sprinkles(Level::Full, None), Level::Full);
+        assert_eq!(resolve_sprinkles(Level::Off, Some("full")), Level::Full);
+        assert_eq!(
+            resolve_sprinkles(Level::Full, Some("holographic")),
+            Level::Off
         );
     }
 }

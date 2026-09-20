@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>A 1995 POST screen for your terminal that is secretly a health check.</strong>
+  <strong>Boot every terminal tab like a 1995 PC. It counts your RAM, detects a unicorn, and runs a real health check.</strong>
 </p>
 
 <p align="center">
@@ -126,6 +126,14 @@ strange state. Every other boot is drawn instantly.
 
 Where the terminal can draw images (Ghostty, kitty) the mascot is a real image.
 Everywhere else it is drawn with half-block characters.
+
+## Sprinkles
+
+Off by default, because not everyone wants sprinkles. Turn it on with `bios
+sprinkles light` (a shimmer, a twinkle, and a stripe sweep on a streak
+milestone) or `bios sprinkles full` (the same, plus the POST beep and beep
+codes). Sprinkles only ever run in the animated show, never flash, and cost
+nothing when off. See [docs/sprinkles.md](docs/sprinkles.md).
 
 ## The jokes are true
 

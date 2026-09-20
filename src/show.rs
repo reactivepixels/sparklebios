@@ -1,11 +1,12 @@
 //! The animated show: plays a machine's steps with their delays, honouring any key press as a
 //! skip that jumps straight to the final screen.
 
-use crate::checks::Finding;
+use crate::checks::{Finding, Severity};
 use crate::facts::Facts;
 use crate::flavour::Flavour;
 use crate::machine::Machine;
 use crate::render::{self, AnimatedKind, ColorMode, Graphics, Span};
+use crate::sprinkles;
 
 /// The geometry the show renders against: the same three inputs `render_static` takes besides
 /// the machine and facts.
@@ -21,7 +22,50 @@ pub struct ShowOutcome {
     pub typed: Vec<u8>,
 }
 
+/// A test-only timeline of exactly what `play` wrote and exactly how long, nominally (before
+/// `speed`), it held between writes: every `write_bytes` call and every `wait_for_skip` call
+/// records itself here when `sim::record` is recording, so a test can measure the real frame
+/// timing the player uses instead of reimplementing it. Compiled out entirely otherwise.
+#[cfg(test)]
+pub(crate) mod sim {
+    use std::cell::RefCell;
+
+    pub(crate) enum Event {
+        Draw(Vec<u8>),
+        Wait(u64),
+    }
+
+    thread_local! {
+        static LOG: RefCell<Option<Vec<Event>>> = const { RefCell::new(None) };
+    }
+
+    fn log(event: Event) {
+        LOG.with(|log| {
+            if let Some(events) = log.borrow_mut().as_mut() {
+                events.push(event);
+            }
+        });
+    }
+
+    pub(crate) fn draw(bytes: &[u8]) {
+        log(Event::Draw(bytes.to_vec()));
+    }
+
+    pub(crate) fn wait(ms: u64) {
+        log(Event::Wait(ms));
+    }
+
+    /// Runs `f`, returning every event it recorded, in order.
+    pub(crate) fn record(f: impl FnOnce()) -> Vec<Event> {
+        LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
+        f();
+        LOG.with(|log| log.borrow_mut().take().unwrap())
+    }
+}
+
 fn write_bytes(out: &mut dyn std::io::Write, bytes: &[u8]) {
+    #[cfg(test)]
+    sim::draw(bytes);
     let _ = out.write_all(bytes);
     let _ = out.flush();
 }
@@ -53,10 +97,20 @@ fn finish_row(out: &mut dyn std::io::Write) {
     write_bytes(out, b"\n");
 }
 
+/// A logical line's plain text: every span's own text, concatenated, with no styling. Used to
+/// spot two rows sprinkles care about without either machine or step needing to say so: the
+/// streak line (matched against `facts.get("flavour.streak")`) and the first findings line
+/// (matched against `render::finding_text` for the first finding).
+fn plain_text(spans: &[Span]) -> String {
+    spans.iter().map(|s| s.text.as_str()).collect()
+}
+
 /// Waits for a key, honouring `speed`. `key_fd` of `None` (no terminal to poll) just sleeps, in
 /// slices, and never reports a skip. Any bytes read are appended to `typed` and count as a skip,
 /// per the rule that with `ISIG` off Ctrl-C arrives as a plain byte (0x03) like any other key.
 fn wait_for_skip(typed: &mut Vec<u8>, key_fd: Option<i32>, ms: u64, speed: f32) -> bool {
+    #[cfg(test)]
+    sim::wait(ms);
     let total_ms = ((ms as f64) * (speed as f64)).max(0.0).round() as u64;
     if total_ms == 0 {
         return false;
@@ -112,6 +166,16 @@ fn frames_for(step: &render::AnimatedStep) -> Vec<(&Vec<Span>, u64)> {
 /// resolve. `findings` supplies the lines for a `Findings` or `F1` step, the same way `flavour`
 /// does for a `Quip` step. Returns the bytes read from `key_fd` while the show played, unfiltered
 /// and in order.
+///
+/// `sprinkles`, at `Off`, runs none of the code below this point beyond reading the value itself:
+/// every row is exactly what it would have been before sprinkles existed. At `Light` or `Full`,
+/// on a screen at least `sprinkles::MIN_COLS` wide and only until a key is typed, the show also
+/// plays: a shimmer once the first line finishes (`sprinkles::shimmer_frame`); a twinkle in the
+/// margin either side of the mascot while the memory count runs, the one row in the logo box that
+/// redraws enough times for a sprinkle to be transient there (`sprinkles::twinkle_frame`); and,
+/// only on a streak milestone, a stripe sweep across the streak line (`sprinkles::stripe_frame`).
+/// `Full` also beeps: once after the memory count, and three times, `sprinkles::BEEP_CODE_GAP_MS`
+/// apart, before the findings print, when one of them is a `fail`.
 #[allow(clippy::too_many_arguments)]
 pub fn play(
     machine: &Machine,
@@ -123,6 +187,7 @@ pub fn play(
     out: &mut dyn std::io::Write,
     key_fd: Option<i32>,
     speed: f32,
+    sprinkles: sprinkles::Level,
 ) -> ShowOutcome {
     let row_geometry = render::row_geometry(
         machine,
@@ -137,6 +202,24 @@ pub fn play(
     let steps = render::animated_layout(machine, facts, seed, flavour, findings);
     let pad_y = machine.pad_y as usize;
     let painted = row_geometry.painted();
+
+    let wide_enough = sprinkles::wide_enough(geometry.term_cols);
+    let sprinkle_text = sprinkles.text_effects() && wide_enough;
+    // Sound is skipped, not just the text effects, below the same width: a screen too narrow to
+    // sparkle in is too narrow to be the one that suddenly beeps at you either.
+    let sprinkle_sound = sprinkles.sound() && wide_enough;
+    let streak_milestone = facts
+        .get("streak.days")
+        .and_then(|s| s.parse::<u64>().ok())
+        .is_some_and(sprinkles::is_streak_milestone);
+    let streak_text = facts.get("flavour.streak").map(str::to_string);
+    let first_fail_finding_text = findings
+        .iter()
+        .any(|f| f.severity == Severity::Fail)
+        .then(|| findings.first())
+        .flatten()
+        .and_then(|f| render::finding_text(machine, facts, flavour, f));
+    let mut findings_beeped = false;
 
     let mut typed = Vec::new();
     let mut skipped = false;
@@ -157,9 +240,74 @@ pub fn play(
             write_full_row(out, &row);
             continue;
         }
+
+        // Beep codes: three BELs, spaced out to stay under 3 flashes a second on a terminal that
+        // renders BEL as a screen flash, right before the first findings line, when one finding
+        // is a `fail`. Sound never redraws anything, so it needs no row of its own.
+        if sprinkle_sound && !findings_beeped {
+            if let Some(text) = &first_fail_finding_text {
+                if &plain_text(&step.spans) == text {
+                    findings_beeped = true;
+                    for i in 0..3 {
+                        write_bytes(out, sprinkles::POST_BEEP);
+                        if i < 2
+                            && wait_for_skip(&mut typed, key_fd, sprinkles::BEEP_CODE_GAP_MS, speed)
+                        {
+                            skipped = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if skipped {
+            let row = row_geometry.line(index, &step.spans);
+            write_full_row(out, &row);
+            continue;
+        }
+
+        // Stripe sweep: on a streak milestone, the streak line is drawn once, rainbow coloured,
+        // held for its own sweep duration, then settled to its normal style, replacing its usual
+        // frame entirely.
+        if sprinkle_text
+            && streak_milestone
+            && streak_text.as_deref() == Some(plain_text(&step.spans).as_str())
+        {
+            let text_col = row_geometry.text_start_col(index);
+            let line_text = plain_text(&step.spans);
+            let normal_row = row_geometry.line(index, &step.spans);
+            let rainbow_row = sprinkles::stripe_frame(&normal_row, text_col, &line_text);
+            draw_initial(out, &rainbow_row);
+            if wait_for_skip(&mut typed, key_fd, sprinkles::STRIPE_SWEEP_MS, speed) {
+                skipped = true;
+            }
+            redraw_in_place(out, &normal_row, painted);
+            finish_row(out);
+            continue;
+        }
+
+        // Twinkle only ever touches the memory count row: the one row in the logo box that
+        // redraws enough times, over enough of its own span, for a sprinkle placed there to stay
+        // transient and still settle before its own final, suffixed value is shown.
+        let twinkle_cols: Vec<usize> = if sprinkle_text {
+            match step.kind {
+                AnimatedKind::Count { .. } => {
+                    let candidates = row_geometry.twinkle_margin_cols(index);
+                    sprinkles::twinkle_positions(seed, &candidates)
+                }
+                _ => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+
         let frames = frames_for(step);
+        let mut elapsed_in_row: u64 = 0;
         for (i, (spans, ms)) in frames.iter().enumerate() {
-            let row = row_geometry.line(index, spans);
+            let mut row = row_geometry.line(index, spans);
+            for col in &twinkle_cols {
+                row = sprinkles::twinkle_frame(&row, *col, elapsed_in_row);
+            }
             if i == 0 {
                 draw_initial(out, &row);
             } else {
@@ -171,8 +319,36 @@ pub fn play(
                 redraw_in_place(out, &final_row, painted);
                 break;
             }
+            elapsed_in_row += ms;
         }
+
+        // Shimmer: once the first line's own frame(s) have settled, one highlight sweeps across
+        // it left to right, then it settles back to exactly what it already was.
+        if !skipped && sprinkle_text && index == 0 {
+            let text_col = row_geometry.text_start_col(index);
+            let line_text = plain_text(&step.spans);
+            for window_start in sprinkles::shimmer_positions(line_text.chars().count()) {
+                let row = row_geometry.line(index, &step.spans);
+                let shimmer_row =
+                    sprinkles::shimmer_frame(&row, text_col, &line_text, window_start);
+                redraw_in_place(out, &shimmer_row, painted);
+                if wait_for_skip(&mut typed, key_fd, sprinkles::SHIMMER_STEP_MS, speed) {
+                    skipped = true;
+                    break;
+                }
+            }
+            let row = row_geometry.line(index, &step.spans);
+            redraw_in_place(out, &row, painted);
+        }
+
         finish_row(out);
+
+        // The POST beep: one BEL, once the memory count completes.
+        if !skipped && sprinkle_sound {
+            if let AnimatedKind::Count { .. } = step.kind {
+                write_bytes(out, sprinkles::POST_BEEP);
+            }
+        }
     }
 
     if painted {
@@ -403,7 +579,16 @@ quip = true
         let facts = facts_for(flavour);
         let mut buf: Vec<u8> = Vec::new();
         play(
-            machine, &facts, 0, geometry, flavour, findings, &mut buf, None, 0.0,
+            machine,
+            &facts,
+            0,
+            geometry,
+            flavour,
+            findings,
+            &mut buf,
+            None,
+            0.0,
+            sprinkles::Level::Off,
         );
         resolve_rows(&buf)
     }
@@ -555,6 +740,7 @@ quip = true
                 &mut buf,
                 None,
                 0.0,
+                sprinkles::Level::Off,
             );
             let rows = resolve_rows(&buf);
             let expected =
@@ -585,6 +771,7 @@ quip = true
             &mut buf,
             None,
             0.0,
+            sprinkles::Level::Off,
         );
         // The screen fill colour must never appear. The one exception is a logo pixel where both
         // the upper and lower source pixels are opaque: that background belongs to the sprite,
@@ -632,6 +819,7 @@ quip = true
             &mut buf,
             None,
             0.0,
+            sprinkles::Level::Off,
         );
         let text = String::from_utf8_lossy(&buf);
         assert!(text.contains("Detecting Horn             ... \r"));
@@ -682,6 +870,7 @@ quip = true
             &mut buf,
             Some(read_fd),
             1000.0,
+            sprinkles::Level::Off,
         );
         assert_eq!(outcome.typed, b"x");
         let rows = resolve_rows(&buf);
@@ -700,5 +889,605 @@ quip = true
         assert_eq!(filter_typed(b"\x1b[A"), b"");
         assert_eq!(filter_typed(b"\x03"), b"");
         assert_eq!(filter_typed(b"git st"), b"git st");
+    }
+
+    // --- Sprinkles ---------------------------------------------------------------------------
+
+    /// A frozen copy of `play`'s own body exactly as it read before sprinkles existed (see git
+    /// history for `show.rs` before this milestone): `sprinkles::Level::Off` is required to
+    /// reproduce this, byte for byte, rather than trusted to.
+    #[allow(clippy::too_many_arguments)]
+    fn baseline_play(
+        machine: &Machine,
+        facts: &Facts,
+        seed: u64,
+        geometry: Geometry,
+        flavour: Option<&Flavour>,
+        findings: &[Finding],
+        out: &mut dyn std::io::Write,
+        key_fd: Option<i32>,
+        speed: f32,
+    ) -> ShowOutcome {
+        let row_geometry = render::row_geometry(
+            machine,
+            facts,
+            seed,
+            geometry.mode,
+            geometry.term_cols,
+            geometry.graphics,
+            flavour,
+            findings,
+        );
+        let steps = render::animated_layout(machine, facts, seed, flavour, findings);
+        let pad_y = machine.pad_y as usize;
+        let painted = row_geometry.painted();
+
+        let mut typed = Vec::new();
+        let mut skipped = false;
+
+        if painted {
+            if let Some(row) = row_geometry.border_row() {
+                write_full_row(out, &row);
+            }
+            for _ in 0..pad_y {
+                let row = row_geometry.pad_row();
+                write_full_row(out, &row);
+            }
+        }
+
+        for (index, step) in steps.iter().enumerate() {
+            if skipped {
+                let row = row_geometry.line(index, &step.spans);
+                write_full_row(out, &row);
+                continue;
+            }
+            let frames = frames_for(step);
+            for (i, (spans, ms)) in frames.iter().enumerate() {
+                let row = row_geometry.line(index, spans);
+                if i == 0 {
+                    draw_initial(out, &row);
+                } else {
+                    redraw_in_place(out, &row, painted);
+                }
+                if wait_for_skip(&mut typed, key_fd, *ms, speed) {
+                    skipped = true;
+                    let final_row = row_geometry.line(index, &step.spans);
+                    redraw_in_place(out, &final_row, painted);
+                    break;
+                }
+            }
+            finish_row(out);
+        }
+
+        if painted {
+            for _ in 0..pad_y {
+                let row = row_geometry.pad_row();
+                write_full_row(out, &row);
+            }
+            if let Some(row) = row_geometry.border_row() {
+                write_full_row(out, &row);
+            }
+        }
+
+        ShowOutcome { typed }
+    }
+
+    #[test]
+    fn sprinkles_off_is_byte_identical_to_the_pre_sprinkles_player() {
+        let m = machine::find("pc95", None).unwrap();
+        let wide = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::HalfBlocks,
+        };
+        let narrow = Geometry {
+            mode: ColorMode::None,
+            term_cols: Some(50),
+            graphics: Graphics::None,
+        };
+
+        let unicorn = crate::flavour::find("unicorn", None).unwrap();
+        let sumo = crate::flavour::find("sumo", None).unwrap();
+        let scenarios: Vec<(Option<&Flavour>, Vec<Finding>, Geometry)> = vec![
+            (Some(&unicorn), vec![], wide),
+            (Some(&sumo), fixture_findings(), wide),
+            (None, vec![], narrow),
+        ];
+
+        for (flavour, findings, geometry) in scenarios {
+            let facts = if findings.is_empty() {
+                facts_for(flavour)
+            } else {
+                facts_with_findings_for(flavour)
+            };
+
+            let mut sprinkled: Vec<u8> = Vec::new();
+            play(
+                &m,
+                &facts,
+                7,
+                geometry,
+                flavour,
+                &findings,
+                &mut sprinkled,
+                None,
+                0.0,
+                sprinkles::Level::Off,
+            );
+
+            let mut baseline: Vec<u8> = Vec::new();
+            baseline_play(
+                &m,
+                &facts,
+                7,
+                geometry,
+                flavour,
+                &findings,
+                &mut baseline,
+                None,
+                0.0,
+            );
+
+            assert_eq!(
+                sprinkled, baseline,
+                "flavour {flavour:?} diverges from the pre-sprinkles player"
+            );
+        }
+    }
+
+    #[test]
+    fn speed_zero_light_final_rows_equal_render_static() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let facts = facts_for(Some(&flavour));
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::HalfBlocks,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut buf,
+            None,
+            0.0,
+            sprinkles::Level::Light,
+        );
+        let rows = resolve_rows(&buf);
+        let expected = resolved_rows_of_render_static(&m, &facts, geometry, Some(&flavour), &[]);
+        assert_eq!(rows, expected);
+    }
+
+    #[test]
+    fn light_shows_a_shimmer_over_the_firmware_line_and_plays_no_sound() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let facts = facts_for(Some(&flavour));
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::HalfBlocks,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut buf,
+            None,
+            0.0,
+            sprinkles::Level::Light,
+        );
+        let text = String::from_utf8_lossy(&buf);
+        assert!(text.contains("\x1b[97m"), "no shimmer highlight found");
+        assert!(!buf.contains(&0x07), "light must never beep");
+    }
+
+    #[test]
+    fn full_beeps_once_with_no_fail_and_four_times_with_one() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::HalfBlocks,
+        };
+
+        let facts_no_fail = facts_for(Some(&flavour));
+        let mut buf_no_fail: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts_no_fail,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut buf_no_fail,
+            None,
+            0.0,
+            sprinkles::Level::Full,
+        );
+        assert_eq!(buf_no_fail.iter().filter(|&&b| b == 0x07).count(), 1);
+
+        let findings = fixture_findings();
+        let facts_with_fail = facts_with_findings_for(Some(&flavour));
+        let mut buf_fail: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts_with_fail,
+            0,
+            geometry,
+            Some(&flavour),
+            &findings,
+            &mut buf_fail,
+            None,
+            0.0,
+            sprinkles::Level::Full,
+        );
+        assert_eq!(buf_fail.iter().filter(|&&b| b == 0x07).count(), 4);
+    }
+
+    #[test]
+    fn a_key_press_produces_no_sprinkle_output_after_it() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let findings = fixture_findings();
+        let facts = facts_with_findings_for(Some(&flavour));
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::HalfBlocks,
+        };
+        let (read_fd, write_fd) = {
+            let mut fds = [0i32; 2];
+            // SAFETY: `fds` is a valid, writable array of two `c_int`s.
+            let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
+            assert_eq!(rc, 0);
+            (fds[0], fds[1])
+        };
+        // SAFETY: `write_fd` is a valid, open, writable fd from the pipe just created.
+        unsafe {
+            libc::write(write_fd, b"x".as_ptr() as *const libc::c_void, 1);
+        }
+        let mut buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &findings,
+            &mut buf,
+            Some(read_fd),
+            1000.0,
+            sprinkles::Level::Full,
+        );
+        let text = String::from_utf8_lossy(&buf);
+        assert!(!text.contains("\x1b[97m"));
+        assert!(!buf.contains(&0x07));
+        // SAFETY: both fds are valid, open descriptors owned by this test.
+        unsafe {
+            libc::close(read_fd);
+            libc::close(write_fd);
+        }
+    }
+
+    #[test]
+    fn at_fifty_columns_no_sprinkle_output_at_all() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let findings = fixture_findings();
+        let facts = facts_with_findings_for(Some(&flavour));
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(50),
+            graphics: Graphics::HalfBlocks,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &findings,
+            &mut buf,
+            None,
+            0.0,
+            sprinkles::Level::Full,
+        );
+        assert!(!String::from_utf8_lossy(&buf).contains("\x1b[97m"));
+        assert!(!buf.contains(&0x07));
+    }
+
+    #[test]
+    fn light_stripe_sweep_appears_only_on_a_streak_milestone() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::HalfBlocks,
+        };
+
+        let mut milestone_facts = Facts::fixture();
+        milestone_facts.insert("streak.days", "30");
+        milestone_facts.insert("streak.label", "30 days");
+        crate::flavour::apply(&flavour, &mut milestone_facts);
+        let mut buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &milestone_facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut buf,
+            None,
+            0.0,
+            sprinkles::Level::Light,
+        );
+        let text = String::from_utf8_lossy(&buf);
+        assert!(text.contains("\x1b[31m"), "no red in the rainbow sweep");
+        assert!(text.contains("\x1b[35m"), "no magenta in the rainbow sweep");
+
+        let mut plain_facts = Facts::fixture();
+        crate::flavour::apply(&flavour, &mut plain_facts);
+        assert_ne!(plain_facts.get("streak.days"), Some("30"));
+        let mut buf2: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &plain_facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            &mut buf2,
+            None,
+            0.0,
+            sprinkles::Level::Light,
+        );
+        assert!(!String::from_utf8_lossy(&buf2).contains("\x1b[31m"));
+    }
+
+    /// One cell of `TermSim`'s grid: the visible character and whatever SGR sequence is active
+    /// over it, verbatim.
+    type Cell = (char, String);
+    /// `TermSim`'s whole grid, and the type a captured frame snapshot is kept in.
+    type Grid = Vec<Vec<Cell>>;
+
+    /// A minimal terminal simulator: just enough to answer "which cells actually changed between
+    /// two consecutive frames", not to render anything for a person. Tracks one `Cell` per cell
+    /// of a `cols` by `rows` grid, and understands `\r` (return to column 0 of the current row),
+    /// `\n` (advance to the next row), `\x1b[...m` (the colour active from here on, until a
+    /// `\x1b[0m` clears it), `\x1b[K` (erase to the end of the current row) and BEL (zero width:
+    /// it never advances the cursor or touches a cell). A Kitty image escape (`\x1b_G...\x1b\`)
+    /// is consumed but never touches a cell either, the same way the real image overlays the
+    /// grid without the terminal moving its cursor for it.
+    struct TermSim {
+        cols: usize,
+        grid: Grid,
+        row: usize,
+        col: usize,
+    }
+
+    impl TermSim {
+        fn new(cols: usize, rows: usize) -> TermSim {
+            TermSim {
+                cols,
+                grid: vec![vec![(' ', String::new()); cols]; rows],
+                row: 0,
+                col: 0,
+            }
+        }
+
+        fn apply(&mut self, chunk: &[u8]) {
+            let text = String::from_utf8_lossy(chunk);
+            let chars: Vec<char> = text.chars().collect();
+            let mut active = String::new();
+            let mut i = 0;
+            while i < chars.len() {
+                match chars[i] {
+                    '\r' => {
+                        self.col = 0;
+                        i += 1;
+                    }
+                    '\n' => {
+                        self.col = 0;
+                        self.row += 1;
+                        i += 1;
+                    }
+                    '\x07' => {
+                        i += 1;
+                    }
+                    '\x1b' if chars.get(i + 1) == Some(&'_') => {
+                        i += 2;
+                        while i < chars.len()
+                            && !(chars[i] == '\x1b' && chars.get(i + 1) == Some(&'\\'))
+                        {
+                            i += 1;
+                        }
+                        i += 2;
+                    }
+                    '\x1b' if chars.get(i + 1) == Some(&'[') => {
+                        let mut j = i + 1;
+                        while j < chars.len() && chars[j] != 'm' && chars[j] != 'K' {
+                            j += 1;
+                        }
+                        let terminator = chars.get(j).copied();
+                        let end = (j + 1).min(chars.len());
+                        let seq: String = chars[i..end].iter().collect();
+                        if terminator == Some('K') {
+                            if self.row < self.grid.len() {
+                                for c in self.col..self.cols {
+                                    self.grid[self.row][c] = (' ', String::new());
+                                }
+                            }
+                        } else {
+                            active = if seq == "\x1b[0m" { String::new() } else { seq };
+                        }
+                        i = end;
+                    }
+                    c => {
+                        if self.row < self.grid.len() && self.col < self.cols {
+                            self.grid[self.row][self.col] = (c, active.clone());
+                        }
+                        self.col += 1;
+                        i += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    fn changed_cells(a: &[Vec<Cell>], b: &[Vec<Cell>]) -> usize {
+        a.iter()
+            .zip(b)
+            .flat_map(|(ra, rb)| ra.iter().zip(rb))
+            .filter(|(x, y)| x != y)
+            .count()
+    }
+
+    #[test]
+    fn never_flash_no_frame_changes_more_than_480_cells_and_no_cell_blinks_faster_than_3_times_a_second(
+    ) {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let facts = facts_for(Some(&flavour));
+        // Wide enough to paint and to show the logo box, so shimmer, twinkle and sound all get to
+        // run; a real 80 column terminal would fall back to plain rendering for pc95 (it needs 84
+        // to paint), which would only exercise the shimmer. The 480 cell cap is used verbatim
+        // regardless, which is stricter here than "a quarter of the screen" would be at this
+        // width.
+        let geometry = Geometry {
+            mode: ColorMode::TrueColor,
+            term_cols: Some(100),
+            graphics: Graphics::HalfBlocks,
+        };
+
+        let events = sim::record(|| {
+            let mut buf: Vec<u8> = Vec::new();
+            play(
+                &m,
+                &facts,
+                0,
+                geometry,
+                Some(&flavour),
+                &[],
+                &mut buf,
+                None,
+                0.0,
+                sprinkles::Level::Full,
+            );
+        });
+
+        let cols = 100usize;
+        let rows = 24usize;
+        let mut sim_term = TermSim::new(cols, rows);
+        let mut elapsed: u64 = 0;
+        let mut frames: Vec<(u64, Grid)> = Vec::new();
+        for event in &events {
+            match event {
+                sim::Event::Draw(bytes) => sim_term.apply(bytes),
+                sim::Event::Wait(ms) => {
+                    frames.push((elapsed, sim_term.grid.clone()));
+                    elapsed += ms;
+                }
+            }
+        }
+        // The show's very last write is never followed by a `wait_for_skip` call (there is
+        // nothing left to hold for), so it is missing from `frames` above: add it, so the final
+        // settle is measured too.
+        frames.push((elapsed, sim_term.grid.clone()));
+
+        assert!(
+            frames.len() > 10,
+            "expected many frames, got {}",
+            frames.len()
+        );
+
+        for i in 0..frames.len() - 1 {
+            let changed = changed_cells(&frames[i].1, &frames[i + 1].1);
+            assert!(
+                changed <= 480,
+                "frame {i} changed {changed} cells, more than a quarter of an 80x24 screen (480)"
+            );
+        }
+
+        // No single sprinkled cell changes state more than 3 times in any second, anywhere in
+        // the show: for every change, count how many changes (including itself) land inside the
+        // second that starts there. This is the literal reading of "3 times a second", a bound
+        // on any rolling window, not a minimum gap between one change and the next: a cell that
+        // changes exactly twice, however close together, can never be part of a
+        // 4-times-a-second flicker on its own.
+        //
+        // Scoped to the cells a sprinkle can actually touch (the firmware line's own text, for
+        // the shimmer, and the memory count row's chosen margin cells, for the twinkle), not
+        // every cell on screen: the memory count itself redraws its digits far more than 3 times
+        // a second as it counts up, which is the base show's own long-standing behaviour, not a
+        // sprinkle, and is well outside this milestone's scope.
+        let row_geometry = render::row_geometry(
+            &m,
+            &facts,
+            0,
+            geometry.mode,
+            geometry.term_cols,
+            geometry.graphics,
+            Some(&flavour),
+            &[],
+        );
+        let steps = render::animated_layout(&m, &facts, 0, Some(&flavour), &[]);
+        let prefix_rows = usize::from(m.border.is_some()) + m.pad_y as usize;
+
+        let mut sprinkle_cells: std::collections::HashSet<(usize, usize)> =
+            std::collections::HashSet::new();
+        let firmware_text = plain_text(&steps[0].spans);
+        let text_col0 = row_geometry.text_start_col(0);
+        for c in 0..firmware_text.chars().count() {
+            sprinkle_cells.insert((prefix_rows, text_col0 + c));
+        }
+        if let Some(count_index) = steps
+            .iter()
+            .position(|s| matches!(s.kind, AnimatedKind::Count { .. }))
+        {
+            let candidates = row_geometry.twinkle_margin_cols(count_index);
+            for col in sprinkles::twinkle_positions(0, &candidates) {
+                sprinkle_cells.insert((prefix_rows + count_index, col));
+            }
+        }
+        assert!(!sprinkle_cells.is_empty(), "no sprinkle cells identified");
+
+        for &(row, col) in &sprinkle_cells {
+            if row >= rows || col >= cols {
+                continue;
+            }
+            let mut change_times: Vec<u64> = Vec::new();
+            let mut previous = &frames[0].1[row][col];
+            for (t, grid) in frames.iter().skip(1) {
+                let cell = &grid[row][col];
+                if cell != previous {
+                    change_times.push(*t);
+                    previous = cell;
+                }
+            }
+            for (i, &t) in change_times.iter().enumerate() {
+                let count_in_next_second = change_times[i..]
+                    .iter()
+                    .take_while(|&&later| later - t < 1000)
+                    .count();
+                assert!(
+                    count_in_next_second <= 3,
+                    "cell ({row},{col}) changed {count_in_next_second} times within a second starting at {t}ms"
+                );
+            }
+        }
     }
 }

@@ -40,6 +40,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `bios config path`, `bios config edit` and `bios config reset`: find the config file, open it in `$VISUAL`, `$EDITOR` or `vi`, or restore it to its commented defaults. A reset over a config file that differs from the defaults backs it up to `config.toml.bak` first.
 - `bios fetch`, the neofetch slot: one static screen with the mascot at full size, a column of facts (OS, shell, terminal, processor, memory, disk, flavour, Ghostty theme and boot streak), and a palette swatch of the terminal's own sixteen colours. A missing value simply omits its line.
 - Fast Linux fact probes (processor, memory, disk, OS, hostname, shell, measured shell start time), matching the same fact keys the macOS probes already fill, plus `bios init bash` and `bios init fish` alongside `bios init zsh`. Bash has no way to push keys typed during the boot show back onto the command line this early in shell startup, so it reads and discards them rather than faking it; fish's `commandline` does the same job zsh's `print -z` does.
+- Sprinkles: an optional shimmer, twinkle and beep for the daily boot. Off unless you ask.
 
 ### Changed
 

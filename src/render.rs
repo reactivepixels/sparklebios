@@ -1035,6 +1035,38 @@ impl<'a> RowGeometry<'a> {
         self.painted
     }
 
+    /// The visible column, within a row this geometry draws, where logical line `index`'s own
+    /// text begins: past any border, the left padding, and, for a row inside the logo box, the
+    /// logo image and its fixed gap. Zero for unpainted geometry, which has none of those. Used
+    /// by the sprinkle effects (`sprinkles.rs`) to place a highlight against a line's text
+    /// without knowing the painted block's own layout.
+    pub fn text_start_col(&self, index: usize) -> usize {
+        if !self.painted {
+            return 0;
+        }
+        let border_and_pad = if self.border.is_some() { 2 } else { 0 } + self.pad_x;
+        if self.show_logo && index < self.logo_rows {
+            border_and_pad + self.logo_cols + LOGO_GAP
+        } else {
+            border_and_pad
+        }
+    }
+
+    /// The blank margin columns immediately beside the logo box on row `index`: the left padding
+    /// (between the border and the logo) and the fixed gap (between the logo and the line's own
+    /// text), never a column over the logo image or the text itself. Empty whenever `index` is
+    /// not one of the rows the logo box actually covers.
+    pub fn twinkle_margin_cols(&self, index: usize) -> Vec<usize> {
+        if !(self.painted && self.show_logo && index < self.logo_rows) {
+            return Vec::new();
+        }
+        let border = if self.border.is_some() { 2 } else { 0 };
+        let pad_zone = border..(border + self.pad_x);
+        let gap_start = border + self.pad_x + self.logo_cols;
+        let gap_zone = gap_start..(gap_start + LOGO_GAP);
+        pad_zone.chain(gap_zone).collect()
+    }
+
     /// The top or bottom border bar, full width. `None` when not painted or the machine has no
     /// `border`.
     pub fn border_row(&self) -> Option<String> {
@@ -2427,5 +2459,39 @@ print = "{long_line}"
         assert!(!text_cols.is_empty());
         assert!(text_cols.windows(2).all(|w| w[0] == w[1]));
         assert!(text_cols[0] > max_col);
+    }
+
+    #[test]
+    fn text_start_col_is_zero_when_unpainted() {
+        let m = other_machine();
+        let geometry = RowGeometry::build_plain(&m, ColorMode::None);
+        assert_eq!(geometry.text_start_col(0), 0);
+        assert!(geometry.twinkle_margin_cols(0).is_empty());
+    }
+
+    #[test]
+    fn text_start_col_and_margin_cols_sit_either_side_of_the_pc95_logo_box() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        let geometry = row_geometry(
+            &m,
+            &facts,
+            0,
+            ColorMode::TrueColor,
+            Some(100),
+            Graphics::HalfBlocks,
+            Some(&flavour),
+            &[],
+        );
+        assert!(geometry.painted());
+        // Row 0 (the firmware line) sits inside the logo box: its text starts past the small
+        // grid (14 cells) plus the fixed gap (2 cells), and pad_x (2) is the left margin.
+        assert_eq!(geometry.text_start_col(0), 2 + 14 + 2);
+        assert_eq!(geometry.twinkle_margin_cols(0), vec![0, 1, 16, 17]);
+        // Well past the logo box, there is no margin left to twinkle in and the text starts
+        // right after the left padding.
+        assert_eq!(geometry.text_start_col(20), 2);
+        assert!(geometry.twinkle_margin_cols(20).is_empty());
     }
 }

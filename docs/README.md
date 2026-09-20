@@ -11,6 +11,7 @@ Kept in a binder, on a shelf, next to the machine.
 | [flavours.md](flavours.md) | How to write a flavour: the personality behind a flavoured machine, its sprite pair, and how it resolves slots |
 | [checks.md](checks.md) | How the health checks work: what a check probes, the fact cache and its refresh, and how a finding gets its phrasing |
 | [config.md](config.md) | `config.toml`: where it lives, every key and its default, the `config path`, `config edit` and `config reset` commands, and the environment overrides |
+| [sprinkles.md](sprinkles.md) | The optional delight layer on the animated show: the dial, what each level draws, the never-flash promise, and how to turn it off |
 
 Elsewhere in the repository:
 

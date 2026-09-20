@@ -18,6 +18,7 @@ Everyday:
   resume             Change to the project you left work in
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
+  sprinkles [LEVEL]     Optional effects: off, light or full
   theme list         List the matching Ghostty themes
   theme use <NAME>   Install the themes and switch Ghostty to one
 
@@ -77,6 +78,8 @@ enum Command {
     Flavours,
     /// Show or set which flavour boots.
     Use(UseCliArgs),
+    /// Show or set the sprinkles level.
+    Sprinkles(SprinklesCliArgs),
     /// Ghostty theme commands.
     Theme {
         #[command(subcommand)]
@@ -141,6 +144,12 @@ struct RefreshCliArgs {
 struct UseCliArgs {
     /// The flavour to use from now on, for example unicorn or sumo. Omit to print the current one.
     id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct SprinklesCliArgs {
+    /// The level to use from now on: off, light or full. Omit to print the current one.
+    level: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -232,6 +241,7 @@ pub fn run() -> i32 {
             0
         }
         Command::Use(args) => use_flavour(args),
+        Command::Sprinkles(args) => sprinkles(args),
         Command::Theme {
             command: ThemeCommand::Install { dir },
         } => install_theme(dir),
@@ -381,6 +391,56 @@ fn use_flavour(args: UseCliArgs) -> i32 {
     .map(|f| f.id)
     .unwrap_or_else(|| "unicorn".to_string());
     println!("Flavour : {flavour_id}");
+    0
+}
+
+/// `level`, strictly: unlike `sprinkles::Level::parse`, which reads anything unknown as `Off` for
+/// the config file and the environment override, a level typed on the command line either is one
+/// of the three or is rejected outright.
+fn parse_sprinkle_level(level: &str) -> Option<crate::sprinkles::Level> {
+    match level {
+        "off" => Some(crate::sprinkles::Level::Off),
+        "light" => Some(crate::sprinkles::Level::Light),
+        "full" => Some(crate::sprinkles::Level::Full),
+        _ => None,
+    }
+}
+
+/// The line `bios sprinkles <level>` prints once it has set `level`.
+fn sprinkles_set_message(level: crate::sprinkles::Level) -> &'static str {
+    match level {
+        crate::sprinkles::Level::Off => {
+            "Sprinkles : off. The BIOS respects your decision and is not hurt."
+        }
+        crate::sprinkles::Level::Light => "Sprinkles : light. Tasteful.",
+        crate::sprinkles::Level::Full => "Sprinkles : full. You asked for this.",
+    }
+}
+
+/// Shows or sets the sprinkles level, the same shape `use_flavour` follows for the flavour: no
+/// argument prints the effective level, an argument sets it (preserving every other config key)
+/// and prints the level-specific line, and an unknown level is rejected, exit 1, with nothing
+/// written.
+fn sprinkles(args: SprinklesCliArgs) -> i32 {
+    let Some(dir) = crate::paths::config_dir() else {
+        eprintln!("bios: cannot find a config directory");
+        return 1;
+    };
+
+    if let Some(level) = &args.level {
+        let Some(parsed) = parse_sprinkle_level(level) else {
+            eprintln!("bios: no sprinkle level called {level}. Try: off, light, full");
+            return 1;
+        };
+        if crate::config::set_sprinkles(&dir, parsed).is_err() {
+            return 1;
+        }
+        println!("{}", sprinkles_set_message(parsed));
+        return 0;
+    }
+
+    let config = crate::config::load(Some(&dir));
+    println!("Sprinkles : {}", config.sprinkles.as_str());
     0
 }
 

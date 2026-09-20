@@ -41,6 +41,7 @@ Everyday:
   resume             Change to the project you left work in
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
+  sprinkles [LEVEL]     Optional effects: off, light or full
   theme list         List the matching Ghostty themes
   theme use <NAME>   Install the themes and switch Ghostty to one
 
@@ -300,6 +301,17 @@ fn sparklebios_graphics_env_override_is_accepted() {
 }
 
 #[test]
+fn sparklebios_sprinkles_env_override_is_accepted() {
+    bios()
+        .args(["boot", "--machine", "pc95"])
+        .env("SPARKLEBIOS_SPRINKLES", "full")
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+}
+
+#[test]
 fn hook_prints_nothing_to_stdout_and_exits_zero() {
     let state = tempfile::tempdir().unwrap();
     bios()
@@ -361,6 +373,90 @@ fn use_then_boot_preview_picks_up_the_chosen_flavour() {
         .stdout(predicate::str::contains(
             "Yokozuna Modular BIOS v1.991, Immovable",
         ));
+}
+
+#[test]
+fn sprinkles_with_no_level_prints_the_current_level() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .arg("sprinkles")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Sprinkles : off\n");
+}
+
+#[test]
+fn sprinkles_light_prints_the_tasteful_line_and_persists() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["sprinkles", "light"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Sprinkles : light. Tasteful.\n");
+    bios()
+        .arg("sprinkles")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Sprinkles : light\n");
+}
+
+#[test]
+fn sprinkles_full_prints_you_asked_for_this() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["sprinkles", "full"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Sprinkles : full. You asked for this.\n");
+}
+
+#[test]
+fn sprinkles_off_prints_the_bios_is_not_hurt_line() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["sprinkles", "off"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Sprinkles : off. The BIOS respects your decision and is not hurt.\n");
+}
+
+#[test]
+fn sprinkles_with_an_unknown_level_fails_and_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["sprinkles", "sparkly"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr("bios: no sprinkle level called sparkly. Try: off, light, full\n");
+    assert!(!config.path().join("sparklebios/config.toml").exists());
+}
+
+#[test]
+fn sprinkles_setting_the_level_preserves_the_configured_flavour() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "sumo"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .args(["sprinkles", "full"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .arg("use")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Flavour : sumo\n");
 }
 
 #[test]

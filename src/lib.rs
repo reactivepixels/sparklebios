@@ -15,6 +15,7 @@ pub mod paths;
 pub mod render;
 pub mod shell;
 pub mod show;
+pub mod sprinkles;
 pub mod sprite;
 pub mod state;
 pub mod template;

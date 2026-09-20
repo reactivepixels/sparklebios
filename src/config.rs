@@ -33,6 +33,7 @@ pub struct Config {
     pub checks: bool,
     pub project_dirs: Vec<String>,
     pub graphics: GraphicsPref,
+    pub sprinkles: crate::sprinkles::Level,
 }
 
 impl Default for Config {
@@ -43,6 +44,7 @@ impl Default for Config {
             checks: true,
             project_dirs: Vec::new(),
             graphics: GraphicsPref::Auto,
+            sprinkles: crate::sprinkles::Level::Off,
         }
     }
 }
@@ -77,6 +79,10 @@ checks = true
 # touched most recently. Empty means the built-in list: ~/Code, ~/code,
 # ~/Projects, ~/projects, ~/src, ~/dev, ~/Developer, ~/repos, ~/work and ~/git.
 project_dirs = []
+
+# Sprinkles: optional effects during the once-a-day animated boot.
+# \"off\", \"light\" (text effects) or \"full\" (text effects and sound).
+sprinkles = \"off\"
 ";
 
 /// `<dir>/config.toml`.
@@ -135,6 +141,7 @@ struct RawConfig {
     checks: Option<bool>,
     project_dirs: Option<Vec<String>>,
     graphics: Option<String>,
+    sprinkles: Option<String>,
 }
 
 /// Missing, unreadable or invalid file yields the default. Unknown keys, including the retired
@@ -160,6 +167,11 @@ pub fn load(dir: Option<&std::path::Path>) -> Config {
             .as_deref()
             .map(GraphicsPref::parse)
             .unwrap_or(default.graphics),
+        sprinkles: raw
+            .sprinkles
+            .as_deref()
+            .map(crate::sprinkles::Level::parse)
+            .unwrap_or(default.sprinkles),
     }
 }
 
@@ -175,6 +187,29 @@ pub fn set_flavour(dir: &std::path::Path, id: &str) -> std::io::Result<()> {
         .unwrap_or_default();
 
     table.insert("flavour".to_string(), toml::Value::String(id.to_string()));
+
+    let contents = toml::to_string(&table).map_err(std::io::Error::other)?;
+    let pid = std::process::id();
+    let tmp_path = dir.join(format!("config.toml.{pid}.tmp"));
+    std::fs::write(&tmp_path, contents)?;
+    std::fs::rename(&tmp_path, &path)?;
+    Ok(())
+}
+
+/// Sets `sprinkles` in `<dir>/config.toml` to `level.as_str()`, preserving every other key, the
+/// same way `set_flavour` does.
+pub fn set_sprinkles(dir: &std::path::Path, level: crate::sprinkles::Level) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join("config.toml");
+    let mut table: toml::Table = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|contents| contents.parse::<toml::Table>().ok())
+        .unwrap_or_default();
+
+    table.insert(
+        "sprinkles".to_string(),
+        toml::Value::String(level.as_str().to_string()),
+    );
 
     let contents = toml::to_string(&table).map_err(std::io::Error::other)?;
     let pid = std::process::id();
@@ -218,6 +253,7 @@ mod tests {
                 checks: true,
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
+                sprinkles: crate::sprinkles::Level::Off,
             }
         );
     }
@@ -300,6 +336,7 @@ mod tests {
                 checks: true,
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
+                sprinkles: crate::sprinkles::Level::Off,
             }
         );
     }
@@ -326,6 +363,7 @@ mod tests {
                 checks: true,
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
+                sprinkles: crate::sprinkles::Level::Off,
             }
         );
     }
@@ -432,5 +470,52 @@ mod tests {
         )
         .unwrap();
         assert_eq!(load(Some(dir.path())).graphics, GraphicsPref::Auto);
+    }
+
+    #[test]
+    fn sprinkles_defaults_to_off_and_reads_each_level() {
+        use crate::sprinkles::Level;
+        assert_eq!(Config::default().sprinkles, Level::Off);
+        for (value, expected) in [
+            ("off", Level::Off),
+            ("light", Level::Light),
+            ("full", Level::Full),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                dir.path().join("config.toml"),
+                format!("sprinkles = \"{value}\"\n"),
+            )
+            .unwrap();
+            assert_eq!(load(Some(dir.path())).sprinkles, expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_sprinkles_value_reads_as_off() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "sprinkles = \"disco\"\n").unwrap();
+        assert_eq!(
+            load(Some(dir.path())).sprinkles,
+            crate::sprinkles::Level::Off
+        );
+    }
+
+    #[test]
+    fn set_sprinkles_preserves_other_keys() {
+        use crate::sprinkles::Level;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.toml"),
+            "animate = false\nflavour = \"sumo\"\n",
+        )
+        .unwrap();
+        set_sprinkles(dir.path(), Level::Full).unwrap();
+        let contents = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert!(contents.contains("animate = false"));
+        assert!(contents.contains("flavour = \"sumo\""));
+        let loaded = load(Some(dir.path()));
+        assert_eq!(loaded.sprinkles, Level::Full);
+        assert_eq!(loaded.flavour, "sumo");
     }
 }
