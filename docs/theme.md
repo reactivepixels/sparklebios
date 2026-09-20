@@ -9,7 +9,7 @@ Contrast figures are WCAG ratios against that variant's background.
 ## Decisions
 
 - **Glass, not black.** The lead background is the colour of a switched-off tube with a breath of violet, so warm white text sits in front of it.
-- **All six stripes are addressable.** Orange rides in bright red (ANSI 9), so the classic six-stripe order is ANSI 2, 3, 9, 1, 5, 4. Any tool that prints those in sequence draws the stripes without knowing it. `neigh`'s default palette relies on this.
+- **All six stripes are addressable.** Orange rides in bright red (ANSI 9), so the classic six-stripe order is ANSI 2, 3, 9, 1, 5, 4. Any tool that prints those in sequence draws the stripes without knowing it.
 - **Nothing was thrown away.** The original stripe purple (`#963D97`) is too dark to read on glass, so it became the reverse-video selection colour.
 - **The cursor is the horn.** A gold block, blinking. The one place the theme winks.
 - **Bold is not bright.** Set `bold-is-bright = false`. Modern tools assume bold means weight.
@@ -223,7 +223,7 @@ long evenings in front of the family computer.
 
 The soft one. Six pastels on deep plum: pink, mint, butter, periwinkle, lilac and aqua, with peach
 riding in bright red where the other variants keep their orange. Every colour clears 9:1 on the
-plum, so it is gentle to look at and still easy to read all day.
+plum, so it is gentle to look at and still readable all day.
 
 | Role | Value | | Role | Value |
 |---|---|---|---|---|
