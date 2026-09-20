@@ -35,8 +35,26 @@ pub fn boot_devices(config: &crate::config::Config) -> Vec<PathBuf> {
         walk_root(&root, &mut examined, &mut candidates);
     }
 
+    let mut candidates = dedup_candidates(candidates);
     candidates.sort_by_key(|(_, t)| std::cmp::Reverse(*t));
     candidates.into_iter().take(3).map(|(p, _)| p).collect()
+}
+
+/// Deduplicates candidate repositories by canonical path, keeping the first occurrence. Covers a
+/// symlinked repository reachable through two different roots, and a repo reachable at both
+/// depth 1 and depth 2.
+fn dedup_candidates(
+    candidates: Vec<(PathBuf, std::time::SystemTime)>,
+) -> Vec<(PathBuf, std::time::SystemTime)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (path, modified) in candidates {
+        let key = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        if seen.insert(key) {
+            out.push((path, modified));
+        }
+    }
+    out
 }
 
 /// The `boot_order` finding (always present when there is at least one device) and, when the
@@ -80,20 +98,46 @@ pub(crate) fn findings(devices: &[PathBuf]) -> Vec<Finding> {
 
 fn resolve_roots(config: &crate::config::Config, home: Option<&str>) -> Vec<PathBuf> {
     if !config.project_dirs.is_empty() {
-        return config
+        let roots = config
             .project_dirs
             .iter()
             .map(|dir| expand_tilde(dir, home))
             .collect();
+        return dedup_paths(roots, true);
     }
     let Some(home) = home else {
         return Vec::new();
     };
-    DEFAULT_ROOT_LEAVES
+    let roots = DEFAULT_ROOT_LEAVES
         .iter()
         .map(|leaf| PathBuf::from(home).join(leaf))
         .filter(|p| p.is_dir())
-        .collect()
+        .collect();
+    dedup_paths(roots, false)
+}
+
+/// Deduplicates `paths` by canonical path, keeping the first occurrence. A path that fails to
+/// canonicalize (it does not exist, or is unreadable) is dropped, unless `keep_unresolvable` is
+/// set, in which case it falls back to the path as written so an explicit user setting is never
+/// silently discarded.
+fn dedup_paths(paths: Vec<PathBuf>, keep_unresolvable: bool) -> Vec<PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for path in paths {
+        let key = match std::fs::canonicalize(&path) {
+            Ok(canon) => canon,
+            Err(_) => {
+                if !keep_unresolvable {
+                    continue;
+                }
+                path.clone()
+            }
+        };
+        if seen.insert(key) {
+            out.push(path);
+        }
+    }
+    out
 }
 
 fn expand_tilde(value: &str, home: Option<&str>) -> PathBuf {
@@ -228,6 +272,16 @@ mod tests {
         }
     }
 
+    fn config_with_roots(roots: &[&Path]) -> crate::config::Config {
+        crate::config::Config {
+            project_dirs: roots
+                .iter()
+                .map(|r| r.to_string_lossy().to_string())
+                .collect(),
+            ..crate::config::Config::default()
+        }
+    }
+
     #[test]
     fn most_recent_repo_comes_first() {
         let root = tempfile::tempdir().unwrap();
@@ -283,6 +337,71 @@ mod tests {
         make_repo(&root.path().join("zzz_should_not_be_found"), 1);
 
         assert!(boot_devices(&config_with_root(root.path())).is_empty());
+    }
+
+    #[test]
+    fn a_root_reached_by_two_paths_yields_each_repo_once() {
+        let base = tempfile::tempdir().unwrap();
+        let real_root = base.path().join("real_root");
+        std::fs::create_dir_all(&real_root).unwrap();
+        make_repo(&real_root.join("myrepo"), 5);
+
+        let link_root = base.path().join("link_root");
+        std::os::unix::fs::symlink(&real_root, &link_root).unwrap();
+
+        let devices = boot_devices(&config_with_roots(&[&real_root, &link_root]));
+        assert_eq!(devices.len(), 1);
+        assert!(devices[0].ends_with("myrepo"));
+    }
+
+    #[test]
+    fn a_repo_reachable_through_two_different_roots_appears_once() {
+        let base = tempfile::tempdir().unwrap();
+        let root_a = base.path().join("root_a");
+        std::fs::create_dir_all(&root_a).unwrap();
+        let repo = root_a.join("myrepo");
+        make_repo(&repo, 5);
+
+        let root_b = base.path().join("root_b");
+        std::fs::create_dir_all(&root_b).unwrap();
+        std::os::unix::fs::symlink(&repo, root_b.join("link_to_myrepo")).unwrap();
+
+        let devices = boot_devices(&config_with_roots(&[&root_a, &root_b]));
+        assert_eq!(devices.len(), 1);
+    }
+
+    #[test]
+    fn ordering_is_most_recent_first_after_dedupe() {
+        let base = tempfile::tempdir().unwrap();
+        let root_a = base.path().join("root_a");
+        std::fs::create_dir_all(&root_a).unwrap();
+        make_repo(&root_a.join("old"), 1000);
+        make_repo(&root_a.join("new"), 10);
+        make_repo(&root_a.join("mid"), 500);
+
+        let root_b = base.path().join("root_b");
+        std::os::unix::fs::symlink(&root_a, &root_b).unwrap();
+
+        let devices = boot_devices(&config_with_roots(&[&root_a, &root_b]));
+        let names: Vec<_> = devices
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap())
+            .collect();
+        assert_eq!(names, vec!["new", "mid", "old"]);
+    }
+
+    #[test]
+    fn a_missing_project_dir_does_not_panic_or_drop_other_roots() {
+        let base = tempfile::tempdir().unwrap();
+        let real_root = base.path().join("real_root");
+        std::fs::create_dir_all(&real_root).unwrap();
+        make_repo(&real_root.join("myrepo"), 5);
+
+        let missing = base.path().join("does_not_exist");
+
+        let devices = boot_devices(&config_with_roots(&[&missing, &real_root]));
+        assert_eq!(devices.len(), 1);
+        assert!(devices[0].ends_with("myrepo"));
     }
 
     #[test]
