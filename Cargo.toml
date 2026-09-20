@@ -9,6 +9,24 @@ repository = "https://github.com/reactivepixels/sparklebios"
 readme = "README.md"
 keywords = ["terminal", "cli", "retro", "bios", "motd"]
 categories = ["command-line-utilities"]
+# Only what the binary needs at build time (the include_str!/include_bytes!
+# targets in src/) plus the licence and paperwork files, so the tarball on
+# crates.io does not carry docs/assets/ (several megabytes of PNGs and a GIF
+# that the crate never reads).
+include = [
+    "src/**",
+    "machines/**",
+    "flavours/**",
+    "sprites/**",
+    "themes/**",
+    "shell/**",
+    "extras/**",
+    "/Cargo.toml",
+    "/LICENSE-APACHE",
+    "/LICENSE-MIT",
+    "/README.md",
+    "/CHANGELOG.md",
+]
 
 [[bin]]
 name = "bios"
