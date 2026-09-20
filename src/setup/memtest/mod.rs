@@ -37,8 +37,14 @@ pub(super) fn run(screen: &mut super::Screen, session: Session) {
         seed,
     } = session;
     let mut game = Game::new(mem_kb, best_kb, cleared_before, seed, cols, rows);
+    // The same decision `bios boot`, `bios fetch` and the setup screen already make; see
+    // `render::color_mode_from_env`.
+    let no_color = crate::render::color_mode_from_env(
+        std::env::var("NO_COLOR").ok().as_deref(),
+        std::env::var("COLORTERM").ok().as_deref(),
+    ) == crate::render::ColorMode::None;
     let redraw = |screen: &mut super::Screen, game: &Game| {
-        screen.draw(&view::render(game, cols as usize, rows as usize));
+        screen.draw(&view::render(game, cols as usize, rows as usize, no_color));
     };
     redraw(screen, &game);
 

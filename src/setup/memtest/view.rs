@@ -50,11 +50,13 @@ fn framed(core: &str) -> String {
 
 /// The whole screen, as lines that each occupy exactly as many cells as the field this `game` was
 /// built for needs, centred inside `cols` by `rows` on the rare chance the terminal has grown
-/// since. Ordinarily the two already match, since `Game::new` was handed the same size.
-pub fn render(game: &Game, cols: usize, rows: usize) -> String {
+/// since. Ordinarily the two already match, since `Game::new` was handed the same size. Under
+/// `no_color` the bricks draw as plain `#` with no SGR at all, rather than their rainbow colours;
+/// see `crate::render::color_mode_from_env`, the decision the caller makes `no_color` from.
+pub fn render(game: &Game, cols: usize, rows: usize, no_color: bool) -> String {
     let width = game.field_cols + FIELD_WIDTH_MARGIN;
     let height = game.field_rows + FIELD_HEIGHT_MARGIN;
-    let body = screen(game, width, height);
+    let body = screen(game, width, height, no_color);
     let pad_left = cols.saturating_sub(width) / 2;
     let pad_top = rows.saturating_sub(height) / 2;
     let indent = " ".repeat(pad_left);
@@ -74,8 +76,8 @@ pub fn render(game: &Game, cols: usize, rows: usize) -> String {
     out
 }
 
-fn screen(game: &Game, width: usize, height: usize) -> Vec<String> {
-    let content = content_lines(game);
+fn screen(game: &Game, width: usize, height: usize, no_color: bool) -> Vec<String> {
+    let content = content_lines(game, no_color);
     let blank_line = " ".repeat(width);
     let top_pad = (height - content.len()) / 2;
     let bottom_pad = height - content.len() - top_pad;
@@ -92,13 +94,13 @@ fn screen(game: &Game, width: usize, height: usize) -> Vec<String> {
 
 /// The header, the frame, the field's own rows, and the footer, which becomes the result line
 /// once the game has ended. `field_rows + 4` lines long, whatever the field's height.
-fn content_lines(game: &Game) -> Vec<String> {
+fn content_lines(game: &Game, no_color: bool) -> Vec<String> {
     let content_width = game.field_cols + 2;
     let mut lines = Vec::with_capacity(2 + game.field_rows + 2);
     lines.push(framed(&header_core(game, content_width)));
     lines.push(framed(&border_core(game.field_cols)));
     for row in 0..game.field_rows {
-        lines.push(framed(&field_core(game, row)));
+        lines.push(framed(&field_core(game, row, no_color)));
     }
     let bottom = if matches!(game.phase, Phase::Result { .. }) && game.is_new_record() {
         framed(&centre_plain("New record.", content_width))
@@ -133,9 +135,9 @@ fn border_core(field_cols: usize) -> String {
 
 /// One of the field's rows: a brick row for the first five, otherwise blank except for the
 /// paddle and, while it is in play, the ball.
-fn field_core(game: &Game, row: usize) -> String {
+fn field_core(game: &Game, row: usize, no_color: bool) -> String {
     if row < BRICK_ROWS {
-        return brick_row_core(game, row);
+        return brick_row_core(game, row, no_color);
     }
 
     let mut cells = vec![' '; game.field_cols];
@@ -158,14 +160,18 @@ fn field_core(game: &Game, row: usize) -> String {
     format!("|{}|", cells.into_iter().collect::<String>())
 }
 
-fn brick_row_core(game: &Game, row: usize) -> String {
-    let colour = BRICK_COLOURS[row];
+fn brick_row_core(game: &Game, row: usize, no_color: bool) -> String {
     let widths = brick_widths(game.field_cols);
     let mut inner = String::with_capacity(game.field_cols);
     for (col, &width) in widths.iter().enumerate() {
         let brick = &game.bricks[row * BRICKS_PER_ROW + col];
         if brick.alive {
-            inner.push_str(&format!("\x1b[{colour}m{}\x1b[0m", "#".repeat(width)));
+            if no_color {
+                inner.push_str(&"#".repeat(width));
+            } else {
+                let colour = BRICK_COLOURS[row];
+                inner.push_str(&format!("\x1b[{colour}m{}\x1b[0m", "#".repeat(width)));
+            }
         } else {
             inner.push_str(&" ".repeat(width));
         }
@@ -226,7 +232,7 @@ mod tests {
             MIN_COLS as u16,
             MIN_ROWS as u16,
         );
-        let out = render(&g, MIN_COLS, MIN_ROWS);
+        let out = render(&g, MIN_COLS, MIN_ROWS, false);
         for (i, line) in visible_lines(&out).iter().enumerate() {
             assert_eq!(line.chars().count(), MIN_COLS, "line {i}: {line:?}");
         }
@@ -236,7 +242,7 @@ mod tests {
     #[test]
     fn a_taller_wider_terminal_grows_the_field_rather_than_stretching_a_fixed_one() {
         let g = Game::new(18874368, 18874368, true, 1, 120, 40);
-        let out = render(&g, 120, 40);
+        let out = render(&g, 120, 40, false);
         let lines = visible_lines(&out);
         assert_eq!(lines.len(), 40);
         for (i, line) in lines.iter().enumerate() {
@@ -258,7 +264,7 @@ mod tests {
             MIN_COLS as u16,
             MIN_ROWS as u16,
         );
-        let out = render(&g, 120, 40);
+        let out = render(&g, 120, 40, false);
         let lines: Vec<&str> = out.lines().collect();
         let pad_top = (40 - MIN_ROWS) / 2;
         assert_eq!(lines.len(), pad_top + MIN_ROWS);
@@ -282,7 +288,7 @@ mod tests {
             MIN_COLS as u16,
             MIN_ROWS as u16,
         );
-        let out = render(&g, MIN_COLS, MIN_ROWS);
+        let out = render(&g, MIN_COLS, MIN_ROWS, false);
         let lines = visible_lines(&out);
 
         let expected_header = format!(
@@ -314,7 +320,7 @@ mod tests {
     fn the_header_counts_down_as_bricks_go() {
         let mut g = Game::new(600, 0, false, 1, MIN_COLS as u16, MIN_ROWS as u16);
         g.remaining_kb -= 10;
-        let out = render(&g, MIN_COLS, MIN_ROWS);
+        let out = render(&g, MIN_COLS, MIN_ROWS, false);
         assert!(out.contains("Memory Testing : 590K"));
         assert!(!out.contains("OK"));
         assert!(!out.contains("FAIL"));
@@ -336,7 +342,7 @@ mod tests {
         g.ball_dx = 0.0;
         g.ball_dy = 0.0;
         assert_eq!(g.tick(), crate::setup::memtest::model::Effect::Ended);
-        let out = render(&g, MIN_COLS, MIN_ROWS);
+        let out = render(&g, MIN_COLS, MIN_ROWS, false);
         assert!(out.contains("Memory Testing : 60K OK"));
         assert!(out.contains("All memory tested. It was fine the whole time. Any key."));
     }
@@ -353,7 +359,7 @@ mod tests {
         g.ball_dy = 0.5;
         g.tick();
         assert!(matches!(g.phase, Phase::FailPause { .. }));
-        let out = render(&g, MIN_COLS, MIN_ROWS);
+        let out = render(&g, MIN_COLS, MIN_ROWS, false);
         assert!(out.contains(&format!("Memory Testing : {}K FAIL", g.remaining_kb)));
         assert!(
             out.contains("Left/Right or A/D: move"),
@@ -376,7 +382,7 @@ mod tests {
             g.tick();
         }
         assert_eq!(g.phase, Phase::Result { won: false });
-        let out = render(&g, MIN_COLS, MIN_ROWS);
+        let out = render(&g, MIN_COLS, MIN_ROWS, false);
         assert!(out.contains(&format!(
             "{}K untested. The BIOS will assume the best. Any key.",
             g.remaining_kb
@@ -400,7 +406,7 @@ mod tests {
         g.ball_dy = 0.0;
         g.tick();
         assert!(g.is_new_record());
-        let out = render(&g, MIN_COLS, MIN_ROWS);
+        let out = render(&g, MIN_COLS, MIN_ROWS, false);
         let lines: Vec<&str> = out.lines().collect();
         let result_line = lines
             .iter()
@@ -415,7 +421,7 @@ mod tests {
         g.key(Key::Space);
         for _ in 0..200 {
             g.tick();
-            let out = render(&g, MIN_COLS, MIN_ROWS);
+            let out = render(&g, MIN_COLS, MIN_ROWS, false);
             for line in out.lines() {
                 assert!(strip_sgr(line).chars().count() <= MIN_COLS);
             }
@@ -428,11 +434,11 @@ mod tests {
     fn consecutive_frames_change_fewer_than_a_quarter_of_the_cells() {
         let mut g = Game::new(37748736, 0, false, 7, MIN_COLS as u16, MIN_ROWS as u16);
         g.key(Key::Space);
-        let mut previous = visible_lines(&render(&g, MIN_COLS, MIN_ROWS));
+        let mut previous = visible_lines(&render(&g, MIN_COLS, MIN_ROWS, false));
         let total_cells = MIN_COLS * MIN_ROWS;
         for _ in 0..200 {
             g.tick();
-            let current = visible_lines(&render(&g, MIN_COLS, MIN_ROWS));
+            let current = visible_lines(&render(&g, MIN_COLS, MIN_ROWS, false));
             let changed: usize = previous
                 .iter()
                 .zip(current.iter())
@@ -443,6 +449,52 @@ mod tests {
                 "a frame changed {changed} of {total_cells} cells"
             );
             previous = current;
+        }
+    }
+
+    #[test]
+    fn no_color_emits_no_escape_sequence_at_any_size() {
+        for (cols, rows) in [(80u16, 24u16), (120, 40), (160, 50)] {
+            let g = Game::new(18874368, 18874368, true, 1, cols, rows);
+            let out = render(&g, cols as usize, rows as usize, true);
+            assert!(
+                !out.contains('\x1b'),
+                "{cols}x{rows}: NO_COLOR output should carry no SGR sequence at all"
+            );
+        }
+    }
+
+    #[test]
+    fn no_color_still_fills_every_line_to_the_terminal_width_at_any_size() {
+        for (cols, rows) in [(80u16, 24u16), (120, 40), (160, 50)] {
+            let g = Game::new(18874368, 18874368, true, 1, cols, rows);
+            let out = render(&g, cols as usize, rows as usize, true);
+            for (i, line) in out.lines().enumerate() {
+                assert_eq!(
+                    line.chars().count(),
+                    cols as usize,
+                    "{cols}x{rows} line {i}: {line:?}"
+                );
+            }
+            assert_eq!(out.lines().count(), rows as usize, "{cols}x{rows}");
+        }
+    }
+
+    #[test]
+    fn no_color_still_draws_the_bricks_as_plain_hashes() {
+        let g = Game::new(
+            18874368,
+            18874368,
+            true,
+            1,
+            MIN_COLS as u16,
+            MIN_ROWS as u16,
+        );
+        let out = render(&g, MIN_COLS, MIN_ROWS, true);
+        let lines: Vec<&str> = out.lines().collect();
+        for r in 0..BRICK_ROWS {
+            let row = lines[2 + r];
+            assert_eq!(row.matches('#').count(), g.field_cols, "brick row {r}");
         }
     }
 }

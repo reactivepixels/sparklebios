@@ -104,6 +104,11 @@ pub fn run(memory_test: bool) -> i32 {
         std::env::var("COLORTERM").ok().as_deref(),
         std::env::var("TERM").ok().as_deref(),
     );
+    // The same decision `bios boot` and `bios fetch` already make; see `render::color_mode_from_env`.
+    let no_color = crate::render::color_mode_from_env(
+        std::env::var("NO_COLOR").ok().as_deref(),
+        std::env::var("COLORTERM").ok().as_deref(),
+    ) == crate::render::ColorMode::None;
 
     let outcome = {
         let Some(_raw) = crate::tty::RawGuard::new(fd) else {
@@ -115,7 +120,16 @@ pub fn run(memory_test: bool) -> i32 {
             launch_memory_test(&mut screen, fd, cols, rows);
             Outcome::Exit
         } else {
-            run_loop(&mut state, &mut screen, fd, cols, rows, &year, truecolor)
+            run_loop(
+                &mut state,
+                &mut screen,
+                fd,
+                cols,
+                rows,
+                &year,
+                truecolor,
+                no_color,
+            )
         }
         // Both guards drop here, so the terminal is itself again before anything below prints.
     };
@@ -126,6 +140,7 @@ pub fn run(memory_test: bool) -> i32 {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_loop(
     state: &mut State,
     screen: &mut Screen,
@@ -134,6 +149,7 @@ fn run_loop(
     rows: u16,
     year: &str,
     truecolor: bool,
+    no_color: bool,
 ) -> Outcome {
     let redraw = |screen: &mut Screen, state: &State| {
         screen.draw(&view::render(
@@ -142,6 +158,7 @@ fn run_loop(
             rows as usize,
             year,
             truecolor,
+            no_color,
         ));
     };
     redraw(screen, state);

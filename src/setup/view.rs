@@ -67,6 +67,20 @@ const TRUECOLOR: Palette = Palette {
     reset: "\x1b[0m",
 };
 
+// NO_COLOR: no SGR sequence at all, every field empty, so every `format!("{style}{body}{reset}")`
+// site below draws `body` and nothing else. The selected row loses its reverse video here, and
+// gets the leading `>` marker `pane_row` draws instead; see `render`.
+const PLAIN: Palette = Palette {
+    bg: "",
+    text: "",
+    frame: "",
+    selected: "",
+    changed: "",
+    help: "",
+    dialog: "",
+    reset: "",
+};
+
 /// Whether the terminal can be trusted to show the setup screen's own fixed colours rather than
 /// whatever a theme has redefined ANSI 44 as: `COLORTERM` of exactly `truecolor`, or a `TERM`
 /// naming one of the terminals known to render truecolor correctly. Anything else falls back to
@@ -82,8 +96,13 @@ pub fn truecolor_capable(colorterm: Option<&str>, term: Option<&str>) -> bool {
         .any(|name| term.contains(name))
 }
 
-fn palette(truecolor: bool) -> &'static Palette {
-    if truecolor {
+/// `no_color` wins over `truecolor`: NO_COLOR is a stronger instruction than any terminal
+/// capability guess. See `crate::render::color_mode_from_env`, the decision this screen's caller
+/// makes `no_color` from.
+fn palette(no_color: bool, truecolor: bool) -> &'static Palette {
+    if no_color {
+        &PLAIN
+    } else if truecolor {
         &TRUECOLOR
     } else {
         &ANSI
@@ -158,14 +177,37 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
 /// The whole screen, as `rows` lines each occupying exactly `cols` cells: the frame always spans
 /// the terminal it is drawn into, rather than sitting as a fixed-size island inside it.
 /// `truecolor` chooses the fixed CGA palette over the plain ANSI one; see `truecolor_capable`.
-/// Callers must have already checked `cols >= MIN_WIDTH` and `rows >= MIN_HEIGHT`.
-pub fn render(state: &State, cols: usize, rows: usize, year: &str, truecolor: bool) -> String {
+/// `no_color` wins over both, drawing no SGR sequence at all; see `palette`. Callers must have
+/// already checked `cols >= MIN_WIDTH` and `rows >= MIN_HEIGHT`.
+pub fn render(
+    state: &State,
+    cols: usize,
+    rows: usize,
+    year: &str,
+    truecolor: bool,
+    no_color: bool,
+) -> String {
     // Joined, never terminated. A newline after the last row scrolls the whole screen up by one
     // on a terminal exactly as tall as the screen, losing the title, and again on every redraw.
-    screen(state, cols, rows, year, palette(truecolor)).join("\n")
+    screen(
+        state,
+        cols,
+        rows,
+        year,
+        palette(no_color, truecolor),
+        no_color,
+    )
+    .join("\n")
 }
 
-fn screen(state: &State, cols: usize, rows: usize, year: &str, p: &Palette) -> Vec<String> {
+fn screen(
+    state: &State,
+    cols: usize,
+    rows: usize,
+    year: &str,
+    p: &Palette,
+    no_color: bool,
+) -> Vec<String> {
     let mut lines = Vec::with_capacity(rows);
     let Palette {
         text,
@@ -194,7 +236,7 @@ fn screen(state: &State, cols: usize, rows: usize, year: &str, p: &Palette) -> V
     // The panes are the same height, so the taller of the two decides it.
     let pane_rows = rows.saturating_sub(5);
     for i in 0..pane_rows {
-        lines.push(pane_row(state, i, &help_lines, left_width, p));
+        lines.push(pane_row(state, i, &help_lines, left_width, p, no_color));
     }
 
     lines.push(rule(left_width, '\u{255a}', '\u{2569}', '\u{255d}', p));
@@ -221,13 +263,16 @@ fn rule(left_width: usize, left: char, middle: char, right: char, p: &Palette) -
     )
 }
 
-/// One row inside the frame: a setting on the left, a line of help on the right.
+/// One row inside the frame: a setting on the left, a line of help on the right. Under
+/// `no_color`, the selected row has no reverse video to mark it, so its label's leading two
+/// spaces become `> ` instead: the line stays exactly as wide, and no other row changes.
 fn pane_row(
     state: &State,
     index: usize,
     help_lines: &[String],
     left_width: usize,
     p: &Palette,
+    no_color: bool,
 ) -> String {
     let Palette {
         bg,
@@ -242,10 +287,12 @@ fn pane_row(
 
     let left = match state.rows.get(index) {
         Some(row) => {
-            let label = fit(&format!("  {}", row.label), 24);
+            let is_selected = index == state.selected;
+            let marker = if no_color && is_selected { "> " } else { "  " };
+            let label = fit(&format!("{marker}{}", row.label), 24);
             let value = format!("[{}]", row.value());
             let body = fit(&format!("{label}{value}"), left_width);
-            if index == state.selected {
+            if is_selected {
                 format!("{selected}{body}{reset}")
             } else if row.changed() {
                 format!("{changed}{body}{reset}")
@@ -378,7 +425,7 @@ mod tests {
     #[test]
     fn every_line_is_exactly_the_terminal_width_at_any_size() {
         for (cols, rows) in SIZES {
-            let out = render(&state(), cols, rows, "2026", false);
+            let out = render(&state(), cols, rows, "2026", false, false);
             for (i, line) in visible_lines(&out).iter().enumerate() {
                 assert_eq!(
                     line.chars().count(),
@@ -395,7 +442,7 @@ mod tests {
     #[test]
     fn the_frame_does_not_end_in_a_newline_at_any_size() {
         for (cols, rows) in SIZES {
-            let out = render(&state(), cols, rows, "2026", false);
+            let out = render(&state(), cols, rows, "2026", false, false);
             assert!(
                 !out.ends_with('\n'),
                 "{cols}x{rows}: the last row is newline terminated"
@@ -411,7 +458,7 @@ mod tests {
     #[test]
     fn the_screen_is_the_full_height_at_any_size() {
         for (cols, rows) in SIZES {
-            let out = render(&state(), cols, rows, "2026", false);
+            let out = render(&state(), cols, rows, "2026", false, false);
             assert_eq!(out.lines().count(), rows, "{cols}x{rows}");
         }
     }
@@ -419,7 +466,7 @@ mod tests {
     #[test]
     fn the_frame_fills_a_bigger_terminal_rather_than_sitting_as_an_island_in_it() {
         for (cols, rows) in [(120, 40), (160, 50)] {
-            let out = render(&state(), cols, rows, "2026", false);
+            let out = render(&state(), cols, rows, "2026", false, false);
             let lines: Vec<&str> = out.lines().collect();
             assert!(
                 strip_sgr(lines[0]).contains("SparkleBIOS"),
@@ -439,7 +486,7 @@ mod tests {
 
     #[test]
     fn the_selected_row_is_the_only_one_in_reverse_video() {
-        let out = render(&state(), 80, 24, "2026", false);
+        let out = render(&state(), 80, 24, "2026", false, false);
         assert_eq!(out.matches(ANSI.selected).count(), 1);
         assert!(out.contains(&format!("{}  Flavour", ANSI.selected)));
     }
@@ -449,7 +496,7 @@ mod tests {
         let mut s = state();
         s.rows[1].selected = 1;
         s.selected = 0;
-        let out = render(&s, 80, 24, "2026", false);
+        let out = render(&s, 80, 24, "2026", false, false);
         assert!(out.contains(ANSI.changed), "a changed row should stand out");
         assert!(out.contains("[Hidden]"));
     }
@@ -458,7 +505,7 @@ mod tests {
     fn the_help_pane_shows_the_selected_rows_text_wrapped_inside_the_pane() {
         let mut s = state();
         s.selected = 2;
-        let out = render(&s, 80, 24, "2026", false);
+        let out = render(&s, 80, 24, "2026", false, false);
         assert!(out.contains("Item Help"));
         let joined = visible_lines(&out).join(" ");
         assert!(joined.contains("Does nothing. It never did."));
@@ -521,7 +568,7 @@ mod tests {
         for (cols, rows) in SIZES {
             let mut s = state();
             s.dialog = Dialog::Save;
-            let out = render(&s, cols, rows, "2026", false);
+            let out = render(&s, cols, rows, "2026", false, false);
             for line in visible_lines(&out) {
                 assert_eq!(line.chars().count(), cols, "{cols}x{rows}");
             }
@@ -533,7 +580,7 @@ mod tests {
     fn the_quit_dialog_asks_the_other_question() {
         let mut s = state();
         s.dialog = Dialog::Quit;
-        let out = render(&s, 80, 24, "2026", false);
+        let out = render(&s, 80, 24, "2026", false, false);
         assert!(out.contains("Quit Without Saving (Y/N)? N"));
         for line in visible_lines(&out) {
             assert_eq!(line.chars().count(), 80);
@@ -542,7 +589,7 @@ mod tests {
 
     #[test]
     fn the_year_comes_from_the_caller_rather_than_the_clock() {
-        let out = render(&state(), 80, 24, "1999", false);
+        let out = render(&state(), 80, 24, "1999", false, false);
         assert!(out.contains("Copyright (C) 1985-1999, Rainbows & Unicorns, Inc."));
     }
 
@@ -556,7 +603,7 @@ mod tests {
     #[test]
     fn the_footer_lists_the_keys_at_any_size() {
         for (cols, rows) in SIZES {
-            let out = render(&state(), cols, rows, "2026", false);
+            let out = render(&state(), cols, rows, "2026", false, false);
             let last = strip_sgr(out.lines().last().unwrap());
             assert!(last.contains("Up/Down: Select"), "{cols}x{rows}");
             assert!(last.contains("F10: Save"), "{cols}x{rows}");
@@ -568,7 +615,7 @@ mod tests {
     fn truecolor_and_non_truecolor_both_render_at_any_size() {
         for (cols, rows) in SIZES {
             for truecolor in [false, true] {
-                let out = render(&state(), cols, rows, "2026", truecolor);
+                let out = render(&state(), cols, rows, "2026", truecolor, false);
                 assert_eq!(
                     out.lines().count(),
                     rows,
@@ -580,13 +627,13 @@ mod tests {
 
     #[test]
     fn truecolor_draws_the_exact_cga_background_and_the_fallback_draws_the_old_ansi_code() {
-        let out_true = render(&state(), 80, 24, "2026", true);
+        let out_true = render(&state(), 80, 24, "2026", true, false);
         assert!(
             out_true.contains("48;2;0;0;168"),
             "truecolor output should contain the exact CGA blue background"
         );
 
-        let out_false = render(&state(), 80, 24, "2026", false);
+        let out_false = render(&state(), 80, 24, "2026", false, false);
         assert!(
             out_false.contains("\x1b[44"),
             "the fallback output should still contain the old ANSI background code"
@@ -607,5 +654,61 @@ mod tests {
         assert!(!truecolor_capable(None, None));
         assert!(!truecolor_capable(Some("24bit"), Some("xterm-256color")));
         assert!(!truecolor_capable(None, Some("xterm-256color")));
+    }
+
+    #[test]
+    fn no_color_emits_no_escape_sequence_at_any_size() {
+        for (cols, rows) in SIZES {
+            let out = render(&state(), cols, rows, "2026", false, true);
+            assert!(
+                !out.contains('\x1b'),
+                "{cols}x{rows}: NO_COLOR output should carry no SGR sequence at all"
+            );
+        }
+    }
+
+    #[test]
+    fn no_color_still_fills_every_line_to_the_terminal_width_at_any_size() {
+        for (cols, rows) in SIZES {
+            let out = render(&state(), cols, rows, "2026", false, true);
+            for (i, line) in out.lines().enumerate() {
+                assert_eq!(
+                    line.chars().count(),
+                    cols,
+                    "{cols}x{rows} line {i}: {line:?}"
+                );
+            }
+            assert_eq!(out.lines().count(), rows, "{cols}x{rows}");
+        }
+    }
+
+    #[test]
+    fn no_color_marks_the_selected_row_with_a_marker_and_no_other_row() {
+        let mut s = state();
+        s.selected = 1; // Mascot
+        let out = render(&s, 80, 24, "2026", false, true);
+        assert!(
+            out.contains("> Mascot"),
+            "the selected row should carry the > marker in place of reverse video"
+        );
+        assert!(!out.contains("> Flavour"));
+        assert!(!out.contains("> Turbo"));
+        assert_eq!(
+            out.matches('>').count(),
+            1,
+            "no row other than the selected one should carry the marker"
+        );
+    }
+
+    #[test]
+    fn no_color_dialog_also_emits_no_escape_sequence() {
+        let mut s = state();
+        s.dialog = Dialog::Save;
+        let out = render(&s, 80, 24, "2026", false, true);
+        assert!(!out.contains('\x1b'));
+        assert!(out.contains("SAVE to CMOS and EXIT (Y/N)? Y"));
+        for line in out.lines() {
+            assert_eq!(line.chars().count(), 80);
+        }
     }
 }

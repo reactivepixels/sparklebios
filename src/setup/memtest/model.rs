@@ -48,17 +48,30 @@ const BALLS_PER_GAME: u8 = 3;
 /// Ticks a second: `mod.rs` drives the game at roughly this rate. Named here, not read from
 /// there, so the per tick step below is derived, not guessed.
 const TICKS_PER_SECOND: f64 = 30.0;
-/// The ball's vertical speed at the start, in field rows a second.
-const VERTICAL_CELLS_PER_SECOND: f64 = 9.0;
-/// The ball's horizontal speed at the start, in field columns a second. A terminal cell is
-/// roughly twice as tall as it is wide, so nine rows and eighteen columns a second trace the same
-/// line on screen: a true forty five degree diagonal.
-const HORIZONTAL_CELLS_PER_SECOND: f64 = 18.0;
-/// The ball's base vertical step, in rows a tick, before the speed up.
-const BASE_VERTICAL_STEP: f64 = VERTICAL_CELLS_PER_SECOND / TICKS_PER_SECOND;
-/// The ball's base horizontal step, in columns a tick, before the speed up. Also the most
-/// sideways a paddle bounce can send it: an edge hit uses the whole of it, a centre hit none.
-const BASE_HORIZONTAL_STEP: f64 = HORIZONTAL_CELLS_PER_SECOND / TICKS_PER_SECOND;
+/// Seconds the ball takes to fall from the lowest brick row to the bat, at the game's starting
+/// speed, at every terminal size. This, not a fixed speed, is the constant: a taller field gives
+/// the ball more open rows to fall through, so its starting speed scales with the field rather
+/// than its time of flight growing with it.
+const FALL_SECONDS: f64 = 1.5;
+
+/// The ball's base vertical and horizontal step, in field cells a tick, before the speed up.
+/// Worked out from `field_rows` rather than a `const`, since the rate is a function of the field:
+/// the open rows between the lowest brick row and the bat are `field_rows - BRICK_ROWS`, crossed
+/// in `FALL_SECONDS` however many of them a taller terminal gives the ball. A terminal cell is
+/// roughly twice as tall as it is wide, so the horizontal rate is always twice the vertical one:
+/// the ball still traces a true forty five degree diagonal on screen, at any size. The horizontal
+/// step is also the most sideways a paddle bounce can send the ball: an edge hit uses the whole
+/// of it, a centre hit none.
+fn base_steps(field_rows: usize) -> (f64, f64) {
+    let open_rows = (field_rows - BRICK_ROWS) as f64;
+    let vertical_per_second = open_rows / FALL_SECONDS;
+    let horizontal_per_second = vertical_per_second * 2.0;
+    (
+        vertical_per_second / TICKS_PER_SECOND,
+        horizontal_per_second / TICKS_PER_SECOND,
+    )
+}
+
 /// How much faster the ball gets for every ten bricks broken.
 const SPEED_UP_FACTOR: f64 = 1.05;
 /// The ball is never faster than this multiple of its starting speed, however many bricks are
@@ -249,8 +262,9 @@ impl Game {
     fn launch(&mut self) {
         self.phase = Phase::Playing;
         let direction = if self.seed % 2 == 0 { -1.0 } else { 1.0 };
-        self.ball_dx = BASE_HORIZONTAL_STEP * self.speed * direction;
-        self.ball_dy = -BASE_VERTICAL_STEP * self.speed;
+        let (base_vertical_step, base_horizontal_step) = base_steps(self.field_rows);
+        self.ball_dx = base_horizontal_step * self.speed * direction;
+        self.ball_dy = -base_vertical_step * self.speed;
     }
 
     /// The horizontal speed a paddle bounce sends the ball off at, given where along the paddle
@@ -262,7 +276,8 @@ impl Game {
         let half_width = PADDLE_WIDTH as f64 / 2.0;
         let centre = self.paddle_col as f64 + half_width;
         let offset = ((hit_x - centre) / half_width).clamp(-1.0, 1.0);
-        offset * BASE_HORIZONTAL_STEP * self.speed
+        let (_, base_horizontal_step) = base_steps(self.field_rows);
+        offset * base_horizontal_step * self.speed
     }
 
     /// One tick of ball physics: walls, the paddle, and bricks, in that order. Returns the effect
@@ -703,30 +718,37 @@ mod tests {
     }
 
     #[test]
-    fn the_ball_takes_about_a_second_and_a_half_to_fall_from_the_lowest_brick_row_to_the_bat() {
-        let mut g = Game::new(100, 0, false, 1, COLS, ROWS);
-        kill_all_bricks(&mut g);
-        g.phase = Phase::Playing;
-        g.paddle_col = (g.field_cols - PADDLE_WIDTH) / 2;
-        g.ball_x = g.paddle_col as f64 + PADDLE_WIDTH as f64 / 2.0;
-        g.ball_y = (BRICK_ROWS - 1) as f64;
-        g.ball_dx = 0.0;
-        g.ball_dy = BASE_VERTICAL_STEP;
+    fn the_ball_takes_about_a_second_and_a_half_to_fall_from_the_lowest_brick_row_to_the_bat_at_any_size(
+    ) {
+        for (cols, rows) in [(80u16, 24u16), (120, 40), (160, 50)] {
+            let mut g = Game::new(100, 0, false, 1, cols, rows);
+            kill_all_bricks(&mut g);
+            g.phase = Phase::Playing;
+            g.paddle_col = (g.field_cols - PADDLE_WIDTH) / 2;
+            g.ball_x = g.paddle_col as f64 + PADDLE_WIDTH as f64 / 2.0;
+            g.ball_y = (BRICK_ROWS - 1) as f64;
+            g.ball_dx = 0.0;
+            let (base_vertical_step, _) = base_steps(g.field_rows);
+            g.ball_dy = base_vertical_step;
 
-        let mut ticks = 0u32;
-        loop {
-            g.tick();
-            ticks += 1;
-            assert!(ticks < 1000, "the ball never reached the bat");
-            if g.ball_dy < 0.0 {
-                break;
+            let mut ticks = 0u32;
+            loop {
+                g.tick();
+                ticks += 1;
+                assert!(
+                    ticks < 1000,
+                    "{cols}x{rows}: the ball never reached the bat"
+                );
+                if g.ball_dy < 0.0 {
+                    break;
+                }
             }
+            let seconds = ticks as f64 / TICKS_PER_SECOND;
+            assert!(
+                (seconds - 1.5).abs() < 0.15,
+                "{cols}x{rows}: expected about 1.5s, took {seconds}s ({ticks} ticks)"
+            );
         }
-        let seconds = ticks as f64 / TICKS_PER_SECOND;
-        assert!(
-            (seconds - 1.5).abs() < 0.15,
-            "expected about 1.5s, took {seconds}s ({ticks} ticks)"
-        );
     }
 
     #[test]
@@ -785,29 +807,21 @@ mod tests {
     }
 
     #[test]
-    fn a_minute_of_following_the_ball_clears_ten_bricks_and_loses_none() {
+    fn a_minute_of_following_the_ball_clears_ten_bricks_and_loses_none_at_any_size() {
         // The bar the maintainer set after the first version proved unplayable: a bat that only
-        // tracks the ball has to manage ten bricks on one ball. Measured here at 15.
-        let (broken, balls) = follow_the_ball(80, 24, 30 * 60);
-        assert!(broken >= 10, "only {broken} bricks in a minute");
-        assert_eq!(
-            balls, BALLS_PER_GAME,
-            "a ball was lost to a bat that was there"
-        );
-    }
-
-    #[test]
-    fn a_bigger_terminal_is_slower_to_clear_but_never_traps_the_ball() {
-        // The ball travels at a fixed nine rows a second, so a taller field simply means fewer
-        // round trips per minute: 15 a minute at 80x24, 9 at 120x40, 7 at 160x50. What must not
-        // happen is the ball never reaching the bricks at all.
-        for (cols, rows) in [(120u16, 40u16), (160, 50)] {
-            let (broken, balls) = follow_the_ball(cols, rows, 30 * 120);
+        // tracks the ball has to manage ten bricks on one ball, in a minute, however big the
+        // terminal is: the whole point of scaling the ball's speed to the field. Measured here at
+        // 19 a minute at 80x24, 22 at 120x40, 23 at 160x50.
+        for (cols, rows) in [(80u16, 24u16), (120, 40), (160, 50)] {
+            let (broken, balls) = follow_the_ball(cols, rows, 30 * 60);
             assert!(
                 broken >= 10,
-                "{cols}x{rows}: only {broken} bricks in two minutes, the ball is stuck"
+                "{cols}x{rows}: only {broken} bricks in a minute"
             );
-            assert_eq!(balls, BALLS_PER_GAME, "{cols}x{rows}: a ball was lost");
+            assert_eq!(
+                balls, BALLS_PER_GAME,
+                "{cols}x{rows}: a ball was lost to a bat that was there"
+            );
         }
     }
 
