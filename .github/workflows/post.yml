@@ -22,11 +22,11 @@ jobs:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Formatting
         run: cargo fmt --check
       - name: Lints
@@ -42,9 +42,9 @@ jobs:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Build release
         run: cargo build --release
       - name: Speed receipt
@@ -57,12 +57,12 @@ jobs:
     name: House rules
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: No em dashes or en dashes anywhere
         run: |
-          if grep -rnP '[\x{2014}\x{2013}]' --exclude-dir=.git --exclude-dir=target --exclude=LICENSE-APACHE .; then
+          if grep -rnIP '[\x{2014}\x{2013}]' --exclude-dir=.git --exclude-dir=target --exclude=LICENSE-APACHE .; then
             echo "Found an em dash or en dash. Use a comma, a colon, parentheses, or two sentences."
             exit 1
           fi
       - name: Licences, advisories and the no-network rule
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2

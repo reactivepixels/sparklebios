@@ -50,11 +50,11 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: release-${{ matrix.target }}
       - name: Build
@@ -68,7 +68,7 @@ jobs:
           cp README.md CHANGELOG.md LICENSE-APACHE LICENSE-MIT "$STAGE/"
           tar czf "$STAGE.tar.gz" "$STAGE"
           echo "name=$STAGE.tar.gz" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ steps.package.outputs.name }}
           path: ${{ steps.package.outputs.name }}
@@ -79,7 +79,7 @@ jobs:
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: bios-${{ needs.version.outputs.version }}-*
           path: dist
@@ -87,7 +87,7 @@ jobs:
       - name: Sum every tarball
         working-directory: dist
         run: sha256sum *.tar.gz > SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: SHA256SUMS
           path: dist/SHA256SUMS
@@ -103,16 +103,16 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: bios-${{ needs.version.outputs.version }}-*
           path: dist
           merge-multiple: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: SHA256SUMS
           path: dist
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             dist/*.tar.gz

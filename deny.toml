@@ -31,6 +31,8 @@ deny = [
     { crate = "tokio", reason = "Nothing here is asynchronous enough to need a runtime." },
     { crate = "openssl", reason = "No network code, so no TLS." },
     { crate = "rustls", reason = "No network code, so no TLS." },
+    { crate = "socket2", reason = "No network code." },
+    { crate = "h2", reason = "No network code." },
 ]
 
 [sources]
