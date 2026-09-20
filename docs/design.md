@@ -1,6 +1,6 @@
 # SparkleBIOS: project design
 
-Date: 2026-09-19
+Date: 2026-09-20
 Status: accepted
 
 ## 1. What this is
@@ -12,239 +12,291 @@ visual language:
 | Part | What it does | Role |
 |---|---|---|
 | **The BIOS** | Boots every new terminal tab with a period-correct POST screen that is secretly a health check | The star |
-| **neigh** | Rainbow pipe with quantised era palettes (`make \| neigh`) | The paint |
-| **The theme** | "Rainbows and Unicorns", a serious 1985 Ghostty theme, dark and light pair | The ground |
+| **neigh** | Planned rainbow pipe with quantised era palettes (`make \| neigh`); not built yet, see `ROADMAP.md` M4.5 | The paint |
+| **The theme** | "Rainbows and Unicorns", a serious 1985 Ghostty theme, ten variants sharing one idea | The ground |
 
-Parked for a later phase: **stable** (the unicorn creature in the prompt, commit
-streaks, the heckler) and exit code theatre. The architecture leaves room for
-them but nothing in this design depends on them.
+Parked for later, per `ROADMAP.md`: **stable** (a unicorn that lives in the
+prompt, with commit streaks) and exit code theatre.
 
 ### Principles
 
 1. **Be cool and hilarious.** That is the mandate. Deadpan delivery, period-correct detail, gags that reward people who remember the real thing. `docs/voice.md` is the rulebook. Everything below is how we get away with it.
 2. **Never slow or break the shell.** Every feature has a time budget and a kill switch. A failure prints nothing and exits 0.
-3. **Jokes carry facts.** Every gag line is backed by a real probe. "S.M.A.R.T. status BAD" means the disk really is nearly full.
-4. **Quantised, not gradient.** Bands, dither and raster bars. Three to sixteen colours. No smooth truecolor blends.
-5. **Each machine speaks in its own voice.** A mid-90s PC, a VMS login and an 8-bit home computer phrase the same warning differently.
-6. **Content is data.** Machines, palettes and gags are files, not code, so adding one never needs a recompile of logic.
+3. **Jokes carry facts.** Every gag line is backed by a real probe or is clearly fictional branding.
+4. **Quantised, not gradient.** Bands, dither and raster bars, the design for `neigh` once it exists. No smooth truecolor blends.
+5. **Each flavour speaks in its own voice.** A unicorn, a sumo wrestler and a raccoon phrase the same warning differently. The screen underneath (`pc95`) is the hardware; the flavour is the personality riding on it.
+6. **Content is data.** Screens live in `machines/*.toml`, flavours in `flavours/*.toml`, themes in `themes/`. Logic never hardcodes a screen's or a flavour's wording.
 7. **The name is the only joke in the theme.** The theme itself is a daily driver with checked contrast.
 
 ## 2. Command surface
 
-One Rust binary, `bios`, plus `neigh` as a multi-call name (symlink to the
-same binary, dispatched on `argv[0]`).
+One Rust binary, `bios`. Its `--help` (also shown for a bare `bios` and `bios
+help`) is hand written rather than clap generated:
 
 ```
-bios init zsh          print the shell hook (eval it at the END of .zshrc)
-bios boot              run the POST for a new shell (called by the hook)
-bios post              project mini POST (called by the chpwd hook)
-bios halt              shutdown screen (called by the zshexit hook)
-bios setup             BIOS setup utility (the settings TUI)
-bios refresh           refresh the slow-fact cache (spawned detached, never waited on)
-bios theme list|install|use <name>
-bios trust [dir]       allow a repo's custom project checks
-bios machines          list boot machines; `bios boot --machine c64 --full` to preview one
-bios machines new|lint scaffold and validate a contributed machine
-bios fetch             static POST on demand, for screenshots (the neofetch slot)
+SparkleBIOS {version}
+A 1995 POST screen for your terminal that is secretly a health check.
 
-neigh [-p PALETTE] [--bands|--diag|--dither|--raster|--flash] [-w N]
-      [--gallop] [--crt] [--banner TEXT] [--rule] [--force-color]
+Usage: bios <COMMAND>
+
+Everyday:
+  boot               Play the boot screen now
+  resume             Change to the project you left work in
+  flavours           List the personalities you can boot as
+  use <FLAVOUR>      Boot as that flavour from now on
+  theme list         List the matching Ghostty themes
+  theme use <NAME>   Install the themes and switch Ghostty to one
+
+Setup:
+  init zsh           Print the hook. Add this to the end of ~/.zshrc:
+                     command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
+  theme install      Install the theme files without switching
+
+Try:
+  bios boot --flavour sumo     Preview a flavour without changing anything
+  bios use sumo                Make it permanent
+  bios resume                  Go back to the project you left work in
+  bios use                     Show which flavour is set
+  bios theme use mane          Switch Ghostty to the Mane theme
+  SPARKLEBIOS_BOOT=0           Set this in a shell to stop it booting there
+
+Options:
+  -h, --help         Print help
+  -V, --version      Print version
 ```
 
-Shell support: zsh first. bash and fish hooks later; nothing in the binary is zsh specific.
+`bios refresh` also exists (rebuilds the findings cache, spawned detached by
+`bios boot` and never meant to be typed by hand). `bios boot` also takes a
+hidden `--machine <id>` for previewing a screen file under development.
+
+Shell support: zsh only today. bash and fish hooks are `ROADMAP.md` M8;
+nothing in the binary is zsh specific.
 
 ## 3. The BIOS
 
 ### 3.1 Boot modes
 
-| Mode | When | Length | Machine |
-|---|---|---|---|
-| **Full show** | First boot of the day | about 2s, skippable | The configured flagship (default: pc95) |
-| **Fast** | Every other new tab | about 300ms | pc85 (memory count, one banner, done) |
-| **Quiet** | A boot happened under 10s ago (burst of tabs, Supacode spawning surfaces) | 0ms | Nothing, unless a check failed, then one line |
-| **Off** | See below | 0ms | Nothing |
+SparkleBIOS ships one screen, `pc95` (see 3.5). A boot always draws that
+screen; the mode only decides whether it animates and how much of it shows.
 
-Off conditions, checked first and cheaply: shell not interactive, stdout not a
-tty, `TERM=dumb`, `SPARKLEBIOS_BOOT=0`, `SPARKLEBIOS_BOOTED` already exported (nested
-shell), or a user-configured skip rule matches (for example `TERM_PROGRAM=vscode`).
+| Mode | When | What happens |
+|---|---|---|
+| **Full show** | First boot of the day | `pc95`, played out over a couple of seconds with the timeline's own timing, skippable by any key |
+| **Fast** | Every other new tab, same day | The same screen, drawn at once, no animation |
+| **Quiet** | A boot happened inside the burst window (10s: a burst of tabs, an editor or agent spawning many shells) | Nothing, unless a `Fail` finding is fresh in the cache, in which case one plain line, no paint, no colour, no F1 line |
+| **Off** | See below | Nothing |
+
+Off conditions: stdout is not a tty, `TERM=dumb`, `SPARKLEBIOS_BOOT=0`, or
+`SPARKLEBIOS_BOOTED` is already exported (a nested shell). The zsh hook itself
+only calls `bios boot --hook` when the shell is interactive
+(`[[ -o interactive ]]`), so a non-interactive shell never gets this far.
+There is no user-configured skip rule (for example by `TERM_PROGRAM`) today.
 
 The final POST stays in scrollback like a MOTD. It is not cleared.
 
 ### 3.2 The timeline
 
-A boot is compiled into a timeline, then played:
+A screen is a list of steps, played in order:
 
 ```
-Step = Print(line) | Count{template, to, ms} | Detect{label, result, ms} | Pause(ms) | Beep(code)
+Step = Print{text, style, ms} | Count{template, to, suffix, ms}
+     | Detect{label, result, style, ms} | Quip{style, ms}
+     | Findings{style, ms} | F1{style, ms}
 ```
 
-- The **player** runs a timeline against the tty with a speed factor and watches for keys.
-- Speed = infinity renders the final static frame. That one code path serves fast mode's end state, non-animated terminals, reduced theatrics, and snapshot tests.
-- **Esc** (or any key) finishes instantly. **DEL** finishes and opens `bios setup`.
-- **Typeahead is preserved.** Keys typed during the show are not lost: the binary draws on `/dev/tty`, returns swallowed keystrokes on stdout, and the hook pushes them into the line editor with `print -z`.
-- Raw mode is held by a guard that restores the terminal on exit, panic and SIGINT.
+- `render::render_static` draws the final frame at once: this is what Fast
+  mode, a non-TrueColor terminal, `--no-animate` and `SPARKLEBIOS_ANIMATE=0`
+  all use.
+- `show::play` is the animated player, used only on a Full decision. It walks
+  the same steps with their own delays and watches for a key on `/dev/tty`.
+  Tests play it at speed 0 and assert the final rows equal `render_static`'s
+  output, so the two paths can never silently disagree.
+- **Any key** finishes the show instantly and jumps to the final frame. There
+  is no dedicated setup screen to open with a different key yet (`bios setup`
+  is `ROADMAP.md` M5).
+- **Typeahead is preserved.** The binary reads keys from `/dev/tty`, and
+  `--hook` mode prints the swallowed bytes (escape sequences and Ctrl-C
+  filtered out) to stdout; the shell hook pushes them into the line editor
+  with `print -z`.
+- Raw mode is entered through a guard that restores the terminal's saved
+  termios when it drops, including during a panic. The guard also turns
+  `ISIG` off, so Ctrl-C during the show arrives as a plain byte (`0x03`) like
+  any other key, rather than a signal: there is no separate SIGINT handler to
+  keep it from leaving the terminal raw.
 
 ### 3.3 Facts
 
-Facts fill the template slots: `{cpu.name}`, `{cpu.cores}`, `{mem.kb}`,
-`{disk.model}`, `{disk.used_pct}`, `{runtime.node}`, `{shell.boot_ms}`, `{streak.days}`.
+Facts fill a screen's `{key}` slots. `facts::gather()` reads all of them
+inline, every boot: CPU and memory via sysctl, disk usage via statfs, the
+shell's own start time via `proc_pidinfo` on the parent pid. There is no
+separate slow-fact cache: gathering is fast enough to test for (under 50ms on
+macOS) that it never needs one. `shell.boot_ms` is absent once the shell has
+been running more than 10 seconds, so a stale figure is never shown. The full
+fact list, one row per key, is in [machines.md](machines.md).
 
-- **Fast facts** are read inline: memory and CPU via sysctl, disk usage via statfs, shell start time via `proc_pidinfo` on the parent pid.
-- **Slow facts** come from a cache and are never computed during a boot: disk model, runtime versions (keyed by binary path and mtime), battery, brew outdated count. `bios refresh` rebuilds the cache detached, at most hourly.
-- **The memory count is the profiler.** `{shell.boot_ms}` is real: now minus the parent shell's start time, microsecond precision, no two-part hook needed. The last POST line reports it.
-- First boot ever has an empty cache. The probes run inline once and the memory count covers the wait, which is what a memory count was always for.
+A cold cache (no `facts.json` yet) shows no findings on the first boot at
+all; see 3.4.
 
 ### 3.4 Checks
 
-A check is `{id, probe, ttl, severity, beep}` and yields a finding. v1 set:
+A check is `{id, probe, ttl, severity}` and yields a finding. Three exist
+today:
 
-| Check | Finding | pc95 phrasing |
-|---|---|---|
-| Disk over 90% full | Fail | Primary Master S.M.A.R.T. status BAD, 94% full. Backup and replace. |
-| `~/.zshrc` or SparkleBIOS config changed since last boot | Info | CMOS checksum error, defaults loaded |
-| Last repo has uncommitted changes | Warn | Floppy disk(s) fail (40): uncommitted changes in `<repo>` |
-| Stashes older than 30 days | Warn | NVRAM: 3 stashes older than 30 days |
-| Shell startup over 800ms | Warn | Boot device slow: 1204ms. Check .zshrc |
-| Brew outdated over 25 | Info | 31 option ROMs out of date |
-| Battery under 15% on battery power | Warn | CMOS battery low |
-| System clock implausible | Fail | CMOS battery failed, date set to 01-01-1980 |
+| Check | What it reports |
+|---|---|
+| Boot device order | The git repositories touched most recently, and whether the most recent one has uncommitted changes |
+| IRQ conflicts | A TCP listener on a well known dev port that has been open a long time |
+| Virus scan | Files git is tracking in a boot device that look like secrets or keys |
 
-- Any Warn or Fail ends the POST with "Press F1 to continue". The line is theatre: it never waits for a key, because blocking the prompt would break principle 2.
-- A Fail is shown even in quiet mode, as one line.
-- Users add global checks in config: `name`, `cmd`, `expect`, `severity`, `ttl`.
+The rest of the check set (disk trend, dotfiles changed, stale stashes,
+battery, runtime drift) is planned, not built: see `ROADMAP.md` M3.5. Full
+detail on probes, commands, allow lists and the cache is in
+[checks.md](checks.md); this section only states the design intent.
 
-### 3.5 Machines
+No probe ever runs on the boot path. `bios refresh` is a separate command,
+spawned detached by `bios boot` and never waited on, and it is the only thing
+that runs a probe. The boot path itself reads one JSON cache file
+(`facts.json`: a `generated` timestamp and the last findings) and nothing
+else. A finding stops being shown once it is older than its own ttl,
+independent of the cache's own age, so a slow-moving result (the boot device
+list) survives overnight while a fast-moving one (an open port) does not. On
+a cold cache the boot shows nothing; that boot's spawned refresh writes the
+cache, and the next boot reads what it found.
 
-A machine is a TOML file: geometry, colours, the ordered steps, a pool of rotating
-one-line quips, and a phrasing table for findings with a generic fallback. Built-ins are embedded with
-`include_str!` and can be overridden or extended from `~/.config/sparklebios/machines/`.
+Any `Warn` or `Fail` ends the POST with an F1 line (theatre: it never
+actually waits for a key). A `Fail` is shown even in Quiet mode, as one line.
+
+### 3.5 The screen
+
+SparkleBIOS ships one screen, `pc95`, a mid-90s Award-style POST. It draws
+its personality (mascot, firmware and vendor wording, one detected part, the
+streak line, the footer code and its quips) from the current **flavour**
+rather than hardcoding it (`flavoured = true`). Seven flavours ship built in:
+`unicorn` (the default), `sumo`, `ninja`, `viking`, `luchador`, `yeti` and
+`raccoon`. Both the screen and flavour formats are plain TOML, embedded at
+compile time and overridable from `~/.config/sparklebios/machines/` and
+`~/.config/sparklebios/flavours/`, so nothing about adding one needs a
+recompile of logic.
+
+A finding's phrasing is looked up in the current flavour's `[findings]`
+table first, and falls back to the screen's own table for any id the flavour
+does not carry. `unicorn` deliberately ships no `[findings]` table at all, so
+it inherits the screen's wording unchanged: a flavour only needs to write the
+lines where its voice actually differs.
+
+The full schema (steps, slots, the omitted-line rule, how quips rotate,
+painted screens, graphics) is in [machines.md](machines.md); the flavour
+schema and its sprite pair is in [flavours.md](flavours.md). A trimmed real
+excerpt from `pc95.toml`:
 
 ```toml
-id = "pc95"
-cols = 80
-fg = "#AAAAAA"
-bg = "#000000"
-
 [[step]]
-print = "     Sparkle Modular BIOS v1.985PG, An Enchantment Star Ally"
+print = "{flavour.firmware}"
 style = "bright"
 
 [[step]]
 count = "Memory Testing : {n}K"
 to = "{mem.kb}"
-ms = 600
 suffix = " OK"
+ms = 600
 
 [[step]]
-detect = "Detecting Primary Master  "
-result = "{disk.model}"
-ms = 190
+detect = "Detecting {flavour.part}"
+result = "{flavour.part_result}"
 
 [findings]
-disk_full = "Primary Master S.M.A.R.T. status BAD, {disk.used_pct}% full. Backup and replace."
+boot_order = "Boot device order: {boot.devices}"
+f1_resume = "Press F1 to continue, or bios resume to boot {boot.device}."
 ```
 
-Machine ids name an era, and the real hardware is only referenced descriptively:
-**pc95** (mid-90s POST in the Award style, the flagship) and **pc85** (1985 PC/AT
-style, the fast mode) come first. Then `c64`, `vms`, `dos`, `zx` and `mac84` (an
-original compact-Mac homage with a horn). "Era follows theme" is a config mapping:
-Six Stripes boots pc95, EGA '85 boots pc85, Workbench boots a Kickstart-style
-machine, Paper White boots mac84.
-
-All pixel art and wording is original. No real logos or wordmarks ship in the product.
-
-Pixel art (horn logo, the mac84 icon) renders as half-block characters everywhere.
-Kitty graphics protocol is an enhancement where the terminal reports support.
+All pixel art and wording is original. No real logos or wordmarks ship in the
+product (see [machines.md](machines.md#originality)).
 
 ### 3.6 Sound, shutdown, calendar
 
-- **Beep codes** via `afplay` on bundled square-wave WAVs: one short = all clear, one long two short = dirty repo, three short = a Fail finding. Default: sound only in the once-a-day full show.
-- **Shutdown**: the zshexit hook shows "It's now safe to turn off your unicorn." in orange on black, held 350ms, top-level interactive shells only.
-- **Calendar gags** are data too: Friday the 13th virus scare, 01-01-1980, the project's own birthday (19 September).
+Planned, not built: beep codes on the once-a-day full show, a shutdown line
+on the zshexit hook, and calendar gags (Friday the 13th, 01-01-1980, the
+project's own birthday). See `ROADMAP.md` M3.5.
 
 ## 4. Project POST
 
-On `chpwd` into a repo root (not on every directory change, and at most once per
-repo per 10 minutes), print a three to five line mini POST in the active machine's voice.
-
-Zero-config auto-detected checks:
-
-- `.nvmrc` or `engines.node` vs the active node version
-- `.env.local` or `.env` present when an example file exists
-- Docker running when a compose file exists
-- **Backend binding**: if the repo uses Supabase (a `supabase/` dir or the client in `package.json`), verify this repo's own binding exists (`BACKEND.md`, or `.env.local` with `NEXT_PUBLIC_SUPABASE_URL` and keys). Missing: "Detecting backend ... NOT CONNECTED. Press F1 to authenticate this project's own account."
-
-Custom checks live in an optional `.bios.toml` in the repo. Because they run
-commands, they are ignored until the directory is allowed with `bios trust`
-(the direnv model). Auto-detected checks only read files and never need trust.
-
-Budget: 20ms. Anything slower must come from cache.
+Planned, not built. The design intent is a `chpwd` hook that prints a short
+mini POST in the active flavour's voice on entering a repo root, with
+zero-config checks (node version against `.nvmrc`, `.env` against an example
+file, Docker running when a compose file exists, a repo's own Supabase
+binding) and custom checks from an opt-in `.bios.toml`, trusted per directory
+with `bios trust`. See `ROADMAP.md` M6 for the milestone this belongs to.
 
 ## 5. neigh
 
-- Reads stdin, writes painted stdout, streams line by line.
-- Existing SGR colour in the input is stripped (other escapes pass through); width comes from `unicode-width`.
-- When stdout is not a tty it passes input through untouched unless `--force-color`.
-- **Default palette is `ansi`**: it emits ANSI indices 2, 3, 9, 1, 5, 4, so the installed theme decides what the rainbow looks like. Named palettes emit truecolor: `six`, `cga`, `ega`, `c64`, `amber`, `sticker`, plus user palettes from config.
-- Modes: `--bands` (one colour per line), `--diag` (default, stepped diagonal), `--dither` (2x2 ordered dither at band edges, per character), `--raster` (copper bars behind text, text flips between ink and paper), `--flash` (text untouched, four-stripe flash on the right edge).
-- `--banner TEXT` draws six-row block letters, one stripe per row. `--rule` draws the dithered spectrum rule. `--gallop` animates while stdout is a tty and input is finite. `--crt` dims alternate rows with SGR faint (the real tube effect belongs to the Ghostty shader).
-- The BIOS uses neigh's painter for banners and rules, so boot screens follow the active palette.
+Planned, not built. The design intent is a rainbow pipe (`make | neigh`) in
+the same quantised, era-correct palettes as the BIOS: bands, a stepped
+diagonal, dither, raster bars, a flash mode, a banner and rule renderer the
+BIOS's own painter would share. See `ROADMAP.md` M4.5. No flag surface is
+fixed yet, so none is written down here.
 
 ## 6. The theme
 
-- Files: `rainbows-and-unicorns` (Six Stripes, the lead), `-paper` (light half of the pair), `-ega`, `-workbench`. Exact palettes and the reasoning behind them are in `docs/theme.md`; contrast was checked for all four.
-- `bios theme install` copies them into the Ghostty user themes directory and prints the config lines. It never edits the Ghostty config unless passed `--write`.
-- Optional extras, later: a CRT `custom-shader` (off by default) and a matching starship palette.
-- **Verify first (M0):** apps that embed the Ghostty engine (Supacode, for example) bundle their own Ghostty resources and may not read user themes from the standard locations. M0 confirms where themes load from in stock Ghostty and in at least one embedder.
+Ten Ghostty theme files share one idea: the rainbow is simply the ANSI
+colours your tools were already going to use. Exact palettes, the reasoning
+behind each variant and the contrast figures are in [theme.md](theme.md).
+`bios theme install` copies them into the Ghostty user themes directory;
+`bios theme use <name>` also switches Ghostty's config to one and, where a
+starship config already opts in, points its palette at the match. Neither
+ever edits a config file that was not already asking for one.
 
 ## 7. Setup utility
 
-`bios setup` is a classic blue BIOS setup screen built with ratatui. Arrow keys,
-Enter, Esc, F10 to save. It edits the same TOML file a person could edit by hand.
-
-| Menu | Real settings |
-|---|---|
-| Standard Sparkle Setup | flagship machine, fast machine, era-follows-theme |
-| Boot Theatrics | full/fast/quiet/off rules, burst window, skip rules, shutdown screen |
-| Palette Configuration | theme variant, neigh default palette, mode, band width, gallop speed |
-| POST Checks | enable, thresholds, custom checks |
-| Project POST | on/off, cooldown, trusted directories |
-| Integrated Horn Peripherals | sound: off, full show only, always |
-| Load Fail-Safe Defaults (Beige) | safe mode: no animation, no sound, no colour, checks only |
+Planned, not built. The design intent is a `bios setup` screen (ratatui,
+arrow keys, Enter, Esc, F10 to save) editing the same `config.toml` a person
+could edit by hand, plus a beige fail-safe mode (no animation, no sound, no
+colour, checks only). See `ROADMAP.md` M5.
 
 ## 8. Files on disk
 
 | Path | Purpose |
 |---|---|
-| `~/.config/sparklebios/config.toml` | settings (the only file a person edits) |
-| `~/.config/sparklebios/machines/`, `palettes/` | user overrides and additions |
-| `~/.local/state/sparklebios/state.json` | last boot time, boot-day streak, zshrc checksum, per-repo cooldowns, trust list |
-| `~/.cache/sparklebios/facts.json` | slow facts with timestamps |
+| `~/.config/sparklebios/config.toml` | Settings: `animate`, `flavour`, `checks`, `project_dirs`, `graphics` |
+| `~/.config/sparklebios/machines/`, `flavours/` | User screen and flavour overrides and additions |
+| `~/.local/state/sparklebios/state.json` | Last boot time, last full-show day, boot-day streak |
+| `~/.cache/sparklebios/facts.json` | The findings cache: when it was generated, and the findings from that run |
 
 ## 9. Architecture
 
-Single crate, library plus thin binary, module boundaries chosen so each can be
-tested alone:
+Single crate, library plus a thin binary, module boundaries chosen so each
+can be tested alone:
 
 ```
 src/
-  term/      tty open, capability detection (truecolor, kitty graphics), raw-mode guard, cell buffer
-  palette/   colour maths, built-in palettes, user palette loading
-  paint/     band functions (bands, diag, dither, raster, flash), banner font, rule   <- neigh's engine
-  facts/     fast probes, cache read/write, refresh job
-  checks/    check definitions, findings, user checks
-  machine/   TOML schema, template slots, findings phrasing
-  post/      timeline compiler (machine + facts + findings -> steps), player, boot-mode decision
-  project/   repo detection, auto checks, .bios.toml, trust
-  setup/     ratatui screens <-> config
-  theme/     theme files, install
-  shell/     hook templates (zsh)
-  cli.rs     clap, multi-call dispatch
-machines/  themes/  palettes/  sounds/      embedded data
+  main.rs        entry point: catches panics, sets the exit code policy
+  lib.rs         module declarations only
+  cli.rs         clap definitions and dispatch
+  boot.rs        the boot flow: decide, gather facts, render or animate, print, save state
+  mode.rs        the BootMode decision, a pure function
+  show.rs        the animated show: plays a screen's steps, any key skips to the end
+  render.rs      static rendering and colour modes
+  machine.rs     screen TOML schema, validation, built-ins, lookup
+  flavour.rs     flavour TOML schema, validation, built-ins, lookup, slot application
+  sprite.rs      boot logos: half-block grids and Kitty images, one source image per sprite
+  template.rs    {slot} substitution
+  facts/         inline fact probes: macos.rs (real), other.rs (stub, Linux is M8)
+  checks/        the three health checks (ports, projects, secrets) and the Finding type
+  cache.rs       the findings cache read on the boot path
+  state.rs       boot state: last boot, last full-show day, streak
+  config.rs      user config
+  theme.rs       embedded Ghostty theme files and install
+  shell.rs       embedded shell hook text
+  tty.rs         raw terminal mode and key polling
+  term.rs        terminal geometry
+  clock.rs       local date helpers over libc
+  paths.rs       XDG directory resolution
+machines/  flavours/  sprites/  themes/  shell/  extras/   embedded data
 ```
 
-Data flow for a boot: `decide mode -> load facts (fast + cache) -> run checks ->
-compile timeline from machine -> play on /dev/tty -> write state -> spawn refresh detached`.
+Data flow for a boot: `decide mode -> load state -> gather facts (inline) ->
+load the findings cache, when checks are on -> resolve the flavour and apply
+its slots -> render or play pc95 -> write typed keys back to the hook, save
+state -> spawn bios refresh detached, only when the cache is stale`.
 
 ### Budgets and safety rules
 
@@ -252,47 +304,58 @@ compile timeline from machine -> play on /dev/tty -> write state -> spawn refres
 |---|---|
 | Off or quiet decision | under 5ms |
 | Work before first frame | under 30ms |
-| Project POST | under 20ms |
-| Fast show total | about 300ms |
 
-- Boot, post and halt never return non-zero and never print errors unless `SPARKLEBIOS_DEBUG=1`.
-- Panics are caught at the top level; the raw-mode guard always restores the terminal.
-- The hook is guarded by `command -v bios` so uninstalling the binary cannot break `.zshrc`.
-- No network access anywhere.
+- `bios boot` and `bios refresh` always exit 0 and print nothing unless
+  `SPARKLEBIOS_DEBUG=1`. Other commands, typed by a person rather than run on
+  every shell start, can fail loudly (`bios use` and `bios resume` return 1
+  on an unknown flavour or nothing to resume to).
+- Panics are caught at the top level (`main.rs`); the default panic hook is
+  suppressed outside `SPARKLEBIOS_DEBUG=1`, and the raw-mode guard restores
+  the terminal as the stack unwinds.
+- The hook is guarded by `command -v bios` so uninstalling the binary cannot
+  break `.zshrc`.
+- No network dependency anywhere; CI enforces this with `cargo-deny`.
 
 ## 10. Testing
 
-- **Snapshot tests** (insta): every machine rendered at speed = infinity against a fixed facts fixture, with and without findings.
-- **Timeline tests**: step durations sum within each mode's budget; skip produces the same final frame as a full play.
-- **Painter property test**: painted output with SGR stripped equals the input, for all modes and palettes.
-- **Checks**: each check against fake probes; cache TTL and stale-while-revalidate behaviour.
-- **Hook test**: `zsh -ic` smoke script asserting no output when non-interactive, typeahead pass-through, and the kill switch.
-- **Perf guard**: a hyperfine script for the quiet path and first-frame budget.
+- **Golden files** (`tests/golden/*.txt`): `render_static`'s output for
+  `pc95`, against `Facts::fixture()` (a frozen fact set), compared byte for
+  byte, with and without findings, painted and unpainted.
+- **Player parity**: `show::play` at speed 0 is asserted to produce the same
+  final rows as `render_static`, so the animated and instant paths cannot
+  drift apart.
+- **Property tests**: every built-in flavour's quips and finding phrasings
+  render within 80 columns and resolve against fixture facts; a shortened
+  finding line always keeps its final sentence intact.
+- **Unit tests per module**: the `BootMode` decision's boundaries (`mode.rs`),
+  each check's probe logic against fake data (`checks/ports.rs`,
+  `projects.rs`, `secrets.rs`), the findings cache's staleness and per-finding
+  ttl rules (`cache.rs`), config parsing including the retired `full` and
+  `fast` keys (`config.rs`), and the streak rules (`state.rs`).
+- **Integration tests** (`tests/cli.rs`): the built binary, run end to end,
+  across the whole command surface, including the exact `--help` text.
+- **Doc parity** (`tests/themes.rs`): fails the build if a theme file and its
+  entry in `docs/theme.md` ever disagree.
+- **CI** (`.github/workflows/post.yml`, macOS and Linux): `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test`, the em-dash and
+  en-dash grep, and `cargo-deny` for licences, advisories and the no-network
+  rule.
+
+A shell-hook smoke test and a timing perf guard are not yet written.
 
 ## 11. Distribution
 
-Repository: `reactivepixels/sparklebios`, public from the first commit. Crate and
-Homebrew formula `sparklebios`; binaries `bios` and `neigh`. Local install is
-`cargo install --path .`; releases use cargo-dist prebuilt binaries, a Homebrew tap,
-`cargo binstall` and a shell installer. macOS first, Linux before the soft launch
-(only the fact probes differ). Windows is out of scope. License: MIT OR Apache-2.0.
+Repository: `reactivepixels/sparklebios`. Crate `sparklebios`, binary `bios`
+(`neigh` once it exists). Local install is `cargo install --path .`.
+Prebuilt binaries, a Homebrew tap, `cargo binstall` and a shell installer are
+`ROADMAP.md` M8, not set up yet. macOS first; Linux fact probes are also M8.
+Windows is out of scope. License: MIT OR Apache-2.0.
 
 ## 12. Milestones
 
-Each milestone ends in something usable daily.
-
-| # | Milestone | Done when |
-|---|---|---|
-| M0 | **Theme** | Four theme files install and load in this terminal (Supacode question answered); README shows the config lines |
-| M1 | **BIOS skeleton** | `bios init zsh` hook, boot-mode decision, fast facts, pc95 and pc85 rendered statically, kill switch, budgets met |
-| M2 | **The show** | Timeline player, skip and DEL, typeahead preserved, once-a-day full show, beeps, shutdown screen |
-| M3 | **Health checks** | Check engine, fact cache and detached refresh, machine-voiced findings, F1 line, beep codes |
-| M4 | **neigh** | All palettes and modes, banner, rule, gallop; BIOS banners painted by neigh |
-| M5 | **Setup** | BIOS setup TUI edits config; DEL during boot opens it; beige fail-safe |
-| M6 | **Project POST** | chpwd hook, auto checks including backend binding, `.bios.toml`, trust |
-| M7 | **More machines** | c64, vms, dos, zx, mac84; era follows theme; calendar gags; kitty graphics where supported |
-| M8 | **Launch readiness** | Linux fact probes; bash and fish hooks; `fetch`; machine scaffold, lint and CI preview rendering; cargo-dist binaries and Homebrew tap; README, VHS tapes, site with "boot your browser" |
-| Later | stable, exit code theatre, starship preset, bash and fish hooks, Homebrew tap | |
+Milestones and their definitions of done live in [`ROADMAP.md`](../ROADMAP.md),
+kept there rather than duplicated here so the two documents cannot drift
+apart. Each one ends in something usable daily.
 
 ## 13. Decisions taken
 
@@ -305,10 +368,24 @@ Each milestone ends in something usable daily.
 | D5 | **Open source, public from the first usable milestone** (revised) | The goal is exposure and uptake; building in the open collects machine requests and testers early | Private until launch day |
 | D6 | stable is parked; streak counts boot days for now | BIOS is the star; commit streaks arrive with the creature | Build the streak tracker early |
 | D7 | zsh and macOS first, **Linux and bash/fish before the soft launch** (revised) | The screenshot-sharing audience is mostly on Linux | |
+| D8 | **One screen, `pc95`, replaces the `pc85` and `c64` machines** (supersedes the original multi-machine plan in sections 3.1 and 3.5) | Not recorded: visible in the code and the changelog ("flavours carry the personality"), but the fuller reasoning was not written down | Keep multiple hardware-era screens, each with its own quips |
+| D9 | Personality moved to **flavours**, a data file per personality applied on top of the one screen, rather than living in the screen file itself | Not recorded beyond the behaviour: a flavour supplies the mascot, wording and quips; the screen supplies the hardware | Keep personality on the machine file, one file per persona |
+| D10 | A finding's phrasing is looked up in the current **flavour's** table first, falling back to the **screen's** own table | Lets a flavour inherit sensible default wording and override only the lines where its voice actually differs, rather than repeating every finding string (this is exactly what `unicorn`'s empty `[findings]` table does) | Require every flavour to write its own phrasing for every finding |
+| D11 | **No probe ever runs on the boot path**, even on a cold cache; `bios refresh` is the only thing that probes, always detached and never waited on, and a cold cache simply shows nothing until the first refresh completes | So a slow or hanging probe can never slow down a shell starting, per principle 2 | Probe inline once on a cold cache, as the original design proposed, and let the memory count cover the wait |
 
 ## 14. Risks
 
-- **Boot fatigue.** Mitigated by mode rules, the burst window, skip rules and the beige fail-safe. Needs a week of real use to tune.
-- **Supacode theme loading and kitty graphics support** are both unverified inside the embedded Ghostty engine. M0 and M7 start by testing them.
-- **Keystroke handling** during the show is the fiddliest part of M2. The fallback is no key handling at all in fast mode (300ms is short enough).
-- **Automated terminals.** Terminal managers and coding tools spawn many shells. Non-interactive ones are already excluded; interactive bursts fall under the 10s quiet window.
+- **Boot fatigue.** Mitigated by the mode rules, the burst window and (once
+  built) the beige fail-safe. Needs a week of real use to tune.
+- **Kitty graphics support** varies by embedding terminal; `graphics = auto`
+  falls back to half-blocks anywhere it is not reported, and `blocks` opts
+  out of it entirely for terminals that drop the image when a tab sleeps.
+- **Keystroke handling** during the show remains the fiddliest part of the
+  player. Disabling `ISIG` avoids a separate SIGINT handler, but has not been
+  exercised against every terminal emulator.
+- **Automated terminals.** Terminal managers and coding tools spawn many
+  shells. Non-interactive ones are excluded by the hook itself; interactive
+  bursts fall under the 10s quiet window.
+- **Linux and other platforms.** `facts/other.rs` is a stub today: every fact
+  is absent off macOS, so a screen there shows only what does not depend on a
+  probe, until M8's Linux fact probes land.
