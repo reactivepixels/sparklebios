@@ -1,6 +1,8 @@
 //! Severity, Finding, and the probe registry. Only ever run by `bios refresh`, never on the
 //! boot path.
 
+pub mod battery;
+pub mod disk;
 pub mod dotfiles;
 pub mod ports;
 pub mod projects;
@@ -31,7 +33,20 @@ pub struct Finding {
 /// fails contributes nothing rather than erring. Findings come back in a fixed order, which is
 /// also their render order: `boot_order`, `boot_dirty`, `irq_conflict`, then `virus_one` or
 /// `virus_many`.
-pub fn run_all(config: &crate::config::Config) -> Vec<Finding> {
+/// The few things a refresh carries over from the last one: a check cannot see history unless
+/// something keeps it. Disk trend needs a series of readings, and battery health needs to know
+/// the step it last spoke at so it does not repeat itself.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Carried {
+    pub disk_history: Vec<disk::Reading>,
+    pub battery_step: Option<u8>,
+}
+
+pub fn run_all(
+    config: &crate::config::Config,
+    carried: Carried,
+    now: u64,
+) -> (Vec<Finding>, Carried) {
     let devices = projects::boot_devices(config);
     let mut findings = projects::findings(&devices);
     if let Some(finding) = ports::check() {
@@ -49,7 +64,27 @@ pub fn run_all(config: &crate::config::Config) -> Vec<Finding> {
     if let Some(finding) = runtimes::check(&devices) {
         findings.push(finding);
     }
-    findings
+
+    let free_gb = crate::facts::gather()
+        .get("disk.free_gb")
+        .and_then(|v| v.parse().ok());
+    let disk_history = disk::record(carried.disk_history, now, free_gb);
+    if let Some(finding) = disk::check(&disk_history) {
+        findings.push(finding);
+    }
+
+    let (battery_finding, battery_step) = battery::check(carried.battery_step);
+    if let Some(finding) = battery_finding {
+        findings.push(finding);
+    }
+
+    (
+        findings,
+        Carried {
+            disk_history,
+            battery_step,
+        },
+    )
 }
 
 /// "1 uncommitted change" or "3 uncommitted changes".

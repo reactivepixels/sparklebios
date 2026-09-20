@@ -334,10 +334,16 @@ fn do_refresh(cache_dir: &std::path::Path, now: u64, force: bool, print: bool) {
         return;
     }
     let config = crate::config::load(crate::paths::config_dir().as_deref());
-    let findings = crate::checks::run_all(&config);
+    let carried = crate::checks::Carried {
+        disk_history: cache.disk_history,
+        battery_step: cache.battery_step,
+    };
+    let (findings, carried) = crate::checks::run_all(&config, carried, now);
     let cache = crate::cache::Cache {
         generated: now,
         findings,
+        disk_history: carried.disk_history,
+        battery_step: carried.battery_step,
     };
     if let Err(e) = cache.save(cache_dir) {
         debug(|| format!("bios: failed to save the cache: {e}"));

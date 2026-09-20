@@ -367,6 +367,10 @@ quips = ["a", "b", "c"]
         facts.insert("runtime.name", "node");
         facts.insert("runtime.wanted", "20.11.0");
         facts.insert("runtime.found", "22.3.0");
+        facts.insert("disk.days_left", "18 days");
+        facts.insert("disk.rate", "2.1GB a day");
+        facts.insert("battery.health", "79%");
+        facts.insert("battery.cycles", "412");
         facts
     }
 
@@ -396,6 +400,10 @@ quips = ["a", "b", "c"]
         facts.insert("runtime.name", "python");
         facts.insert("runtime.wanted", "3.12.4");
         facts.insert("runtime.found", "3.13.0");
+        facts.insert("disk.days_left", "18 days");
+        facts.insert("disk.rate", "12.5GB a day");
+        facts.insert("battery.health", "68%");
+        facts.insert("battery.cycles", "1284");
         facts
     }
 

@@ -11,6 +11,12 @@ use crate::checks::Finding;
 pub struct Cache {
     pub generated: u64,
     pub findings: Vec<Finding>,
+    /// Free space over the last fortnight, so the disk trend check has something to trend.
+    #[serde(default)]
+    pub disk_history: Vec<crate::checks::disk::Reading>,
+    /// The battery health step already reported, so it is never reported twice.
+    #[serde(default)]
+    pub battery_step: Option<u8>,
 }
 
 /// Spawn a detached refresh once the cache is older than this, in seconds.
@@ -73,6 +79,7 @@ mod tests {
         let cache = Cache {
             generated: 42,
             findings: vec![finding("boot_order", 100)],
+            ..Cache::default()
         };
         cache.save(&nested).unwrap();
         assert_eq!(load(&nested), cache);
@@ -112,6 +119,7 @@ mod tests {
         let cache = Cache {
             generated: 1000,
             findings: vec![finding("a", 100), finding("b", 10)],
+            ..Cache::default()
         };
         let fresh = cache.fresh(1050);
         let ids: Vec<_> = fresh.iter().map(|f| f.id.as_str()).collect();
