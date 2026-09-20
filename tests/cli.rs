@@ -318,6 +318,7 @@ fn theme_install_writes_every_theme_file() {
         "rainbows-and-unicorns-arcade",
         "rainbows-and-unicorns-vhs",
         "rainbows-and-unicorns-den",
+        "rainbows-and-unicorns-sorbet",
     ] {
         assert!(dir.path().join(name).is_file(), "{name} missing");
     }
@@ -335,6 +336,7 @@ fn theme_list_prints_short_names_and_full_names_in_order() {
         ("arcade", "rainbows-and-unicorns-arcade"),
         ("vhs", "rainbows-and-unicorns-vhs"),
         ("den", "rainbows-and-unicorns-den"),
+        ("sorbet", "rainbows-and-unicorns-sorbet"),
     ]
     .iter()
     .map(|(short, full)| format!("{short:<11}{full}\n"))

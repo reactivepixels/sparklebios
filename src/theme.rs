@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-pub const THEMES: [(&str, &str); 9] = [
+pub const THEMES: [(&str, &str); 10] = [
     (
         "rainbows-and-unicorns",
         include_str!("../themes/rainbows-and-unicorns"),
@@ -39,9 +39,13 @@ pub const THEMES: [(&str, &str); 9] = [
         "rainbows-and-unicorns-den",
         include_str!("../themes/rainbows-and-unicorns-den"),
     ),
+    (
+        "rainbows-and-unicorns-sorbet",
+        include_str!("../themes/rainbows-and-unicorns-sorbet"),
+    ),
 ];
 
-/// Writes all nine files into `dir`, creating it. Returns the paths written.
+/// Writes all ten files into `dir`, creating it. Returns the paths written.
 pub fn install(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     std::fs::create_dir_all(dir)?;
     let mut paths = Vec::with_capacity(THEMES.len());
@@ -55,7 +59,7 @@ pub fn install(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 
 /// The short name `bios theme use` accepts for each theme, in the order `bios theme list` shows
 /// them.
-pub const SHORT_NAMES: [(&str, &str); 9] = [
+pub const SHORT_NAMES: [(&str, &str); 10] = [
     ("six", "rainbows-and-unicorns"),
     ("paper", "rainbows-and-unicorns-paper"),
     ("ega", "rainbows-and-unicorns-ega"),
@@ -65,6 +69,7 @@ pub const SHORT_NAMES: [(&str, &str); 9] = [
     ("arcade", "rainbows-and-unicorns-arcade"),
     ("vhs", "rainbows-and-unicorns-vhs"),
     ("den", "rainbows-and-unicorns-den"),
+    ("sorbet", "rainbows-and-unicorns-sorbet"),
 ];
 
 /// Resolves `name`, a short name or a full theme name, to its full theme name. `None` when

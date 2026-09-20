@@ -34,10 +34,12 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Health checks: the boot screen now reports three real things about your machine. Boot device order lists the projects you were most recently working in and says when you walked away from the first one mid-change, and `bios resume` takes you back to it. IRQ conflicts names a dev server you forgot about that is still holding a well known port. The virus scan reports files that git is tracking and that look like secrets or keys. Findings are phrased per flavour, and a Fail is shown even during a burst of new tabs, as a single line.
 - A fact cache with a detached refresh. No probe ever runs while a shell is starting: the boot path reads one JSON file and draws, then spawns `bios refresh` and never waits on it. A finding stops being shown once it is older than its own ttl, so the boot device list survives overnight and the port result does not. `checks = false` turns the whole thing off. The checks are documented in `docs/checks.md`.
 - Five more flavours: `ninja`, `viking`, `luchador`, `yeti` and `raccoon`, each with its own mascot and quips. The roster is now seven.
+- A tenth theme variant, Sorbet. Switch with `bios theme use sorbet`.
 
 ### Changed
 
-- The README now opens with real boot screens for both flavours and all nine themes, rendered from the binary's own output.
+- A finding line too wide for the screen now shortens the long value inside it, marked with two full stops, rather than cutting the end off the sentence. The repository name gives way before the filename, and the instruction at the end of the line always survives.
+- The README now opens with real boot screens for both flavours and all ten themes, rendered from the binary's own output.
 
 - One screen. The `pc85` and `c64` machines are retired; every boot is `pc95` and flavours carry the personality. The once-a-day boot is animated, the rest are instant.
 - `bios use <flavour>` replaces the machine options, `bios theme use <name>` switches Ghostty's theme, and `bios --help` is written by hand.

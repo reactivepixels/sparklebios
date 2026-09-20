@@ -55,7 +55,22 @@ bios use sumo            # make it permanent
 ```
 
 <p align="center">
-  <img src="docs/assets/screen-sumo.png" alt="The sumo flavour booting in a terminal" width="880">
+  <img src="docs/assets/screen-unicorn.png" alt="The unicorn flavour booting in a terminal" width="49%">
+  <img src="docs/assets/screen-sumo.png" alt="The sumo flavour booting in a terminal" width="49%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/screen-ninja.png" alt="The ninja flavour booting in a terminal" width="49%">
+  <img src="docs/assets/screen-viking.png" alt="The viking flavour booting in a terminal" width="49%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/screen-luchador.png" alt="The luchador flavour booting in a terminal" width="49%">
+  <img src="docs/assets/screen-yeti.png" alt="The yeti flavour booting in a terminal" width="49%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/screen-raccoon.png" alt="The raccoon flavour booting in a terminal" width="49%">
 </p>
 
 | Flavour | The BIOS detects | It says things like |
@@ -73,17 +88,17 @@ A flavour is one TOML file and one sprite, so adding yours needs no Rust. See
 
 ## Themes
 
-"Rainbows and Unicorns" is a Ghostty theme in nine variants. The name is the
+"Rainbows and Unicorns" is a Ghostty theme in ten variants. The name is the
 only joke in it: contrast is checked, and a test fails if a theme file and its
 documentation ever disagree.
 
 ```
-bios theme list          # the nine
+bios theme list          # the ten
 bios theme use miami     # install them and switch Ghostty to one
 ```
 
 <p align="center">
-  <img src="docs/assets/themes.png" alt="Nine theme variants side by side" width="880">
+  <img src="docs/assets/themes.png" alt="Ten theme variants side by side" width="880">
 </p>
 
 Beside the themes, in [extras/](extras/README.md): a cursor trail shader, tool
@@ -131,7 +146,7 @@ shell and a low battery.
 
 | # | Milestone | Status |
 |---|---|---|
-| M0 | The theme: nine Ghostty theme variants, `bios theme use` | done |
+| M0 | The theme: ten Ghostty theme variants, `bios theme use` | done |
 | M1 | BIOS skeleton: shell hook, boot modes, static POST screens | done |
 | M2 | The look and the show: the mascot as a real image, animation, skip keys, typeahead preserved | done |
 | M2.5 | Flavours: `unicorn` and `sumo`, with more mascots to come | done |

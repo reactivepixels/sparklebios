@@ -5,7 +5,7 @@ this is in [docs/design.md](docs/design.md).
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | **Theme** | Nine Ghostty theme files (`rainbows-and-unicorns`, `-paper`, `-ega`, `-workbench`, `-mane`, `-miami`, `-arcade`, `-vhs`, `-den`) load in stock Ghostty; the README shows the config lines; where embedded Ghostty engines load themes from is documented |
+| M0 | **Theme** | Ten Ghostty theme files (`rainbows-and-unicorns`, `-paper`, `-ega`, `-workbench`, `-mane`, `-miami`, `-arcade`, `-vhs`, `-den`, `-sorbet`) load in stock Ghostty; the README shows the config lines; where embedded Ghostty engines load themes from is documented |
 | M1 | **BIOS skeleton** | `bios init zsh` hook, boot-mode decision, fast facts, `pc95` and `pc85` rendered statically, kill switch, time budgets met |
 | M2 | **The look and the show** | Painted screens with borders, the unicorn logo and badge, the `c64` machine, the timeline player, any key to skip, typeahead preserved, once-a-day full show. Beep codes and the shutdown screen moved to M3.5 |
 | M3 | **Health checks** | Check engine, fact cache with detached refresh, flavour-voiced findings, the F1 line. Headline checks: **boot device order** (your recent projects and the state you left them in, with `bios resume`), **IRQ conflicts** (ports held by forgotten processes), and the **virus scan** (secrets and keys that git is tracking) |

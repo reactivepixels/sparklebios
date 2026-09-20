@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const VARIANTS: [&str; 9] = [
+const VARIANTS: [&str; 10] = [
     "rainbows-and-unicorns",
     "rainbows-and-unicorns-paper",
     "rainbows-and-unicorns-ega",
@@ -11,6 +11,7 @@ const VARIANTS: [&str; 9] = [
     "rainbows-and-unicorns-arcade",
     "rainbows-and-unicorns-vhs",
     "rainbows-and-unicorns-den",
+    "rainbows-and-unicorns-sorbet",
 ];
 
 const ROLE_KEYS: [&str; 6] = [
