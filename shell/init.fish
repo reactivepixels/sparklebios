@@ -24,17 +24,46 @@ if status is-interactive; and command -v bios >/dev/null 2>&1
             command bios $argv
         end
     end
-    # The mascot, as a placement of an image already sent to the terminal. Empty where the
-    # terminal cannot draw one. Put it at the front of your prompt function:
-    #   function fish_prompt; printf '%s' $SPARKLEBIOS_MASCOT; ...; end
-    set -gx SPARKLEBIOS_MASCOT {{MASCOT}}
-    # The image itself is sent once, here. Every prompt after that costs only the placement.
-    set -l _sparklebios_image {{MASCOT_IMAGE}}
-    if test -n "$_sparklebios_image"
-        printf '%s' $_sparklebios_image
+    # True while `name` is still fish's own version of a function, false once the user has
+    # written their own. fish ships defaults for both the title and the missing command
+    # handler, so `functions -q` can never tell us apart from fish itself. Declared here,
+    # outside either block below, since the title and the missing-command handler are on
+    # independent config keys and each needs it.
+    function _sparklebios_is_fishs_own --argument-names name
+        set -l file (functions --details $name 2>/dev/null)
+        if test -z "$file"; or test "$file" = n/a
+            return 0
+        end
+        if string match -q 'embedded:*' -- $file
+            return 0
+        end
+        string match -q '*/share/fish/functions/*' -- $file
+    end
+
+    # Set on its own, independent of presence: the tab title is its own config key. fish
+    # owns the title through fish_title. Printing the escape from a prompt hook instead
+    # would race with fish doing the same thing, so replace the function.
+    if test {{TITLE}} = 1; and _sparklebios_is_fishs_own fish_title
+        function fish_title
+            printf '%s %s' {{TITLE_NAME}} (string replace -r "^$HOME" '~' -- $PWD)
+        end
     end
 
     if test {{PRESENCE}} = 1
+        # The mascot, as a placement of an image already sent to the terminal. Empty where the
+        # terminal cannot draw one. Put it at the front of your prompt function:
+        #   function fish_prompt; printf '%s' $SPARKLEBIOS_MASCOT; ...; end
+        # The old placement is kept only long enough to compare against the new one: a second
+        # `bios init fish | source` in the same shell (same flavour, same terminal) would
+        # otherwise resend an image the terminal already has, every time it is run.
+        set -l _sparklebios_prev_mascot "$SPARKLEBIOS_MASCOT"
+        set -gx SPARKLEBIOS_MASCOT {{MASCOT}}
+        # The image itself is sent once, here. Every prompt after that costs only the placement.
+        set -l _sparklebios_image {{MASCOT_IMAGE}}
+        if test -n "$_sparklebios_image"; and test "$_sparklebios_prev_mascot" != "$SPARKLEBIOS_MASCOT"
+            printf '%s' $_sparklebios_image
+        end
+
         function _sparklebios_took
             set -l s $argv[1]
             if test $s -lt 60
@@ -48,28 +77,6 @@ if status is-interactive; and command -v bios >/dev/null 2>&1
 
         function _sparklebios_preexec --on-event fish_preexec
             set -g _sparklebios_started (date +%s)
-        end
-
-        # True while `name` is still fish's own version of a function, false once the user has
-        # written their own. fish ships defaults for both the title and the missing command
-        # handler, so `functions -q` can never tell us apart from fish itself.
-        function _sparklebios_is_fishs_own --argument-names name
-            set -l file (functions --details $name 2>/dev/null)
-            if test -z "$file"; or test "$file" = n/a
-                return 0
-            end
-            if string match -q 'embedded:*' -- $file
-                return 0
-            end
-            string match -q '*/share/fish/functions/*' -- $file
-        end
-
-        # fish owns the title through fish_title. Printing the escape from a prompt hook instead
-        # would race with fish doing the same thing, so replace the function.
-        if test {{TITLE}} = 1; and _sparklebios_is_fishs_own fish_title
-            function fish_title
-                printf '%s %s' {{TITLE_NAME}} (string replace -r "^$HOME" '~' -- $PWD)
-            end
         end
 
         function _sparklebios_precmd --on-event fish_prompt
@@ -105,6 +112,7 @@ if status is-interactive; and command -v bios >/dev/null 2>&1
             end
         end
 
-        functions -e _sparklebios_is_fishs_own
     end
+
+    functions -e _sparklebios_is_fishs_own
 end

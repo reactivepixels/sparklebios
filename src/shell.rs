@@ -189,7 +189,7 @@ pub fn render(
     shell
         .template()
         .replace("{{PRESENCE}}", bit(config.presence && flavour.is_some()))
-        .replace("{{TITLE}}", bit(config.title))
+        .replace("{{TITLE}}", bit(config.title && flavour.is_some()))
         .replace("{{AFTER}}", &config.presence_after.to_string())
         .replace("{{TITLE_NAME}}", &quote(&say("title")))
         .replace("{{DONE}}", &done)
@@ -413,5 +413,119 @@ mod tests {
             let out = render(shell, &config(), Some(&ninja()), Mascot::none());
             assert!(!out.contains("{{"), "a placeholder was left:\n{out}");
         }
+    }
+
+    #[test]
+    fn zsh_reads_the_precmd_timer_without_tripping_nounset() {
+        // Before any preexec has ever run, the very first precmd reads this back: bare
+        // `$_sparklebios_started` is "parameter not set" under `setopt nounset`. Found by
+        // sourcing the real hook in a pty with nounset on and no preexec fired yet.
+        assert!(ZSH_HOOK.contains(r#"[[ -n "${_sparklebios_started:-}" ]]"#));
+    }
+
+    #[test]
+    fn bash_reads_comp_line_and_the_precmd_timer_without_tripping_set_dash_u() {
+        // Same trap in bash, plus COMP_LINE, which the DEBUG trap sees unset outside of
+        // completion: bare would be "unbound variable" under `set -u`.
+        assert!(BASH_HOOK.contains(r#"[[ -n "${COMP_LINE:-}" ]]"#));
+        assert!(BASH_HOOK.contains(r#"[[ -z "${_sparklebios_started:-}" ]]"#));
+        assert!(BASH_HOOK.contains(r#"[[ -n "${_sparklebios_started:-}" ]]"#));
+    }
+
+    #[test]
+    fn bash_only_adds_precmd_and_title_to_prompt_command_once_each() {
+        // A second `eval "$(bios init bash)"` in the same shell must not run precmd or the
+        // title function twice per prompt: PROMPT_COMMAND is a plain string a second eval
+        // would otherwise prepend to again, unguarded.
+        assert!(BASH_HOOK.contains(r#"[[ "${PROMPT_COMMAND:-}" != *_sparklebios_precmd* ]]"#));
+        assert!(BASH_HOOK.contains(r#"[[ "${PROMPT_COMMAND:-}" != *_sparklebios_title* ]]"#));
+    }
+
+    #[test]
+    fn a_second_eval_does_not_resend_an_unchanged_mascot() {
+        // Each shell keeps the previous placement only long enough to compare against the
+        // new one, so a second `eval "$(bios init <shell>)"` (or `source`, for fish) with
+        // the same flavour does not resend an image the terminal already has.
+        for hook in [ZSH_HOOK, BASH_HOOK, FISH_HOOK] {
+            assert!(
+                hook.contains("_sparklebios_prev_mascot"),
+                "no previous-placement guard:\n{hook}"
+            );
+        }
+    }
+
+    #[test]
+    fn mascot_is_gated_on_presence_not_printed_unconditionally() {
+        // The regression this guards: the mascot export and image send used to sit outside
+        // the presence conditional entirely, so `presence = false` still put a mascot in
+        // the prompt. Nothing before the presence gate may mention it, in any shell.
+        for hook in [ZSH_HOOK, BASH_HOOK, FISH_HOOK] {
+            let presence_idx = hook.find("{{PRESENCE}}").expect("a presence gate");
+            assert!(
+                !hook[..presence_idx].contains("SPARKLEBIOS_MASCOT"),
+                "the mascot is reachable before the presence gate:\n{hook}"
+            );
+        }
+    }
+
+    #[test]
+    fn title_is_independent_of_presence_not_nested_inside_it() {
+        // The regression this guards: the title used to live inside the same function as
+        // the finish line, which is only wired up when presence is on, so `presence =
+        // false` silenced the tab title even with `title = true`. `{{NOT_FOUND}}` is the
+        // last placeholder every shell's presence block fills in, so it marks that block's
+        // far end.
+        for hook in [ZSH_HOOK, BASH_HOOK, FISH_HOOK] {
+            let presence_idx = hook.find("{{PRESENCE}}").expect("a presence gate");
+            let presence_end = hook
+                .find("{{NOT_FOUND}}")
+                .expect("end of the presence block");
+            let title_idx = hook.find("{{TITLE}}").expect("a title gate");
+            assert!(
+                title_idx < presence_idx || title_idx > presence_end,
+                "the title gate is nested inside the presence block:\n{hook}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_title_bit_needs_a_flavour_the_same_way_presence_does() {
+        // docs/presence.md: title is its own key, independent of presence, but a title
+        // still needs a flavour's board name. With no flavour resolved, `{{TITLE_NAME}}`
+        // would render as an empty string and the title would become a bare path with a
+        // leading space, so `{{TITLE}}` has to fall to 0 exactly when `{{PRESENCE}}` does.
+        let flavour = ninja();
+        for (presence, title, want_ones) in [
+            (true, true, 2),
+            (false, true, 1),
+            (true, false, 1),
+            (false, false, 0),
+        ] {
+            let cfg = crate::config::Config {
+                presence,
+                title,
+                ..config()
+            };
+            let out = render(Shell::Zsh, &cfg, Some(&flavour), Mascot::none());
+            assert_eq!(
+                out.matches("if [[ 1 == 1 ]]").count(),
+                want_ones,
+                "presence={presence} title={title}:\n{out}"
+            );
+            assert_eq!(
+                out.matches("if [[ 0 == 1 ]]").count(),
+                2 - want_ones,
+                "presence={presence} title={title}:\n{out}"
+            );
+        }
+        // No flavour at all: both bits fall to 0 regardless of the config keys.
+        let cfg = crate::config::Config {
+            presence: true,
+            title: true,
+            ..config()
+        };
+        let out = render(Shell::Zsh, &cfg, None, Mascot::none());
+        assert_eq!(out.matches("if [[ 0 == 1 ]]").count(), 2);
+        assert_eq!(out.matches("if [[ 1 == 1 ]]").count(), 0);
     }
 }

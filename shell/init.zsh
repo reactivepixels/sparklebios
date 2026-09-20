@@ -25,19 +25,39 @@ if [[ -o interactive ]] && command -v bios >/dev/null 2>&1; then
     fi
   }
 
-  # The mascot, as a placement of an image already sent to the terminal. Empty where the
-  # terminal cannot draw one. Put it at the front of your prompt, in double quotes, AFTER this
-  # line and after anything else that sets PROMPT:
-  #   PROMPT="$SPARKLEBIOS_MASCOT$PROMPT"
-  # Double quotes on purpose. The placement never changes, so it is expanded once here rather
-  # than on every prompt, and that way it needs no PROMPT_SUBST.
-  export SPARKLEBIOS_MASCOT={{MASCOT}}
-  # The image itself is sent once, here. Every prompt after that costs only the placement.
-  _sparklebios_image={{MASCOT_IMAGE}}
-  [ -n "$_sparklebios_image" ] && printf '%s' "$_sparklebios_image"
-  unset _sparklebios_image
+  # Set on its own, independent of presence: the tab title is its own config key.
+  if [[ {{TITLE}} == 1 ]]; then
+    _sparklebios_title() {
+      if [[ "$TERM" != dumb && "$TERM" != linux ]]; then
+        printf '\e]0;%s %s\a' {{TITLE_NAME}} "${PWD/#$HOME/~}"
+      fi
+    }
+    autoload -Uz add-zsh-hook 2>/dev/null
+    if (( $+functions[add-zsh-hook] )); then
+      add-zsh-hook precmd _sparklebios_title
+    fi
+  fi
 
   if [[ {{PRESENCE}} == 1 ]]; then
+    # The mascot, as a placement of an image already sent to the terminal. Empty where the
+    # terminal cannot draw one. Put it at the front of your prompt, in double quotes, AFTER this
+    # line and after anything else that sets PROMPT:
+    #   PROMPT="$SPARKLEBIOS_MASCOT$PROMPT"
+    # Double quotes on purpose. The placement never changes, so it is expanded once here rather
+    # than on every prompt, and that way it needs no PROMPT_SUBST.
+    #
+    # The old placement is kept only long enough to compare against the new one: a second
+    # `eval "$(bios init zsh)"` in the same shell (same flavour, same terminal) would
+    # otherwise resend an image the terminal already has, every time it is run.
+    _sparklebios_prev_mascot="${SPARKLEBIOS_MASCOT-}"
+    export SPARKLEBIOS_MASCOT={{MASCOT}}
+    # The image itself is sent once, here. Every prompt after that costs only the placement.
+    _sparklebios_image={{MASCOT_IMAGE}}
+    if [[ -n "$_sparklebios_image" && "$_sparklebios_prev_mascot" != "$SPARKLEBIOS_MASCOT" ]]; then
+      printf '%s' "$_sparklebios_image"
+    fi
+    unset _sparklebios_image _sparklebios_prev_mascot
+
     _sparklebios_took() {
       local s=$1
       if (( s < 60 )); then
@@ -55,10 +75,7 @@ if [[ -o interactive ]] && command -v bios >/dev/null 2>&1; then
 
     _sparklebios_precmd() {
       local status_was=$?
-      if [[ {{TITLE}} == 1 && "$TERM" != dumb && "$TERM" != linux ]]; then
-        printf '\e]0;%s %s\a' {{TITLE_NAME}} "${PWD/#$HOME/~}"
-      fi
-      if [[ -n "$_sparklebios_started" ]]; then
+      if [[ -n "${_sparklebios_started:-}" ]]; then
         local elapsed=$(( EPOCHSECONDS - _sparklebios_started ))
         unset _sparklebios_started
         # Out of the arithmetic so this file is still a parseable shell script before
