@@ -1,7 +1,7 @@
 # The theme: Rainbows and Unicorns
 
 A serious 1985 colour terminal theme for Ghostty. The name is the only joke.
-Nine variants share one idea: the rainbow is simply the ANSI colours your tools
+Ten variants share one idea: the rainbow is simply the ANSI colours your tools
 were already going to use.
 
 Contrast figures are WCAG ratios against that variant's background.
@@ -218,6 +218,29 @@ long evenings in front of the family computer.
 | 5 | magenta | `#B87A9A` | 13 | magenta | `#D29CB8` |
 | 6 | cyan | `#7FB0A0` | 14 | cyan | `#A2CDBF` |
 | 7 | white | `#CDBB98` | 15 | white | `#FFF3DA` |
+
+### `rainbows-and-unicorns-sorbet` (Sorbet)
+
+The soft one. Six pastels on deep plum: pink, mint, butter, periwinkle, lilac and aqua, with peach
+riding in bright red where the other variants keep their orange. Every colour clears 9:1 on the
+plum, so it is gentle to look at and still easy to read all day.
+
+| Role | Value | | Role | Value |
+|---|---|---|---|---|
+| background | `#241B2F` | | foreground | `#F3E8F5` (13.9) |
+| cursor-color | `#FF9EB5` | | cursor-text | `#241B2F` |
+| selection-background | `#D7B3FF` | | selection-foreground | `#241B2F` |
+
+| # | Normal | Value | # | Bright | Value |
+|---|---|---|---|---|---|
+| 0 | black | `#3A2D48` | 8 | black | `#8A789E` |
+| 1 | red (pink) | `#FF9EB5` | 9 | red (peach) | `#FFBE98` |
+| 2 | green (mint) | `#A8E6C3` | 10 | green | `#C6F3D9` |
+| 3 | yellow (butter) | `#FFE8A3` | 11 | yellow | `#FFF2C7` |
+| 4 | blue (periwinkle) | `#A7C7FF` | 12 | blue | `#C7DBFF` |
+| 5 | magenta (lilac) | `#D7B3FF` | 13 | magenta | `#E8D1FF` |
+| 6 | cyan (aqua) | `#9FE8E6` | 14 | cyan | `#C5F4F2` |
+| 7 | white | `#E4D6EC` | 15 | white | `#FFFFFF` |
 
 ## Using it
 
