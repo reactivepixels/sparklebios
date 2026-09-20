@@ -47,6 +47,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The boot screen reads on a light theme. A transparent screen sits on whatever theme the terminal is running, but it was painting its header a fixed near-white, so on Paper White it was white on a near-white page and simply vanished. Text now uses bold and faint on the terminal's own foreground. A machine that paints its own background still uses its own colours, since those are the ones known to have contrast against it.
 - Setting a value no longer throws away the rest of your config file. `bios use` and `bios sprinkles` edit the one line they mean and leave the comments, the blank lines and the key order exactly as they were.
 
 ### Changed

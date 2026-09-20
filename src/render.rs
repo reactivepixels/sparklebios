@@ -72,29 +72,19 @@ fn hex_rgb(colour: &str) -> (u8, u8, u8) {
     )
 }
 
-fn colour_for(machine: &Machine, style: Style) -> &str {
-    match style {
-        Style::Normal => &machine.fg,
-        Style::Bright => &machine.bright,
-        Style::Accent => &machine.accent,
-    }
-}
-
 /// Wraps `text` in the escape codes for `style`, or returns it unchanged for `ColorMode::None`.
-fn paint(machine: &Machine, mode: ColorMode, style: Style, text: &str) -> String {
+///
+/// The styles are attributes on the terminal's own foreground, never a fixed colour. A painted
+/// screen with no background of its own sits on whatever theme is loaded, so text painted a fixed
+/// near-white disappeared on a light theme: Paper White's background is `#efede6`, and the
+/// firmware and copyright lines were being drawn `#FFFFFF` on top of it. Bold and faint read
+/// correctly on a light theme and a dark one, and the accent uses the palette's own yellow rather
+/// than a hardcoded one, so it follows the theme too.
+fn paint(mode: ColorMode, style: Style, text: &str) -> String {
     match mode {
         ColorMode::None => text.to_string(),
-        ColorMode::TrueColor => {
-            let (r, g, b) = hex_rgb(colour_for(machine, style));
-            format!("\x1b[38;2;{r};{g};{b}m{text}\x1b[0m")
-        }
-        ColorMode::Ansi16 => {
-            let code = match style {
-                Style::Normal => "37",
-                Style::Bright => "97",
-                Style::Accent => "93",
-            };
-            format!("\x1b[{code}m{text}\x1b[0m")
+        ColorMode::TrueColor | ColorMode::Ansi16 => {
+            format!("\x1b[{}m{text}\x1b[0m", style_code(style))
         }
     }
 }
@@ -635,11 +625,11 @@ pub fn animated_layout(
 }
 
 /// The plain rendering: every span painted in place, one line per row.
-fn render_plain(machine: &Machine, mode: ColorMode, lines: &[Vec<Span>]) -> String {
+fn render_plain(mode: ColorMode, lines: &[Vec<Span>]) -> String {
     let mut out = String::new();
     for line in lines {
         for span in line {
-            out.push_str(&paint(machine, mode, span.style, &span.text));
+            out.push_str(&paint(mode, span.style, &span.text));
         }
         out.push('\n');
     }
@@ -666,13 +656,40 @@ fn fill(bg: Option<(u8, u8, u8)>, width: usize) -> String {
 
 /// `text` painted in `rgb` as foreground, plus `bg` as background when it is set: foreground-only
 /// SGR for a transparent painted screen.
-fn fg_text(rgb: (u8, u8, u8), bg: Option<(u8, u8, u8)>, text: &str) -> String {
-    let (r, g, b) = rgb;
+/// The SGR attributes for a text style: bold, faint, or bold plus the palette's own yellow. Never
+/// a fixed colour, so the text follows whatever theme the terminal is running. See `paint`.
+fn style_code(style: Style) -> &'static str {
+    match style {
+        Style::Normal => "2",
+        Style::Bright => "1",
+        Style::Accent => "1;33",
+    }
+}
+
+/// The machine's own colour for a style, used only where the machine paints its own background.
+fn colour_for(machine: &Machine, style: Style) -> &str {
+    match style {
+        Style::Normal => &machine.fg,
+        Style::Bright => &machine.bright,
+        Style::Accent => &machine.accent,
+    }
+}
+
+/// A run of styled text inside a painted row.
+///
+/// Which foreground to use depends on whether the machine brought its own background. A machine
+/// that paints one has chosen both halves of the pair and its colours are the only ones known to
+/// have contrast against it, so they are used. A transparent machine is sitting on whatever theme
+/// the terminal is running, and there its own colours are a liability: `pc95` painted its header
+/// `#FFFFFF`, which is invisible on Paper White's `#efede6` background. There the style is an
+/// attribute on the terminal's own foreground instead.
+fn styled_text(machine: &Machine, style: Style, bg: Option<(u8, u8, u8)>, text: &str) -> String {
     match bg {
         Some((br, bg_g, bb)) => {
+            let (r, g, b) = hex_rgb(colour_for(machine, style));
             format!("\x1b[38;2;{r};{g};{b};48;2;{br};{bg_g};{bb}m{text}\x1b[0m")
         }
-        None => format!("\x1b[38;2;{r};{g};{b}m{text}\x1b[0m"),
+        None => format!("\x1b[{}m{text}\x1b[0m", style_code(style)),
     }
 }
 
@@ -732,8 +749,7 @@ fn painted_row(
             continue;
         }
         used += text.chars().count();
-        let rgb = hex_rgb(colour_for(machine, span.style));
-        row.push_str(&fg_text(rgb, bg, &text));
+        row.push_str(&styled_text(machine, span.style, bg, &text));
     }
 
     let text_end = shift_offset + used;
@@ -745,8 +761,7 @@ fn painted_row(
         if badge_start > text_end {
             row.push_str(&fill(bg, badge_start - text_end));
         }
-        let rgb = hex_rgb(&machine.accent);
-        row.push_str(&fg_text(rgb, bg, badge));
+        row.push_str(&styled_text(machine, Style::Accent, bg, badge));
     } else if text_end < cols {
         row.push_str(&fill(bg, cols - text_end));
     }
@@ -1048,7 +1063,7 @@ impl<'a> RowGeometry<'a> {
         } else {
             let mut out = String::new();
             for span in spans {
-                out.push_str(&paint(self.machine, self.mode, span.style, &span.text));
+                out.push_str(&paint(self.mode, span.style, &span.text));
             }
             out
         }
@@ -1080,7 +1095,7 @@ pub fn render_static(
     if painted {
         render_painted(machine, &lines, graphics, flavour)
     } else {
-        render_plain(machine, mode, &lines)
+        render_plain(mode, &lines)
     }
 }
 
@@ -1295,11 +1310,14 @@ style = "accent"
             None,
             &[],
         );
-        assert!(out.contains("\x1b[38;2;255;255;255mSparkle Modular BIOS"));
-        assert!(out.contains(
-            "\x1b[38;2;170;170;170mDetecting Horn... \x1b[0m\x1b[38;2;255;255;85m1 found"
-        ));
-        assert!(!out.contains("\x1b[1m"));
+        // Attributes on the terminal's own foreground, never a fixed colour, so the screen
+        // reads correctly on a light theme as well as a dark one.
+        assert!(out.contains("\x1b[1mSparkle Modular BIOS"));
+        assert!(out.contains("\x1b[2mDetecting Horn... \x1b[0m\x1b[1;33m1 found"));
+        assert!(
+            !out.contains("38;2;"),
+            "a fixed colour leaked into the text styles"
+        );
     }
     #[test]
     fn ansi16_uses_basic_codes() {
@@ -1324,7 +1342,11 @@ print = "37748736K OK"
             None,
             &[],
         );
-        assert!(out.contains("\x1b[37m37748736K OK\x1b[0m"));
+        assert!(out.contains("\x1b[2m37748736K OK\x1b[0m"));
+        assert!(
+            !out.contains("\x1b[37m"),
+            "still emitting a fixed basic colour"
+        );
     }
     #[test]
     fn seed_rotates_quips_and_skips_unresolvable_ones() {
@@ -2273,6 +2295,34 @@ print = "{long_line}"
     /// opaque, fragile copy of the image bytes rather than a layout worth reviewing. The Kitty
     /// escape itself is covered directly by `painted_pc95_with_kitty_places_the_logo` and
     /// `painted_pc95_kitty_embeds_the_flavours_own_sprite`.
+    /// A transparent painted screen must not name a colour for its text. `pc95` has no background
+    /// of its own, so it sits on whatever theme is loaded, and a fixed near-white header is
+    /// invisible on a light one: Paper White's background is `#efede6`. The styles are attributes
+    /// on the terminal's own foreground instead.
+    #[test]
+    fn a_transparent_painted_screen_styles_text_without_naming_a_colour() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = facts_with_findings();
+        crate::flavour::apply(&flavour, &mut facts);
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::TrueColor,
+            PC95_PAINTED_SEED,
+            Some(100),
+            Graphics::None,
+            Some(&flavour),
+            &fixture_findings(),
+        );
+        assert!(
+            !out.contains("38;2;"),
+            "a fixed foreground colour leaked into a transparent screen"
+        );
+        assert!(out.contains("\x1b[1m"), "the bright rows are not bold");
+        assert!(out.contains("\x1b[2m"), "the normal rows are not faint");
+    }
+
     #[test]
     fn pc95_painted_matches_golden() {
         let m = machine::find("pc95", None).unwrap();

@@ -1,27 +1,27 @@
                                                                                     [0m
-  [38;2;255;255;255mSparkle Modular BIOS v1.985PG, An Enchantment Star Ally[0m                           [0m
-  [38;2;255;255;255mCopyright (C) 1985-2026, Rainbows & Unicorns, Inc.[0m                                [0m
+  [1mSparkle Modular BIOS v1.985PG, An Enchantment Star Ally[0m                           [0m
+  [1mCopyright (C) 1985-2026, Rainbows & Unicorns, Inc.[0m                                [0m
                                                                                     [0m
-  [38;2;170;170;170mUNI-440BX ACPI BIOS Revision 1007[0m                                                 [0m
+  [2mUNI-440BX ACPI BIOS Revision 1007[0m                                                 [0m
                                                                                     [0m
-  [38;2;170;170;170mMain Processor : Apple M4 Pro, 14 cores, 0 horns[0m                                  [0m
-  [38;2;170;170;170mMemory Testing : 37748736K OK[0m                                                     [0m
+  [2mMain Processor : Apple M4 Pro, 14 cores, 0 horns[0m                                  [0m
+  [2mMemory Testing : 37748736K OK[0m                                                     [0m
                                                                                     [0m
-  [38;2;170;170;170mDetecting Primary Master   ... [0m[38;2;170;170;170m994GB, 78% used[0m                                    [0m
-  [38;2;170;170;170mDetecting Operating System ... [0m[38;2;170;170;170mmacOS 26.5[0m                                         [0m
-  [38;2;170;170;170mDetecting Shell            ... [0m[38;2;170;170;170mzsh[0m                                                [0m
-  [38;2;170;170;170mDetecting Horn             ... [0m[38;2;170;170;170m1 found (7-band, sparkle capable)[0m                  [0m
+  [2mDetecting Primary Master   ... [0m[2m994GB, 78% used[0m                                    [0m
+  [2mDetecting Operating System ... [0m[2mmacOS 26.5[0m                                         [0m
+  [2mDetecting Shell            ... [0m[2mzsh[0m                                                [0m
+  [2mDetecting Horn             ... [0m[2m1 found (7-band, sparkle capable)[0m                  [0m
                                                                                     [0m
-  [38;2;170;170;170mBoot device order: eko-pro, sparklebios, klang-stack[0m                              [0m
-  [38;2;170;170;170mPrimary boot device not parked: eko-pro, 3 uncommitted changes.[0m                   [0m
-  [38;2;170;170;170mIRQ conflict: port 3000 held by node (pid 4821) for 3 days.[0m                       [0m
-  [38;2;170;170;170mVirus scan: eko-pro has .env.local tracked by git. Quarantine advised.[0m            [0m
+  [2mBoot device order: eko-pro, sparklebios, klang-stack[0m                              [0m
+  [2mPrimary boot device not parked: eko-pro, 3 uncommitted changes.[0m                   [0m
+  [2mIRQ conflict: port 3000 held by node (pid 4821) for 3 days.[0m                       [0m
+  [2mVirus scan: eko-pro has .env.local tracked by git. Quarantine advised.[0m            [0m
                                                                                     [0m
-  [38;2;170;170;170mShadow RAM enabled. Shadow unicorn also enabled.[0m                                  [0m
+  [2mShadow RAM enabled. Shadow unicorn also enabled.[0m                                  [0m
                                                                                     [0m
-  [38;2;170;170;170mBoot streak: 12 days. Don't blow it.[0m                                              [0m
-  [38;2;170;170;170mShell boot time: 412ms[0m                                                            [0m
+  [2mBoot streak: 12 days. Don't blow it.[0m                                              [0m
+  [2mShell boot time: 412ms[0m                                                            [0m
                                                                                     [0m
-  [38;2;170;170;170mPress F1 to continue, or bios resume to boot eko-pro.[0m                             [0m
-  [38;2;170;170;170m09/19/2026-UNI-440BX-RNBW-2A69KU1C-00[0m                                             [0m
+  [2mPress F1 to continue, or bios resume to boot eko-pro.[0m                             [0m
+  [2m09/19/2026-UNI-440BX-RNBW-2A69KU1C-00[0m                                             [0m
                                                                                     [0m
