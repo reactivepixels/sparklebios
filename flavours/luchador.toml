@@ -17,3 +17,12 @@ quips = [
   "Best of three falls. This boot counts as one.",
   "The crowd is on its feet. The crowd is {cpu.cores} cores.",
 ]
+
+[findings]
+boot_order = "Tonight's card: {boot.devices}"
+boot_dirty = "Match abandoned: {boot.device}, {boot.changes}."
+irq_conflict = "Illegal hold: port {irq.port} held by {irq.name} (pid {irq.pid}) for {irq.age}."
+virus_one = "Unmasked: {virus.repo} has {virus.file} tracked by git. The mask must stay on."
+virus_many = "Unmasked: {virus.count} tracked secrets in {virus.repo}, including {virus.file}."
+f1 = "Press F1 to continue."
+f1_resume = "Press F1 to continue, or bios resume for a rematch with {boot.device}."

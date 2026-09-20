@@ -17,3 +17,12 @@ quips = [
   "Beard integrity: excellent.",
   "Booting from {shell.name}. The sagas will mention it.",
 ]
+
+[findings]
+boot_order = "Raiding order: {boot.devices}"
+boot_dirty = "Longship left unmoored: {boot.device}, {boot.changes}."
+irq_conflict = "Harbour blocked: port {irq.port} held by {irq.name} (pid {irq.pid}) for {irq.age}."
+virus_one = "Treasure left on the beach: {virus.repo} has {virus.file} tracked by git. Bury it."
+virus_many = "Treasure left on the beach: {virus.count} tracked secrets in {virus.repo}, including {virus.file}."
+f1 = "Press F1 to continue."
+f1_resume = "Press F1 to continue, or bios resume to sail back to {boot.device}."

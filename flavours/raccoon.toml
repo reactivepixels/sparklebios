@@ -1,0 +1,28 @@
+id = "raccoon"
+name = "Raccoon"
+sprite = "raccoon"
+firmware = "Trash Panda Modular BIOS v1.999, Nocturnal Edition"
+vendor = "Copyright (C) 1999-{date.year}, Dumpster Systems After Dark"
+board = "BANDIT-5 Bin Lid Revision 1999"
+cpu_gag = "0 regrets"
+part = "Trash"
+part_result = "located (smells promising)"
+streak = "Nights raiding: {streak.days}. The bins remain undefeated."
+footer = "BANDIT-5-BINS-1999DUSK-00"
+quips = [
+  "Hands washed. Evidence also washed.",
+  "Operating hours: after dark. It is always after dark in a terminal.",
+  "Little hands detected on the keyboard. They are yours.",
+  "{cpu.cores} cores, all of them rummaging.",
+  "Floppy drive A: taken. It was shiny.",
+  "The mask is permanent. There is no identity to protect.",
+]
+
+[findings]
+boot_order = "Tonight's bins: {boot.devices}"
+boot_dirty = "Lid left open: {boot.device}, {boot.changes}."
+irq_conflict = "Someone else is in this bin: port {irq.port} held by {irq.name} (pid {irq.pid}) for {irq.age}."
+virus_one = "Shiny thing left in the open: {virus.repo} has {virus.file} tracked by git. Hide it."
+virus_many = "Shiny things left in the open: {virus.count} tracked secrets in {virus.repo}, including {virus.file}."
+f1 = "Press F1 to continue."
+f1_resume = "Press F1 to continue, or bios resume to go back through {boot.device}."
