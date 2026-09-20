@@ -92,6 +92,10 @@ fn read_battery() -> Option<(u8, u64)> {
 /// that do not report a nominal figure. `MaxCapacity` is deliberately not used: on current macOS
 /// it reads 100 on a worn battery, because it means percent of the current maximum, not of the
 /// design.
+///
+/// Only macOS reads a battery this way, but the parser is pure and its test is worth running
+/// everywhere, so it is compiled on every platform and simply goes unused off macOS.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn parse_ioreg(text: &str) -> Option<(u8, u64)> {
     let field = |name: &str| -> Option<u64> {
         let needle = format!("\"{name}\" = ");
