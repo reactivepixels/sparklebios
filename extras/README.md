@@ -6,6 +6,7 @@ and none of them are on by default.
 | File | What it does |
 |---|---|
 | [shaders/cursor-trail.glsl](shaders/cursor-trail.glsl) | A Ghostty shader. When the cursor jumps it leaves a short six-stripe trail that retracts into it |
+| [shaders/crt.glsl](shaders/crt.glsl) | A Ghostty shader. Scanlines, a slight curve, a soft glow on bright text and a vignette. Nothing animates, so nothing flickers |
 | [tools/colours.zsh](tools/colours.zsh) | Makes `ls`, `eza`, `bat`, `fzf`, `man`, `less`, `grep` and zsh completion follow the terminal's sixteen colours |
 | [tools/delta.gitconfig](tools/delta.gitconfig) | Git diffs through `delta`, drawn from the same sixteen colours |
 | [starship-palette.toml](starship-palette.toml) | Four palettes for starship's Gruvbox Rainbow preset: `rainbows_and_unicorns`, `rainbows_and_unicorns_mane`, `rainbows_and_unicorns_auto` and `rainbows_and_unicorns_paper`. `bios theme use` switches an opted-in prompt between `_auto`, which uses the terminal's own colours by number so it follows whichever theme variant is active, and `_paper`, for Paper White alone |
