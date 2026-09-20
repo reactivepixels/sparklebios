@@ -20,7 +20,7 @@ include = [
     "sprites/**",
     "themes/**",
     "shell/**",
-    "extras/**",
+    "extras/starship-palette.toml",
     "/Cargo.toml",
     "/LICENSE-APACHE",
     "/LICENSE-MIT",
