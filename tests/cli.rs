@@ -285,8 +285,11 @@ fn preview_shows_the_memory_count_on_macos() {
         .stdout(predicate::str::contains("K OK"));
 }
 
+/// A streak of zero is not a streak, so the line is left out rather than printed as
+/// "Boot streak: 0 days", which reads as a broken counter. This can only be reached by an
+/// explicit `bios boot` before the shell hook has ever run: a hooked boot counts as day one.
 #[test]
-fn preview_shows_zero_days_when_there_is_no_state_file_yet() {
+fn the_streak_line_is_omitted_when_there_is_no_state_file_yet() {
     let state = tempfile::tempdir().unwrap();
     bios()
         .args(["boot", "--flavour", "unicorn"])
@@ -295,7 +298,7 @@ fn preview_shows_zero_days_when_there_is_no_state_file_yet() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Sparkle Modular BIOS"))
-        .stdout(predicate::str::contains("Boot streak: 0 days"))
+        .stdout(predicate::str::contains("Boot streak").not())
         .stdout(predicate::str::contains("{").not());
     assert!(!state.path().join("sparklebios/state.json").exists());
 }

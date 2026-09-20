@@ -1,9 +1,12 @@
 //! Severity, Finding, and the probe registry. Only ever run by `bios refresh`, never on the
 //! boot path.
 
+pub mod dotfiles;
 pub mod ports;
 pub mod projects;
+pub mod runtimes;
 pub mod secrets;
+pub mod stashes;
 
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +38,15 @@ pub fn run_all(config: &crate::config::Config) -> Vec<Finding> {
         findings.push(finding);
     }
     if let Some(finding) = secrets::check(&devices) {
+        findings.push(finding);
+    }
+    if let Some(finding) = stashes::check(&devices, crate::clock::now_unix()) {
+        findings.push(finding);
+    }
+    if let Some(finding) = dotfiles::check(std::env::var("HOME").ok().as_deref()) {
+        findings.push(finding);
+    }
+    if let Some(finding) = runtimes::check(&devices) {
         findings.push(finding);
     }
     findings

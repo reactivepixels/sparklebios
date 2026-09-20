@@ -248,8 +248,13 @@ fn run_preview(args: &BootArgs) {
         Some(dir) => crate::state::State::load(dir),
         None => crate::state::State::default(),
     };
-    facts.insert("streak.days", state.streak_days.to_string());
-    facts.insert("streak.label", state.streak_label());
+    // A streak of zero is not a streak. It can only happen on an explicit `bios boot` before the
+    // shell hook has ever run, and "Boot streak: 0 days" reads as a broken counter rather than a
+    // true one, so the slots stay unset and the line is omitted under the usual rule.
+    if state.streak_days > 0 {
+        facts.insert("streak.days", state.streak_days.to_string());
+        facts.insert("streak.label", state.streak_label());
+    }
 
     let now = crate::clock::now_unix();
     let cache = load_cache(&config);
@@ -354,8 +359,13 @@ fn run_shell_boot(args: &BootArgs) {
     let yesterday = crate::clock::day_string(now as i64 - 86_400);
     state.advance_streak(&today, &yesterday);
     let mut facts = crate::facts::gather();
-    facts.insert("streak.days", state.streak_days.to_string());
-    facts.insert("streak.label", state.streak_label());
+    // A streak of zero is not a streak. It can only happen on an explicit `bios boot` before the
+    // shell hook has ever run, and "Boot streak: 0 days" reads as a broken counter rather than a
+    // true one, so the slots stay unset and the line is omitted under the usual rule.
+    if state.streak_days > 0 {
+        facts.insert("streak.days", state.streak_days.to_string());
+        facts.insert("streak.label", state.streak_label());
+    }
 
     let cache = load_cache(&config);
     let findings: Vec<crate::checks::Finding> = cache

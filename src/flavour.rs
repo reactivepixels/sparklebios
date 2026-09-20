@@ -358,6 +358,15 @@ quips = ["a", "b", "c"]
         facts.insert("virus.repo", "eko-pro");
         facts.insert("virus.file", ".env.local");
         facts.insert("virus.count", "3");
+        facts.insert("stash.repo", "eko-pro");
+        facts.insert("stash.count", "3 stashes");
+        facts.insert("stash.age", "4 months");
+        facts.insert("dotfiles.repo", ".dotfiles");
+        facts.insert("dotfiles.changes", "3 uncommitted changes");
+        facts.insert("runtime.repo", "eko-pro");
+        facts.insert("runtime.name", "node");
+        facts.insert("runtime.wanted", "20.11.0");
+        facts.insert("runtime.found", "22.3.0");
         facts
     }
 
@@ -378,6 +387,15 @@ quips = ["a", "b", "c"]
         facts.insert("virus.repo", "side-project");
         facts.insert("virus.file", ".env.production.local");
         facts.insert("virus.count", "3");
+        facts.insert("stash.repo", "side-project");
+        facts.insert("stash.count", "13 stashes");
+        facts.insert("stash.age", "14 months");
+        facts.insert("dotfiles.repo", ".dotfiles-personal");
+        facts.insert("dotfiles.changes", "17 uncommitted changes");
+        facts.insert("runtime.repo", "side-project");
+        facts.insert("runtime.name", "python");
+        facts.insert("runtime.wanted", "3.12.4");
+        facts.insert("runtime.found", "3.13.0");
         facts
     }
 

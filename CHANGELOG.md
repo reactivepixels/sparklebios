@@ -10,6 +10,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Three more health checks. Stale stashes reports work you put down in a git stash over a month ago and never picked up. Changed dotfiles reports a tracked dotfiles repository with uncommitted work in it. Runtime drift reports a repository that pins a version of node, rust, python or ruby that is not the one on your PATH. All three are cached and refreshed in the background like the others, and phrased per flavour.
 - The mascot also draws in iTerm2 and WezTerm, through their own inline image protocol. Ghostty and kitty keep using the Kitty graphics protocol, and the terminal is never asked which it speaks: the answer comes from the environment, so nothing on the boot path waits for a reply.
 - Two more mascots, `wizard` and `caveman`, bringing the roster to nine.
 - `bios boot` typed by hand now always plays the full show, whatever the once-a-day and nested-shell rules would have said. Those still apply to the boot your shell runs, and an explicit run leaves the state file alone, so looking at the screen does not use up the day's show.
@@ -47,6 +48,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A streak of zero is no longer printed. It could only appear on an explicit `bios boot` before the shell hook had ever run, and "Boot streak: 0 days" reads as a broken counter rather than a true one, so the line is left out instead.
 - The boot screen reads on a light theme. A transparent screen sits on whatever theme the terminal is running, but it was painting its header a fixed near-white, so on Paper White it was white on a near-white page and simply vanished. Text now uses bold and faint on the terminal's own foreground. A machine that paints its own background still uses its own colours, since those are the ones known to have contrast against it.
 - Setting a value no longer throws away the rest of your config file. `bios use` and `bios sprinkles` edit the one line they mean and leave the comments, the blank lines and the key order exactly as they were.
 
