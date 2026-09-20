@@ -659,10 +659,12 @@ fn fg_text(rgb: (u8, u8, u8), bg: Option<(u8, u8, u8)>, text: &str) -> String {
 /// filled out with background, the badge itself, the padding and pillars mirrored, then a
 /// trailing reset.
 ///
-/// `logo` is `Some((cell, kitty_escape))` for the first 7 text rows of a machine with a unicorn
-/// logo: `cell` is the pre-rendered 14-cell half-block row for that sprite row (absent in Kitty
-/// mode, where the box is left as background), and `kitty_escape` is the transmission escape,
-/// present only on the row that must emit it (the first text row, once).
+/// `logo` is `Some((cell, kitty_escape))` for the first `logo_rows` text rows of a machine with a
+/// logo: `cell` is the pre-rendered `logo_cols`-cell half-block row for that sprite row (absent in
+/// Kitty mode, where the box is left as background), and `kitty_escape` is the transmission
+/// escape, present only on the row that must emit it (the first text row, once). `logo_cols` is
+/// the width of that box: 14 for the small grid, 28 for the wide one; ignored when `logo` is
+/// `None`.
 ///
 /// `badge`, when present, is right-aligned inside the `cols` text area, in the accent colour.
 /// The row's own text is drawn at its full width first; if it ends within 2 cells of where the
@@ -679,6 +681,7 @@ fn painted_row(
     cols: usize,
     spans: &[Span],
     logo: Option<(Option<&str>, Option<&str>)>,
+    logo_cols: usize,
     badge: Option<&str>,
 ) -> String {
     let mut row = String::new();
@@ -694,11 +697,11 @@ fn painted_row(
         }
         match cell {
             Some(cell) => row.push_str(cell),
-            None => row.push_str(&fill(bg, 14)),
+            None => row.push_str(&fill(bg, logo_cols)),
         }
-        row.push_str(&fill(bg, 2));
+        row.push_str(&fill(bg, LOGO_GAP));
     }
-    let shift_offset = if shift { 16 } else { 0 };
+    let shift_offset = if shift { logo_cols + LOGO_GAP } else { 0 };
     let text_budget = cols.saturating_sub(shift_offset);
 
     let mut used = 0usize;
@@ -743,16 +746,75 @@ fn painted_total_width(machine: &Machine) -> u16 {
     machine.cols + 2 * u16::from(machine.pad_x) + if machine.border.is_some() { 4 } else { 0 }
 }
 
-/// The logo box is 14 cells wide and 7 rows tall, at the top left of the text area, shown only
-/// when the machine names a known logo, the block is wide enough, and graphics are on.
-const LOGO_ROWS: usize = 7;
+/// The fixed gap, in cells, `painted_row` leaves between the logo box and where a line's own text
+/// begins.
+const LOGO_GAP: usize = 2;
 const MIN_COLS_FOR_GRAPHICS: usize = 60;
 
+/// The visible length of a logical line: the summed character count of its spans.
+fn line_len(line: &[Span]) -> usize {
+    line.iter().map(|span| span.text.chars().count()).sum()
+}
+
+/// True when a logo box `logo_cols` cells wide and `logo_rows` half-block rows tall, followed by
+/// the fixed `LOGO_GAP`, still leaves every one of `lines`' first `logo_rows` lines room to fit
+/// within `cols`, holding `pad_x` cells in reserve past the text: the same breathing room the row
+/// already keeps on its left.
+fn logo_box_fits(
+    lines: &[Vec<Span>],
+    logo_rows: usize,
+    logo_cols: usize,
+    cols: usize,
+    pad_x: usize,
+) -> bool {
+    let budget = cols
+        .saturating_sub(pad_x)
+        .saturating_sub(logo_cols)
+        .saturating_sub(LOGO_GAP);
+    lines
+        .iter()
+        .take(logo_rows)
+        .all(|line| line_len(line) <= budget)
+}
+
+/// The half-block grid chosen for a machine's logo, together with the footprint it occupies:
+/// `cols` cells wide, `rows` half-block rows tall.
+struct LogoPlan<'a> {
+    grid: &'a crate::sprite::Grid,
+    cols: usize,
+    rows: usize,
+}
+
+/// Picks which of `sprite`'s two grids to draw: the wide 28 by 28 one when every line that would
+/// sit beside it (per `logo_box_fits`) still fits, the original 14 by 14 one otherwise.
+fn choose_logo_grid<'a>(
+    sprite: &'a crate::sprite::Sprite,
+    lines: &[Vec<Span>],
+    cols: usize,
+    pad_x: usize,
+) -> LogoPlan<'a> {
+    let wide_cols = sprite.grid_wide.cols();
+    let wide_rows = sprite.grid_wide.half_rows();
+    if logo_box_fits(lines, wide_rows, wide_cols, cols, pad_x) {
+        LogoPlan {
+            grid: &sprite.grid_wide,
+            cols: wide_cols,
+            rows: wide_rows,
+        }
+    } else {
+        LogoPlan {
+            grid: &sprite.grid,
+            cols: sprite.grid.cols(),
+            rows: sprite.grid.half_rows(),
+        }
+    }
+}
+
 /// The painted block: a border bar, `pad_y` blank rows, the text rows, `pad_y` more blank rows,
-/// then another border bar. The logo (if any) is drawn over the first 7 text rows. The badge (if
-/// any) is right-aligned over the fill of the following few text rows: badge line `i` on text row
-/// `i + 1`, so the badge starts on the second text row and never competes with the header line
-/// for room.
+/// then another border bar. The logo (if any) is drawn over its first rows, as many as its chosen
+/// grid is tall. The badge (if any) is right-aligned over the fill of the following few text
+/// rows: badge line `i` on text row `i + 1`, so the badge starts on the second text row and never
+/// competes with the header line for room.
 fn render_painted(
     machine: &Machine,
     lines: &[Vec<Span>],
@@ -769,8 +831,18 @@ fn render_painted(
 
     let sprite = logo_sprite(machine, flavour);
     let show_logo = graphics != Graphics::None && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
-    let sprite_rows = if show_logo && graphics == Graphics::HalfBlocks {
-        crate::sprite::half_blocks(&sprite.as_ref().unwrap().grid, bg)
+    let logo_plan = show_logo
+        .then(|| {
+            sprite
+                .as_ref()
+                .map(|s| choose_logo_grid(s, lines, cols, pad_x))
+        })
+        .flatten();
+    let sprite_rows = if graphics == Graphics::HalfBlocks {
+        logo_plan
+            .as_ref()
+            .map(|plan| crate::sprite::half_blocks(plan.grid, bg))
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -783,6 +855,8 @@ fn render_painted(
     } else {
         None
     };
+    let logo_cols = logo_plan.as_ref().map_or(0, |p| p.cols);
+    let logo_rows = logo_plan.as_ref().map_or(0, |p| p.rows);
     let show_badge =
         graphics != Graphics::None && cols >= MIN_COLS_FOR_GRAPHICS && !machine.badge.is_empty();
 
@@ -793,12 +867,12 @@ fn render_painted(
     }
     for _ in 0..pad_y {
         out.push_str(&painted_row(
-            machine, bg, border, pad_x, cols, &blank, None, None,
+            machine, bg, border, pad_x, cols, &blank, None, 0, None,
         ));
         out.push('\n');
     }
     for (i, line) in lines.iter().enumerate() {
-        let logo = if show_logo && i < LOGO_ROWS {
+        let logo = if show_logo && i < logo_rows {
             let cell = sprite_rows.get(i).map(String::as_str);
             let escape = if i == 0 {
                 kitty_escape.as_deref()
@@ -815,13 +889,13 @@ fn render_painted(
             None
         };
         out.push_str(&painted_row(
-            machine, bg, border, pad_x, cols, line, logo, badge,
+            machine, bg, border, pad_x, cols, line, logo, logo_cols, badge,
         ));
         out.push('\n');
     }
     for _ in 0..pad_y {
         out.push_str(&painted_row(
-            machine, bg, border, pad_x, cols, &blank, None, None,
+            machine, bg, border, pad_x, cols, &blank, None, 0, None,
         ));
         out.push('\n');
     }
@@ -846,31 +920,44 @@ pub struct RowGeometry<'a> {
     show_logo: bool,
     sprite_rows: Vec<String>,
     kitty_escape: Option<String>,
+    logo_cols: usize,
+    logo_rows: usize,
     show_badge: bool,
 }
 
 /// Builds the geometry for `machine`, choosing between the painted and plain paths under the
-/// same rule `render_static` uses.
+/// same rule `render_static` uses. `facts` and `seed` lay the screen out (the same way
+/// `render_static` does) purely to learn each line's length, so the painted path can decide
+/// whether the wide logo grid fits beside it; they play no other part here.
+#[allow(clippy::too_many_arguments)]
 pub fn row_geometry<'a>(
     machine: &'a Machine,
+    facts: &Facts,
+    seed: u64,
     mode: ColorMode,
     term_cols: Option<u16>,
     graphics: Graphics,
     flavour: Option<&Flavour>,
-    _findings: &[Finding],
+    findings: &[Finding],
 ) -> RowGeometry<'a> {
     let painted = machine.paint
         && mode == ColorMode::TrueColor
         && term_cols.is_some_and(|w| w >= painted_total_width(machine));
     if painted {
-        RowGeometry::build_painted(machine, graphics, flavour)
+        let lines = layout(machine, facts, seed, flavour, findings);
+        RowGeometry::build_painted(machine, &lines, graphics, flavour)
     } else {
         RowGeometry::build_plain(machine, mode)
     }
 }
 
 impl<'a> RowGeometry<'a> {
-    fn build_painted(machine: &'a Machine, graphics: Graphics, flavour: Option<&Flavour>) -> Self {
+    fn build_painted(
+        machine: &'a Machine,
+        lines: &[Vec<Span>],
+        graphics: Graphics,
+        flavour: Option<&Flavour>,
+    ) -> Self {
         let bg = machine.bg.as_deref().map(hex_rgb);
         let border = machine.border.as_deref().map(hex_rgb);
         let pad_x = machine.pad_x as usize;
@@ -878,8 +965,18 @@ impl<'a> RowGeometry<'a> {
         let sprite = logo_sprite(machine, flavour);
         let show_logo =
             graphics != Graphics::None && cols >= MIN_COLS_FOR_GRAPHICS && sprite.is_some();
-        let sprite_rows = if show_logo && graphics == Graphics::HalfBlocks {
-            crate::sprite::half_blocks(&sprite.as_ref().unwrap().grid, bg)
+        let logo_plan = show_logo
+            .then(|| {
+                sprite
+                    .as_ref()
+                    .map(|s| choose_logo_grid(s, lines, cols, pad_x))
+            })
+            .flatten();
+        let sprite_rows = if graphics == Graphics::HalfBlocks {
+            logo_plan
+                .as_ref()
+                .map(|plan| crate::sprite::half_blocks(plan.grid, bg))
+                .unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -892,6 +989,8 @@ impl<'a> RowGeometry<'a> {
         } else {
             None
         };
+        let logo_cols = logo_plan.as_ref().map_or(0, |p| p.cols);
+        let logo_rows = logo_plan.as_ref().map_or(0, |p| p.rows);
         let show_badge = graphics != Graphics::None
             && cols >= MIN_COLS_FOR_GRAPHICS
             && !machine.badge.is_empty();
@@ -906,6 +1005,8 @@ impl<'a> RowGeometry<'a> {
             show_logo,
             sprite_rows,
             kitty_escape,
+            logo_cols,
+            logo_rows,
             show_badge,
         }
     }
@@ -922,6 +1023,8 @@ impl<'a> RowGeometry<'a> {
             show_logo: false,
             sprite_rows: Vec::new(),
             kitty_escape: None,
+            logo_cols: 0,
+            logo_rows: 0,
             show_badge: false,
         }
     }
@@ -953,6 +1056,7 @@ impl<'a> RowGeometry<'a> {
             self.cols,
             &[],
             None,
+            0,
             None,
         )
     }
@@ -962,7 +1066,7 @@ impl<'a> RowGeometry<'a> {
     /// (a `Detect`'s label, a `Count`'s partial value) through the same layout as the final one.
     pub fn line(&self, index: usize, spans: &[Span]) -> String {
         if self.painted {
-            let logo = if self.show_logo && index < LOGO_ROWS {
+            let logo = if self.show_logo && index < self.logo_rows {
                 let cell = self.sprite_rows.get(index).map(String::as_str);
                 let escape = if index == 0 {
                     self.kitty_escape.as_deref()
@@ -986,6 +1090,7 @@ impl<'a> RowGeometry<'a> {
                 self.cols,
                 spans,
                 logo,
+                self.logo_cols,
                 badge,
             )
         } else {
@@ -1487,6 +1592,92 @@ quip = true
         assert!(!out.contains("enchantment"));
     }
 
+    /// The half-block rows a painted, half-block render draws its logo over: every row, in
+    /// order from the top of the text area (`pad_y` blank rows down, with no border on either
+    /// test machine), that carries an upper or lower half-block glyph.
+    fn logo_row_count(out: &str, pad_y: usize) -> usize {
+        out.lines()
+            .skip(pad_y)
+            .take_while(|row| row.contains('\u{2580}') || row.contains('\u{2584}'))
+            .count()
+    }
+
+    #[test]
+    fn pc95_is_too_narrow_for_the_wide_grid_and_falls_back_to_the_seven_row_mascot() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        let out = render_static(
+            &m,
+            &facts,
+            ColorMode::TrueColor,
+            0,
+            Some(100),
+            Graphics::HalfBlocks,
+            Some(&flavour),
+            &[],
+        );
+        assert_eq!(logo_row_count(&out, m.pad_y as usize), 7);
+    }
+
+    #[test]
+    fn a_machine_wide_enough_for_the_wide_grid_chooses_the_fourteen_row_mascot() {
+        let src = r##"
+id = "widelogo"
+name = "Wide"
+cols = 140
+fg = "#AAAAAA"
+bright = "#FFFFFF"
+accent = "#FFFF55"
+paint = true
+logo = "unicorn"
+pad_x = 2
+pad_y = 1
+quips = ["a quip"]
+
+[[step]]
+print = "Line one"
+[[step]]
+print = "Line two"
+[[step]]
+print = "Line three"
+[[step]]
+print = "Line four"
+[[step]]
+print = "Line five"
+[[step]]
+print = "Line six"
+[[step]]
+print = "Line seven"
+[[step]]
+print = "Line eight"
+[[step]]
+print = "Line nine"
+[[step]]
+print = "Line ten"
+[[step]]
+print = "Line eleven"
+[[step]]
+print = "Line twelve"
+[[step]]
+print = "Line thirteen"
+[[step]]
+print = "Line fourteen"
+"##;
+        let m = machine::parse(src).unwrap();
+        let out = render_static(
+            &m,
+            &Facts::new(),
+            ColorMode::TrueColor,
+            0,
+            Some(160),
+            Graphics::HalfBlocks,
+            None,
+            &[],
+        );
+        assert_eq!(logo_row_count(&out, m.pad_y as usize), 14);
+    }
+
     #[test]
     fn transparent_painted_pc95_has_no_background_but_keeps_geometry() {
         let m = machine::find("pc95", None).unwrap();
@@ -1514,7 +1705,9 @@ quip = true
         // not the screen, and only ever sits inside the 14-cell logo box.
         let pad_x = m.pad_x as usize;
         let pad_y = m.pad_y as usize;
-        let logo_rows = pad_y..pad_y + LOGO_ROWS;
+        // pc95 is 80 columns wide, too narrow for the wide grid's longest line to fit beside it
+        // (see `logo_box_fits`), so it always falls back to the small grid's 7 rows.
+        let logo_rows = pad_y..pad_y + 7;
         for (i, row) in rows.iter().enumerate() {
             if logo_rows.contains(&i) {
                 let cutoff = visible_col_byte_index(row, pad_x + 14);
@@ -1785,6 +1978,8 @@ print = "{long_line}"
         let lines = layout(&m, &facts, 0, Some(&flavour), &[]);
         let geometry = row_geometry(
             &m,
+            &facts,
+            0,
             ColorMode::TrueColor,
             Some(100),
             Graphics::HalfBlocks,

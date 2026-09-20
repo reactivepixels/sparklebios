@@ -126,6 +126,8 @@ pub fn play(
 ) -> ShowOutcome {
     let row_geometry = render::row_geometry(
         machine,
+        facts,
+        seed,
         geometry.mode,
         geometry.term_cols,
         geometry.graphics,

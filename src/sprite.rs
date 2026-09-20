@@ -1,9 +1,11 @@
 //! Boot logos: a half-block character grid and a Kitty graphics escape, both built from the
 //! same source image, for each built-in sprite.
 
-/// A parsed sprite grid: a palette of `X=#RRGGBB` entries (one character key each) and the 14 by
-/// 14 rows of characters that use them. `'.'` is always transparent and never appears in the
-/// palette.
+/// A parsed sprite grid: a palette of `X=#RRGGBB` entries (one character key each) and the square
+/// rows of characters that use them (14 by 14 for the small grid, 28 by 28 for the wide one).
+/// `'.'` is always transparent and never appears in the palette. A key may be any single
+/// character: the small grids only ever need `A`-`Z`, but the wide grids, with up to 40 colours,
+/// run `A`-`Z`, then `a`-`z`, then `0`-`9`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grid {
     palette: std::collections::BTreeMap<char, (u8, u8, u8)>,
@@ -34,6 +36,16 @@ impl Grid {
     fn color(&self, c: char) -> Option<(u8, u8, u8)> {
         self.palette.get(&c).copied()
     }
+
+    /// The width, in cells, of the grid's rows.
+    pub fn cols(&self) -> usize {
+        self.rows.first().map_or(0, Vec::len)
+    }
+
+    /// The grid's height once drawn as half-blocks: every two pixel rows collapse into one.
+    pub fn half_rows(&self) -> usize {
+        self.rows.len() / 2
+    }
 }
 
 /// Parses a `#RRGGBB` colour. Returns `None` for anything else.
@@ -47,26 +59,35 @@ fn parse_hex_rgb(s: &str) -> Option<(u8, u8, u8)> {
 }
 
 /// A built-in sprite: the full-colour source image, transmitted to terminals that support the
-/// Kitty graphics protocol, and its parsed half-block grid for terminals without it.
+/// Kitty graphics protocol, its parsed 14 by 14 half-block grid, and its parsed 28 by 28 half-block
+/// grid, drawn instead of the small one when the screen has room for it.
 pub struct Sprite {
     pub png: &'static [u8],
     pub grid: Grid,
+    pub grid_wide: Grid,
 }
 
 const UNICORN_PNG: &[u8] = include_bytes!("../sprites/unicorn.png");
 const UNICORN_GRID_SRC: &str = include_str!("../sprites/unicorn14.txt");
+const UNICORN_GRID_WIDE_SRC: &str = include_str!("../sprites/unicorn28.txt");
 const SUMO_PNG: &[u8] = include_bytes!("../sprites/sumo.png");
 const SUMO_GRID_SRC: &str = include_str!("../sprites/sumo14.txt");
+const SUMO_GRID_WIDE_SRC: &str = include_str!("../sprites/sumo28.txt");
 const NINJA_PNG: &[u8] = include_bytes!("../sprites/ninja.png");
 const NINJA_GRID_SRC: &str = include_str!("../sprites/ninja14.txt");
+const NINJA_GRID_WIDE_SRC: &str = include_str!("../sprites/ninja28.txt");
 const VIKING_PNG: &[u8] = include_bytes!("../sprites/viking.png");
 const VIKING_GRID_SRC: &str = include_str!("../sprites/viking14.txt");
+const VIKING_GRID_WIDE_SRC: &str = include_str!("../sprites/viking28.txt");
 const LUCHADOR_PNG: &[u8] = include_bytes!("../sprites/luchador.png");
 const LUCHADOR_GRID_SRC: &str = include_str!("../sprites/luchador14.txt");
+const LUCHADOR_GRID_WIDE_SRC: &str = include_str!("../sprites/luchador28.txt");
 const YETI_PNG: &[u8] = include_bytes!("../sprites/yeti.png");
 const YETI_GRID_SRC: &str = include_str!("../sprites/yeti14.txt");
+const YETI_GRID_WIDE_SRC: &str = include_str!("../sprites/yeti28.txt");
 const RACCOON_PNG: &[u8] = include_bytes!("../sprites/raccoon.png");
 const RACCOON_GRID_SRC: &str = include_str!("../sprites/raccoon14.txt");
+const RACCOON_GRID_WIDE_SRC: &str = include_str!("../sprites/raccoon28.txt");
 
 /// The built-in sprite named `name`, or `None` if there is no sprite by that name.
 pub fn builtin(name: &str) -> Option<Sprite> {
@@ -74,30 +95,37 @@ pub fn builtin(name: &str) -> Option<Sprite> {
         "unicorn" => Some(Sprite {
             png: UNICORN_PNG,
             grid: Grid::parse(UNICORN_GRID_SRC),
+            grid_wide: Grid::parse(UNICORN_GRID_WIDE_SRC),
         }),
         "sumo" => Some(Sprite {
             png: SUMO_PNG,
             grid: Grid::parse(SUMO_GRID_SRC),
+            grid_wide: Grid::parse(SUMO_GRID_WIDE_SRC),
         }),
         "ninja" => Some(Sprite {
             png: NINJA_PNG,
             grid: Grid::parse(NINJA_GRID_SRC),
+            grid_wide: Grid::parse(NINJA_GRID_WIDE_SRC),
         }),
         "viking" => Some(Sprite {
             png: VIKING_PNG,
             grid: Grid::parse(VIKING_GRID_SRC),
+            grid_wide: Grid::parse(VIKING_GRID_WIDE_SRC),
         }),
         "luchador" => Some(Sprite {
             png: LUCHADOR_PNG,
             grid: Grid::parse(LUCHADOR_GRID_SRC),
+            grid_wide: Grid::parse(LUCHADOR_GRID_WIDE_SRC),
         }),
         "yeti" => Some(Sprite {
             png: YETI_PNG,
             grid: Grid::parse(YETI_GRID_SRC),
+            grid_wide: Grid::parse(YETI_GRID_WIDE_SRC),
         }),
         "raccoon" => Some(Sprite {
             png: RACCOON_PNG,
             grid: Grid::parse(RACCOON_GRID_SRC),
+            grid_wide: Grid::parse(RACCOON_GRID_WIDE_SRC),
         }),
         _ => None,
     }
@@ -423,5 +451,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn every_builtin_sprite_wide_grid_is_28_by_28_with_a_full_palette() {
+        for name in [
+            "unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon",
+        ] {
+            let sprite = builtin(name).unwrap();
+            assert_eq!(sprite.grid_wide.rows.len(), 28, "{name} wide row count");
+            for row in &sprite.grid_wide.rows {
+                assert_eq!(row.len(), 28, "{name} wide row width");
+                for &c in row {
+                    assert!(
+                        c == '.' || sprite.grid_wide.color(c).is_some(),
+                        "{name}: {c:?} has no palette entry in the wide grid"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn grid_parse_reads_lowercase_and_digit_palette_keys() {
+        let grid = Grid::parse("A=#111111\na=#222222\n0=#333333\n\nAa0\n0aA");
+        assert_eq!(grid.color('A'), Some((0x11, 0x11, 0x11)));
+        assert_eq!(grid.color('a'), Some((0x22, 0x22, 0x22)));
+        assert_eq!(grid.color('0'), Some((0x33, 0x33, 0x33)));
+    }
+
+    #[test]
+    fn grid_cols_and_half_rows_match_the_wide_unicorn_grid() {
+        let sprite = builtin("unicorn").unwrap();
+        assert_eq!(sprite.grid.cols(), 14);
+        assert_eq!(sprite.grid.half_rows(), 7);
+        assert_eq!(sprite.grid_wide.cols(), 28);
+        assert_eq!(sprite.grid_wide.half_rows(), 14);
     }
 }

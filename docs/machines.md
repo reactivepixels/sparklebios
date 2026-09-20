@@ -101,6 +101,28 @@ foreground colour only, and any transparent pixel in the logo shows the
 terminal's own background. A `border` has nothing to frame on a transparent
 screen, so it requires `bg` to be set.
 
+## Graphics
+
+`graphics` in `~/.config/sparklebios/config.toml` chooses how the logo is
+drawn on a painted screen wide enough to show one:
+
+- `"auto"` (the default): a Kitty image where the terminal supports the
+  Kitty graphics protocol, half-block characters everywhere else.
+- `"image"`: the same choice as `"auto"`, named explicitly.
+- `"blocks"`: always the half-block mascot, even in a Kitty-capable
+  terminal. Some terminals drop a Kitty image when the tab it is drawn in
+  goes to sleep in the background, so `"blocks"` is how to opt out of that.
+
+An unknown or malformed value reads as `"auto"`. `SPARKLEBIOS_GRAPHICS`, set
+to one of the same three values, overrides the config file; an unknown
+value in it also reads as `"auto"`.
+
+The half-block mascot itself is drawn from one of two grids: a wide one, 28
+columns and 14 rows of half-block characters, when the screen is wide
+enough for every line beside it still to fit, and the original one, 14
+columns and 7 rows, otherwise. `pc95`, at 80 columns, is not wide enough for
+the wide grid and always uses the small one.
+
 ## Facts available today
 
 | Key | What it is | Example |

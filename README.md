@@ -22,7 +22,7 @@ and every line on it is true: that is your real processor, your real disk, your
 real shell, and one fictional horn.
 
 <p align="center">
-  <img src="docs/assets/screen-unicorn.png" alt="The unicorn flavour booting in a terminal" width="880">
+  <img src="docs/assets/boot.gif" alt="The daily boot: a memory count, four detections and a health check, in about three seconds" width="880">
 </p>
 
 > **Status: pre-alpha, and usable every day.** The boot screen, flavours, themes
@@ -188,6 +188,11 @@ your shell either.
 **Where did I leave off?** The boot screen lists your recent projects as boot
 devices and names the one you walked away from mid-change. `bios resume` takes
 you back to it.
+
+**The mascot vanishes when I switch tabs.** Some terminals drop the image when
+a tab goes to sleep. Set `graphics = "blocks"` in
+`~/.config/sparklebios/config.toml` and it is drawn with text instead, which
+survives anything.
 
 ## System requirements
 

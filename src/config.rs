@@ -2,12 +2,37 @@
 
 use serde::Deserialize;
 
+/// How the boot mascot is drawn: `Auto` picks a Kitty image where the terminal supports it and
+/// the half-block mascot everywhere else (today's behaviour); `Image` names that same choice
+/// explicitly; `Blocks` always draws the half-block mascot, even in a Kitty-capable terminal,
+/// since some terminals drop a Kitty image when their tab goes to sleep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphicsPref {
+    Auto,
+    Image,
+    Blocks,
+}
+
+impl GraphicsPref {
+    /// An unknown or malformed value reads as `Auto`, the same tolerant way every other key here
+    /// is read. Used for both the config file's `graphics` key and the `SPARKLEBIOS_GRAPHICS`
+    /// environment override.
+    pub(crate) fn parse(s: &str) -> GraphicsPref {
+        match s {
+            "image" => GraphicsPref::Image,
+            "blocks" => GraphicsPref::Blocks,
+            _ => GraphicsPref::Auto,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub animate: bool,
     pub flavour: String,
     pub checks: bool,
     pub project_dirs: Vec<String>,
+    pub graphics: GraphicsPref,
 }
 
 impl Default for Config {
@@ -17,6 +42,7 @@ impl Default for Config {
             flavour: "unicorn".to_string(),
             checks: true,
             project_dirs: Vec::new(),
+            graphics: GraphicsPref::Auto,
         }
     }
 }
@@ -27,6 +53,7 @@ struct RawConfig {
     flavour: Option<String>,
     checks: Option<bool>,
     project_dirs: Option<Vec<String>>,
+    graphics: Option<String>,
 }
 
 /// Missing, unreadable or invalid file yields the default. Unknown keys, including the retired
@@ -47,6 +74,11 @@ pub fn load(dir: Option<&std::path::Path>) -> Config {
         flavour: raw.flavour.unwrap_or(default.flavour),
         checks: raw.checks.unwrap_or(default.checks),
         project_dirs: raw.project_dirs.unwrap_or(default.project_dirs),
+        graphics: raw
+            .graphics
+            .as_deref()
+            .map(GraphicsPref::parse)
+            .unwrap_or(default.graphics),
     }
 }
 
@@ -104,6 +136,7 @@ mod tests {
                 flavour: "unicorn".to_string(),
                 checks: true,
                 project_dirs: Vec::new(),
+                graphics: GraphicsPref::Auto,
             }
         );
     }
@@ -185,6 +218,7 @@ mod tests {
                 flavour: "unicorn".to_string(),
                 checks: true,
                 project_dirs: Vec::new(),
+                graphics: GraphicsPref::Auto,
             }
         );
     }
@@ -210,7 +244,37 @@ mod tests {
                 flavour: "sumo".to_string(),
                 checks: true,
                 project_dirs: Vec::new(),
+                graphics: GraphicsPref::Auto,
             }
         );
+    }
+
+    #[test]
+    fn graphics_defaults_to_auto_and_reads_all_three_values() {
+        assert_eq!(Config::default().graphics, GraphicsPref::Auto);
+        for (value, expected) in [
+            ("auto", GraphicsPref::Auto),
+            ("image", GraphicsPref::Image),
+            ("blocks", GraphicsPref::Blocks),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                dir.path().join("config.toml"),
+                format!("graphics = \"{value}\"\n"),
+            )
+            .unwrap();
+            assert_eq!(load(Some(dir.path())).graphics, expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_graphics_value_reads_as_auto() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config.toml"),
+            "graphics = \"holographic\"\n",
+        )
+        .unwrap();
+        assert_eq!(load(Some(dir.path())).graphics, GraphicsPref::Auto);
     }
 }

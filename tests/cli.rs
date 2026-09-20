@@ -189,6 +189,47 @@ fn preview_with_a_user_machine_file_renders_it() {
 }
 
 #[test]
+fn an_unknown_graphics_value_does_not_stop_the_boot_screen_from_printing() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "graphics = \"holographic\"\n").unwrap();
+    bios()
+        .args(["boot", "--machine", "pc95"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+}
+
+#[test]
+fn graphics_blocks_in_the_config_file_is_accepted() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "graphics = \"blocks\"\n").unwrap();
+    bios()
+        .args(["boot", "--machine", "pc95"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+}
+
+#[test]
+fn sparklebios_graphics_env_override_is_accepted() {
+    bios()
+        .args(["boot", "--machine", "pc95"])
+        .env("SPARKLEBIOS_GRAPHICS", "blocks")
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+}
+
+#[test]
 fn hook_prints_nothing_to_stdout_and_exits_zero() {
     let state = tempfile::tempdir().unwrap();
     bios()

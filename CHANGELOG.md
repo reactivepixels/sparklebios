@@ -35,6 +35,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A fact cache with a detached refresh. No probe ever runs while a shell is starting: the boot path reads one JSON file and draws, then spawns `bios refresh` and never waits on it. A finding stops being shown once it is older than its own ttl, so the boot device list survives overnight and the port result does not. `checks = false` turns the whole thing off. The checks are documented in `docs/checks.md`.
 - Five more flavours: `ninja`, `viking`, `luchador`, `yeti` and `raccoon`, each with its own mascot and quips. The roster is now seven.
 - A tenth theme variant, Sorbet. Switch with `bios theme use sorbet`.
+- `graphics` in `config.toml`: `auto` (the default, today's behaviour), `image` (the same choice, named explicitly), or `blocks`, which always draws the half-block mascot even in a Kitty-capable terminal, for terminals that drop the image when a tab goes to sleep. `SPARKLEBIOS_GRAPHICS` overrides it. The half-block mascot also gained a bigger, 28 by 28 grid for every flavour, drawn instead of the original 14 by 14 one whenever the screen is wide enough for it beside the logo; `pc95` stays on the smaller one.
 
 ### Changed
 
