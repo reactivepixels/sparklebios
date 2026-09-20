@@ -150,6 +150,12 @@ enum ThemeCommand {
         /// Ghostty config file to edit, overriding the usual search order.
         #[arg(long, hide = true)]
         config: Option<PathBuf>,
+        /// Starship config file to edit, overriding the usual search order.
+        #[arg(long, hide = true)]
+        starship_config: Option<PathBuf>,
+        /// Skip pointing the starship prompt at a matching palette.
+        #[arg(long)]
+        no_prompt: bool,
     },
 }
 
@@ -191,8 +197,15 @@ pub fn run() -> i32 {
             command: ThemeCommand::List,
         } => theme_list(),
         Command::Theme {
-            command: ThemeCommand::Use { name, dir, config },
-        } => theme_use(&name, dir, config),
+            command:
+                ThemeCommand::Use {
+                    name,
+                    dir,
+                    config,
+                    starship_config,
+                    no_prompt,
+                },
+        } => theme_use(&name, dir, config, starship_config, no_prompt),
     }
 }
 
@@ -346,7 +359,13 @@ fn theme_list() -> i32 {
     0
 }
 
-fn theme_use(name: &str, dir: Option<PathBuf>, config: Option<PathBuf>) -> i32 {
+fn theme_use(
+    name: &str,
+    dir: Option<PathBuf>,
+    config: Option<PathBuf>,
+    starship_config: Option<PathBuf>,
+    no_prompt: bool,
+) -> i32 {
     let Some(full_name) = crate::theme::resolve_name(name) else {
         eprintln!("bios: no theme called {name}. Try: bios theme list");
         return 1;
@@ -371,7 +390,31 @@ fn theme_use(name: &str, dir: Option<PathBuf>, config: Option<PathBuf>) -> i32 {
     if crate::theme::install_and_use(&themes_dir, &config_path, full_name).is_err() {
         return 1;
     }
-    println!("Ghostty theme : {full_name}");
+    println!("Ghostty theme  : {full_name}");
+    if !no_prompt {
+        if let Some(prompt_path) = resolve_starship_config_path(starship_config) {
+            let palette = crate::theme::starship_palette_name(full_name);
+            if crate::theme::set_starship_palette(&prompt_path, palette).unwrap_or(false) {
+                println!("Prompt palette : {palette}");
+            }
+        }
+    }
     println!("Reload Ghostty's config or restart the terminal to see it.");
     0
+}
+
+/// The starship config file to consider pointing at a matching palette: `explicit` when given
+/// (from `--starship-config`); otherwise `$STARSHIP_CONFIG` when set and non-empty; otherwise
+/// `~/.config/starship.toml` (see `paths::starship_config_path`). `None` when none of those
+/// resolve to a path.
+fn resolve_starship_config_path(explicit: Option<PathBuf>) -> Option<PathBuf> {
+    if let Some(path) = explicit {
+        return Some(path);
+    }
+    if let Ok(env_path) = std::env::var("STARSHIP_CONFIG") {
+        if !env_path.is_empty() {
+            return Some(PathBuf::from(env_path));
+        }
+    }
+    crate::paths::starship_config_path()
 }

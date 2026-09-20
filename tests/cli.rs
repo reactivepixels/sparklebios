@@ -9,7 +9,11 @@ fn bios() -> Command {
     cmd.env("HOME", &sandbox)
         .env("XDG_CONFIG_HOME", sandbox.join("config"))
         .env("XDG_STATE_HOME", sandbox.join("state"))
-        .env("XDG_CACHE_HOME", sandbox.join("cache"));
+        .env("XDG_CACHE_HOME", sandbox.join("cache"))
+        .env("XDG_DATA_HOME", sandbox.join("data"))
+        // A real $STARSHIP_CONFIG in the ambient environment must never leak into a test: theme
+        // use tests that care about it set it themselves.
+        .env_remove("STARSHIP_CONFIG");
     cmd
 }
 
@@ -407,7 +411,7 @@ fn theme_use_installs_files_and_sets_the_config_line() {
         .assert()
         .success()
         .stdout(
-            "Ghostty theme : rainbows-and-unicorns-mane\nReload Ghostty's config or restart the terminal to see it.\n",
+            "Ghostty theme  : rainbows-and-unicorns-mane\nReload Ghostty's config or restart the terminal to see it.\n",
         );
     assert!(themes_dir
         .path()
@@ -433,7 +437,7 @@ fn theme_use_accepts_a_full_name() {
         .assert()
         .success()
         .stdout(
-            "Ghostty theme : rainbows-and-unicorns-paper\nReload Ghostty's config or restart the terminal to see it.\n",
+            "Ghostty theme  : rainbows-and-unicorns-paper\nReload Ghostty's config or restart the terminal to see it.\n",
         );
 }
 
@@ -488,6 +492,321 @@ fn theme_use_with_an_unknown_name_fails_and_writes_nothing() {
         .stderr("bios: no theme called nope. Try: bios theme list\n");
     assert!(!config_path.exists());
     assert!(!themes_dir.path().join("rainbows-and-unicorns").exists());
+}
+
+#[test]
+fn theme_use_repoints_an_existing_starship_palette_and_appends_the_auto_table() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    let original =
+        "format = \"$all\"\n\npalette = 'gruvbox_dark'\n\n[palettes.gruvbox_dark]\ncolor_fg0 = '#123456'\n";
+    std::fs::write(&starship_path, original).unwrap();
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .assert()
+        .success()
+        .stdout(
+            "Ghostty theme  : rainbows-and-unicorns-mane\nPrompt palette : rainbows_and_unicorns_auto\nReload Ghostty's config or restart the terminal to see it.\n",
+        );
+
+    let contents = std::fs::read_to_string(&starship_path).unwrap();
+    let expected_prefix =
+        "format = \"$all\"\n\npalette = 'rainbows_and_unicorns_auto'\n\n[palettes.gruvbox_dark]\ncolor_fg0 = '#123456'\n";
+    assert!(contents.starts_with(expected_prefix), "{contents}");
+    assert_eq!(
+        contents
+            .matches("[palettes.rainbows_and_unicorns_auto]")
+            .count(),
+        1
+    );
+    // The appended table ends at its own last key line: no orphaned write-up about the next
+    // table in the source file (a blank line then trailing comments) leaks in.
+    assert!(contents.ends_with("color_yellow = '3'\n"), "{contents}");
+    assert!(
+        !contents.contains("rainbows_and_unicorns_paper"),
+        "{contents}"
+    );
+
+    // The written file is valid TOML.
+    let parsed: toml::Table = contents.parse().unwrap();
+    assert!(parsed.contains_key("palettes"));
+
+    // No temp file left behind next to the target.
+    let entries: Vec<_> = std::fs::read_dir(starship_dir.path()).unwrap().collect();
+    assert_eq!(entries.len(), 1);
+}
+
+#[test]
+fn theme_use_repoints_a_palette_line_that_follows_a_multiline_format_string() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    // Shaped like starship's real Gruvbox Rainbow preset: `format` is a triple-quoted
+    // multi-line string full of `[...]` segment lines that are not TOML table headers.
+    let original = "format = \"\"\"\n\
+[](color_orange)\\\n\
+$os\\\n\
+[](bg:color_yellow fg:color_orange)\\\n\
+$directory\\\n\
+[ ](fg:color_bg1)\\\n\
+$line_break$character\"\"\"\n\
+\n\
+palette = 'gruvbox_dark'\n\
+\n\
+[palettes.gruvbox_dark]\n\
+color_fg0 = '#fbf1c7'\n";
+    std::fs::write(&starship_path, original).unwrap();
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Prompt palette : rainbows_and_unicorns_auto",
+        ));
+
+    let contents = std::fs::read_to_string(&starship_path).unwrap();
+    assert!(
+        contents.contains("\npalette = 'rainbows_and_unicorns_auto'\n"),
+        "{contents}"
+    );
+    assert!(contents.contains("[palettes.rainbows_and_unicorns_auto]"));
+    // The format string's segment syntax survives untouched.
+    assert!(contents.contains("[](color_orange)\\\n"));
+    // The written file is valid TOML.
+    let parsed: toml::Table = contents.parse().unwrap();
+    assert!(parsed.contains_key("palettes"));
+}
+
+#[test]
+fn theme_use_paper_points_at_the_paper_palette() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    std::fs::write(&starship_path, "palette = 'gruvbox_dark'\n").unwrap();
+
+    bios()
+        .args(["theme", "use", "paper", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Prompt palette : rainbows_and_unicorns_paper",
+        ));
+
+    let contents = std::fs::read_to_string(&starship_path).unwrap();
+    assert!(contents.starts_with("palette = 'rainbows_and_unicorns_paper'\n"));
+    assert!(contents.contains("[palettes.rainbows_and_unicorns_paper]"));
+}
+
+#[test]
+fn theme_use_does_not_duplicate_an_already_present_starship_table() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    std::fs::write(
+        &starship_path,
+        "palette = 'gruvbox_dark'\n\n[palettes.rainbows_and_unicorns_auto]\ncolor_fg0 = 'placeholder'\n",
+    )
+    .unwrap();
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Prompt palette : rainbows_and_unicorns_auto",
+        ));
+
+    let contents = std::fs::read_to_string(&starship_path).unwrap();
+    assert_eq!(
+        contents
+            .matches("[palettes.rainbows_and_unicorns_auto]")
+            .count(),
+        1
+    );
+    assert!(contents.contains("color_fg0 = 'placeholder'"));
+    assert!(contents.starts_with("palette = 'rainbows_and_unicorns_auto'\n"));
+}
+
+#[test]
+fn theme_use_leaves_a_starship_config_with_no_palette_line_untouched() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    let original = "format = \"$all\"\n";
+    std::fs::write(&starship_path, original).unwrap();
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Prompt palette").not());
+
+    assert_eq!(std::fs::read_to_string(&starship_path).unwrap(), original);
+}
+
+#[test]
+fn theme_use_ignores_a_palette_key_nested_in_a_table() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    let original = "[palettes.foo]\npalette = 'inner'\n";
+    std::fs::write(&starship_path, original).unwrap();
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Prompt palette").not());
+
+    assert_eq!(std::fs::read_to_string(&starship_path).unwrap(), original);
+}
+
+#[test]
+fn theme_use_ignores_a_commented_out_palette_line() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    let original = "# palette = 'gruvbox_dark'\nformat = \"$all\"\n";
+    std::fs::write(&starship_path, original).unwrap();
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Prompt palette").not());
+
+    assert_eq!(std::fs::read_to_string(&starship_path).unwrap(), original);
+}
+
+#[test]
+fn theme_use_with_a_missing_starship_config_switches_the_theme_and_prints_nothing_extra() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .assert()
+        .success()
+        .code(0)
+        .stdout(
+            "Ghostty theme  : rainbows-and-unicorns-mane\nReload Ghostty's config or restart the terminal to see it.\n",
+        );
+
+    assert!(!starship_path.exists());
+    assert_eq!(
+        std::fs::read_to_string(&config_path).unwrap(),
+        "theme = rainbows-and-unicorns-mane\n"
+    );
+}
+
+#[test]
+fn theme_use_no_prompt_leaves_the_starship_config_untouched() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    let original = "palette = 'gruvbox_dark'\n";
+    std::fs::write(&starship_path, original).unwrap();
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--starship-config")
+        .arg(&starship_path)
+        .arg("--no-prompt")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Prompt palette").not());
+
+    assert_eq!(std::fs::read_to_string(&starship_path).unwrap(), original);
+}
+
+#[test]
+fn theme_use_honours_the_starship_config_env_var_when_the_flag_is_absent() {
+    let themes_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config");
+    let starship_dir = tempfile::tempdir().unwrap();
+    let starship_path = starship_dir.path().join("starship.toml");
+    std::fs::write(&starship_path, "palette = 'gruvbox_dark'\n").unwrap();
+
+    bios()
+        .args(["theme", "use", "mane", "--dir"])
+        .arg(themes_dir.path())
+        .arg("--config")
+        .arg(&config_path)
+        .env("STARSHIP_CONFIG", &starship_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Prompt palette : rainbows_and_unicorns_auto",
+        ));
+
+    let contents = std::fs::read_to_string(&starship_path).unwrap();
+    assert!(contents.starts_with("palette = 'rainbows_and_unicorns_auto'\n"));
 }
 
 /// A fully isolated environment for the checks/cache commands: its own `HOME`, config, state and

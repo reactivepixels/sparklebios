@@ -67,6 +67,17 @@ pub fn ghostty_themes_dir() -> Option<PathBuf> {
     )
 }
 
+/// `~/.config/starship.toml`, resolved the same way as the paths above, honouring
+/// `XDG_CONFIG_HOME`.
+pub fn starship_config_path() -> Option<PathBuf> {
+    resolve(
+        env("XDG_CONFIG_HOME").as_deref(),
+        env("HOME").as_deref(),
+        ".config",
+        "starship.toml",
+    )
+}
+
 /// The Ghostty config file candidates, in search order: on macOS,
 /// `~/Library/Application Support/com.mitchellh.ghostty/config.ghostty` and `.../config`
 /// (skipped when `home` is unset, and never included at all off macOS); then
@@ -171,6 +182,18 @@ mod tests {
                 PathBuf::from("/home/.config/ghostty/config.ghostty"),
                 PathBuf::from("/home/.config/ghostty/config"),
             ]
+        );
+    }
+
+    #[test]
+    fn starship_config_path_honours_xdg_config_home() {
+        assert_eq!(
+            resolve(Some("/xdg"), Some("/home"), ".config", "starship.toml"),
+            Some(PathBuf::from("/xdg/starship.toml"))
+        );
+        assert_eq!(
+            resolve(None, Some("/home"), ".config", "starship.toml"),
+            Some(PathBuf::from("/home/.config/starship.toml"))
         );
     }
 

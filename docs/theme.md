@@ -262,3 +262,10 @@ face such as Departure Mono.
 The cursor trail shader, the tool colours and the starship palettes live in
 [`extras/`](../extras/README.md). All of them are optional, and the tool colours
 work by index, so they follow every variant above.
+
+`bios theme use <name>` also points an existing starship prompt at the matching
+palette, `rainbows_and_unicorns_auto` for every variant except Paper White, which
+gets `rainbows_and_unicorns_paper`. This only happens when `~/.config/starship.toml`
+(or `$STARSHIP_CONFIG`) already has a top level `palette =` line: SparkleBIOS never
+creates a starship config or touches one without that line. Pass `--no-prompt` to
+skip it.
