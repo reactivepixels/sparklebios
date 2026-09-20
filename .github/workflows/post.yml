@@ -22,7 +22,7 @@ jobs:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -38,7 +38,7 @@ jobs:
     name: House rules
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: No em dashes or en dashes anywhere
         run: |
           if grep -rnP '[\x{2014}\x{2013}]' --exclude-dir=.git --exclude-dir=target --exclude=LICENSE-APACHE .; then
