@@ -164,8 +164,11 @@ fn frames_for(step: &render::AnimatedStep) -> Vec<(&Vec<Span>, u64)> {
 /// (`0.0` collapses every wait to nothing). `flavour`, for a flavoured machine, supplies its
 /// quips and its logo sprite; with `None` a flavoured machine simply omits whatever it cannot
 /// resolve. `findings` supplies the lines for a `Findings` or `F1` step, the same way `flavour`
-/// does for a `Quip` step. Returns the bytes read from `key_fd` while the show played, unfiltered
-/// and in order.
+/// does for a `Quip` step. `calendar_line`, when given, is tried ahead of the ordinary quip
+/// rotation for the `quip` step, falling back to it when the calendar line does not resolve or
+/// does not fit; whether one is passed at all is the caller's call (`boot.rs`), never this
+/// function's or `render.rs`'s to make: see `render::resolve_quip_line`. Returns the bytes read
+/// from `key_fd` while the show played, unfiltered and in order.
 ///
 /// `sprinkles`, at `Off`, runs none of the code below this point beyond reading the value itself:
 /// every row is exactly what it would have been before sprinkles existed. At `Light` or `Full`,
@@ -184,6 +187,7 @@ pub fn play(
     geometry: Geometry,
     flavour: Option<&Flavour>,
     findings: &[Finding],
+    calendar_line: Option<&str>,
     out: &mut dyn std::io::Write,
     key_fd: Option<i32>,
     speed: f32,
@@ -196,7 +200,7 @@ pub fn play(
         geometry.graphics,
         flavour,
     );
-    let steps = render::animated_layout(machine, facts, seed, flavour, findings);
+    let steps = render::animated_layout(machine, facts, seed, flavour, findings, calendar_line);
     let pad_y = machine.pad_y as usize;
     let painted = row_geometry.painted();
 
@@ -592,6 +596,7 @@ quip = true
             geometry,
             flavour,
             findings,
+            None,
             &mut buf,
             None,
             0.0,
@@ -744,6 +749,7 @@ quip = true
                 geometry,
                 Some(&flavour),
                 &findings,
+                None,
                 &mut buf,
                 None,
                 0.0,
@@ -775,6 +781,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut buf,
             None,
             0.0,
@@ -814,6 +821,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut buf,
             None,
             0.0,
@@ -865,6 +873,7 @@ quip = true
             geometry,
             None,
             &[],
+            None,
             &mut buf,
             Some(read_fd),
             1000.0,
@@ -913,7 +922,7 @@ quip = true
             geometry.graphics,
             flavour,
         );
-        let steps = render::animated_layout(machine, facts, seed, flavour, findings);
+        let steps = render::animated_layout(machine, facts, seed, flavour, findings, None);
         let pad_y = machine.pad_y as usize;
         let painted = row_geometry.painted();
 
@@ -1004,6 +1013,7 @@ quip = true
                 geometry,
                 flavour,
                 &findings,
+                None,
                 &mut sprinkled,
                 None,
                 0.0,
@@ -1048,6 +1058,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut buf,
             None,
             0.0,
@@ -1076,6 +1087,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut buf,
             None,
             0.0,
@@ -1120,6 +1132,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut off,
             None,
             0.0,
@@ -1136,6 +1149,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut full,
             None,
             0.0,
@@ -1184,6 +1198,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut buf,
             None,
             0.0,
@@ -1223,6 +1238,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut buf_no_fail,
             None,
             0.0,
@@ -1242,6 +1258,7 @@ quip = true
             geometry,
             Some(&flavour),
             &findings,
+            None,
             &mut buf_fail,
             None,
             0.0,
@@ -1282,6 +1299,7 @@ quip = true
             geometry,
             Some(&flavour),
             &findings,
+            None,
             &mut buf,
             Some(read_fd),
             1000.0,
@@ -1316,6 +1334,7 @@ quip = true
             geometry,
             Some(&flavour),
             &findings,
+            None,
             &mut buf,
             None,
             0.0,
@@ -1347,6 +1366,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut buf,
             None,
             0.0,
@@ -1369,6 +1389,7 @@ quip = true
             geometry,
             Some(&flavour),
             &[],
+            None,
             &mut buf2,
             None,
             0.0,
@@ -1501,6 +1522,7 @@ quip = true
                 geometry,
                 Some(&flavour),
                 &[],
+                None,
                 &mut buf,
                 None,
                 0.0,
@@ -1560,7 +1582,7 @@ quip = true
             geometry.graphics,
             Some(&flavour),
         );
-        let steps = render::animated_layout(&m, &facts, 0, Some(&flavour), &[]);
+        let steps = render::animated_layout(&m, &facts, 0, Some(&flavour), &[], None);
         let prefix_rows = usize::from(m.border.is_some()) + m.pad_y as usize;
 
         let mut sprinkle_cells: std::collections::HashSet<(usize, usize)> =
@@ -1605,5 +1627,149 @@ quip = true
                 );
             }
         }
+    }
+
+    // --- Calendar lines -------------------------------------------------------------------------
+
+    /// The animated show (this is the real path a Full boot or an interactive preview take), on a
+    /// real calendar date, shows the calendar line in place of the quip with no row added, and
+    /// its final rows agree exactly with the static path (`render::render_static_with_calendar`),
+    /// so the two can never disagree about what a calendar day looks like.
+    #[test]
+    fn a_calendar_day_replaces_the_quip_in_the_animated_show_and_agrees_with_the_static_path() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let mut facts = facts_for(Some(&flavour));
+        facts.insert("date.year", "2026");
+        facts.insert("date.today", "2026-01-01");
+        let calendar_line = crate::machine::matching_calendar_text(&m, 2026, 1, 1);
+        assert_eq!(
+            calendar_line,
+            Some("Year {date.year} rollover complete. Nothing caught fire. Again.")
+        );
+        let geometry = Geometry {
+            mode: ColorMode::None,
+            term_cols: None,
+            graphics: Graphics::None,
+        };
+
+        let mut ordinary_buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            None,
+            &mut ordinary_buf,
+            None,
+            0.0,
+            sprinkles::Level::Off,
+        );
+        let ordinary_rows = resolve_rows(&ordinary_buf);
+
+        let mut calendar_buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            calendar_line,
+            &mut calendar_buf,
+            None,
+            0.0,
+            sprinkles::Level::Off,
+        );
+        let calendar_rows = resolve_rows(&calendar_buf);
+
+        assert_eq!(
+            ordinary_rows.len(),
+            calendar_rows.len(),
+            "a calendar line must replace the quip row in the animated show, never add one"
+        );
+        assert!(calendar_rows
+            .iter()
+            .any(|r| r.contains("Year 2026 rollover complete. Nothing caught fire. Again.")));
+        assert!(!ordinary_rows
+            .iter()
+            .any(|r| r.contains("Year 2026 rollover complete")));
+
+        // The static path must draw exactly the same final rows for the same calendar day: one
+        // override point, reached by both.
+        let expected = crate::render::render_static_with_calendar(
+            &m,
+            &facts,
+            geometry.mode,
+            0,
+            geometry.term_cols,
+            geometry.graphics,
+            Some(&flavour),
+            &[],
+            calendar_line,
+        );
+        let expected_rows: Vec<String> = expected.lines().map(strip_escapes).collect();
+        assert_eq!(calendar_rows, expected_rows);
+    }
+
+    /// The omission rule holds in the animated show too: on 19 January, with the one slot its
+    /// calendar text needs deliberately missing, the show falls back to the ordinary quip, byte
+    /// for byte identical to a show with no calendar override, rather than dropping the row.
+    #[test]
+    fn an_unresolved_calendar_line_falls_back_to_the_ordinary_quip_in_the_animated_show() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let mut facts = facts_for(Some(&flavour));
+        facts.insert("date.year", "2026");
+        facts.insert("date.today", "2026-01-19");
+        facts.remove("y2038.days");
+        let calendar_line = crate::machine::matching_calendar_text(&m, 2026, 1, 19);
+        assert_eq!(
+            calendar_line,
+            Some("Y2038 check: {y2038.days} days until 32-bit time runs out. Noted.")
+        );
+        let geometry = Geometry {
+            mode: ColorMode::None,
+            term_cols: None,
+            graphics: Graphics::None,
+        };
+
+        let mut ordinary_buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            None,
+            &mut ordinary_buf,
+            None,
+            0.0,
+            sprinkles::Level::Off,
+        );
+
+        let mut calendar_buf: Vec<u8> = Vec::new();
+        play(
+            &m,
+            &facts,
+            0,
+            geometry,
+            Some(&flavour),
+            &[],
+            calendar_line,
+            &mut calendar_buf,
+            None,
+            0.0,
+            sprinkles::Level::Off,
+        );
+
+        assert_eq!(
+            calendar_buf, ordinary_buf,
+            "an unresolved calendar line must fall back to the ordinary quip exactly"
+        );
+        assert!(!String::from_utf8_lossy(&calendar_buf).contains("Y2038 check"));
     }
 }

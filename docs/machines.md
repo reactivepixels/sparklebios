@@ -34,6 +34,7 @@ Top level keys:
 | `flavoured` | boolean | no | Defaults to false. When true, the screen takes its quips and its logo sprite from the current flavour instead of its own `quips` and `logo`. See [flavours.md](flavours.md) |
 | `detect_width` | integer | no | 4 to 60. When set, every `detect` step's label is rendered for slots and right-padded with spaces to this width (never truncated), instead of being used exactly as written |
 | `[findings]` | table | no | Maps a finding id to its phrasing on this screen. Values may contain `{slot}`s, filled in from that finding's own facts, under the same omission rule as any other slot. See [checks.md](checks.md) for what a finding is and the ids that exist |
+| `[[calendar]]` | array of tables | no | Lines tied to a day of the year. See [Calendar lines](#calendar-lines) below |
 | `[[step]]` | array of tables | yes, at least one | The ordered screen content |
 
 A step table has exactly one of six kinds: `print`, `count`, `detect`,
@@ -76,6 +77,28 @@ line. Across boots the starting index changes, so the same person sees a
 different quip on a later boot rather than the same one every time. A quip
 whose rendered text is longer than `cols` is treated the same as one whose
 slots do not resolve: it is skipped in favour of the next candidate.
+
+## Calendar lines
+
+A `[[calendar]]` entry is a line tied to a day of the year rather than to the
+facts a normal quip renders against. Each entry has `text` plus exactly one
+of:
+
+| Shape | Fields | Fires on |
+|---|---|---|
+| Month and day | `month` (1 to 12), `day` (1 to 31) | That date, every year |
+| Weekday and day | `weekday` (one of `monday` to `sunday`), `day` (1 to 31) | The day of the month, in a year it falls on that weekday, for example Friday the 13th |
+| Day of the year | `day_of_year` (1 to 366) | That many days into the year, for example the 256th day |
+
+`text` may contain `{slot}`s, filled in from the current facts under the
+same omission rule as any other line.
+
+On a day one of a screen's calendar entries matches, that line takes the
+place of whatever the `quip` step would otherwise have shown: it never adds
+a row of its own, and only ever replaces the quip in the Full show and in a
+`bios boot` preview, never in the Fast or Quiet output. If the matching
+entry's own slots do not resolve, it is dropped like any other line and the
+screen falls back to an ordinary quip instead.
 
 ## Painted screens
 
@@ -152,6 +175,8 @@ whatever the screen's own width.
 | `date.bios` | Today, the way a BIOS writes it | `09/19/2026` |
 | `date.year` | The year | `2026` |
 | `date.today` | Today in ISO form | `2026-09-19` |
+| `date.day_of_year` | Today's 1 based day of the year | `262` |
+| `y2038.days` | Whole days from today to 2038-01-19, the last day the classic signed 32-bit unix clock can name | `4140` |
 | `streak.days` | Consecutive days with a boot. Absent in previews | `12` |
 | `streak.label` | The same, ready to print | `12 days` |
 

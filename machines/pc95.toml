@@ -100,3 +100,62 @@ dotfiles_changed = "CMOS checksum error: {dotfiles.changes} in {dotfiles.repo}."
 runtime_drift = "Option ROM mismatch: {runtime.repo} wants {runtime.name} {runtime.wanted}, found {runtime.found}."
 f1 = "Press F1 to continue."
 f1_resume = "Press F1 to continue, or bios resume to boot {boot.device}."
+
+[[calendar]]
+text = "Year {date.year} rollover complete. Nothing caught fire. Again."
+month = 1
+day = 1
+
+[[calendar]]
+text = "Y2038 check: {y2038.days} days until 32-bit time runs out. Noted."
+month = 1
+day = 19
+
+[[calendar]]
+text = "Leap day detected. The calendar chip has been dreading this."
+month = 2
+day = 29
+
+[[calendar]]
+text = "Pi Day. Math coprocessor reports 3.14159 and refuses to stop."
+month = 3
+day = 14
+
+[[calendar]]
+text = "World Backup Day. The BIOS asks only that you think about it."
+month = 3
+day = 31
+
+[[calendar]]
+text = "No jokes today. The BIOS does not trust anyone."
+month = 4
+day = 1
+
+[[calendar]]
+text = "Force detected: not found. Proceeding on ordinary electricity."
+month = 5
+day = 4
+
+[[calendar]]
+text = "Day 256 of the year. The day counter did not overflow. This time."
+day_of_year = 256
+
+[[calendar]]
+text = "Friday the 13th. Booting anyway, against advice."
+weekday = "friday"
+day = 13
+
+[[calendar]]
+text = "Ghost processes are checked for every day. Today it just feels right."
+month = 10
+day = 31
+
+[[calendar]]
+text = "Holiday boot. Nobody is watching the build. Go outside."
+month = 12
+day = 25
+
+[[calendar]]
+text = "Last boot of {date.year}? Real-time clock standing by."
+month = 12
+day = 31

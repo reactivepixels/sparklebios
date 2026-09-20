@@ -108,12 +108,28 @@ replaces it; other user files add to the roster. A file that fails to parse
 or fails validation is ignored, not reported, because nothing on the boot
 path is allowed to complain.
 
+## Writing your own
+
+`bios flavour new <id>` writes a starter file at
+`~/.config/sparklebios/flavours/<id>.toml` (or under `$XDG_CONFIG_HOME` if
+that is set), with every key from the schema above already filled in and a
+comment above each one. It boots as it stands, with `bios boot --flavour
+<id>`, before you have changed a single word, so you start from something
+working rather than a blank page. `id` and `name` in the file come straight
+from the argument: `id` must be lowercase letters, digits and hyphens,
+starting with a letter.
+
+When you like it, `bios use <id>` makes it the one that boots every time. If
+the file already exists, or the id names a built-in flavour, `bios flavour
+new` refuses rather than overwrite anything.
+
 ## Commands
 
 ```
 bios flavours                 the roster
 bios use <flavour>            set the flavour
 bios boot --flavour <id>      preview the screen with that flavour, without touching any state
+bios flavour new <id>         start your own flavour from a working template
 ```
 
 A real boot's flavour comes from `flavour` in

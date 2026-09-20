@@ -10,7 +10,11 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- bios flavour new: start your own flavour from a working template.
+- The boot screen notices the date. Pi Day, the 256th day of the year, Friday the 13th, and a handful of others get a line of their own in place of the usual quip.
+- A memory test that was not there before. Some say it never was.
 - Presence: the flavour sets your tab title, comments on long commands, answers typos and says goodbye.
+- Your flavour's mascot in your prompt, with the boot streak after it. Nothing is spawned per prompt: the shell already holds the escape and prints it.
 - `bios setup`: a CMOS Setup Utility for every option. Turbo included, function not included.
 - A master switch in the config file. `boot = false` means a new tab prints nothing at all, which until now you could only do per shell with `SPARKLEBIOS_BOOT=0`. The environment variable still wins for the shell it is set in.
 - The last two health checks. Disk trend reports when the disk will be full at the rate it has actually been filling, from a fortnight of daily readings, and says nothing until it has three days to reason from. Battery health reports how much of its original capacity the battery still holds, once when it first drops below 80 percent and then only at each further ten point step, so it never becomes wallpaper. Every flavour has its own words for all five.

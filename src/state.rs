@@ -11,6 +11,10 @@ pub struct State {
     pub last_full_day: Option<String>,
     pub streak_days: u32,
     pub streak_last_day: Option<String>,
+    /// The Memory Test easter egg's high score: the most K ever cleared in one game.
+    pub memory_test_best_kb: u64,
+    /// Whether a Memory Test game has ever been cleared in full.
+    pub memory_test_cleared: bool,
 }
 
 impl State {
@@ -75,6 +79,8 @@ mod tests {
             last_full_day: Some("2026-09-19".into()),
             streak_days: 3,
             streak_last_day: Some("2026-09-19".into()),
+            memory_test_best_kb: 18874368,
+            memory_test_cleared: true,
         };
         s.save(&nested).unwrap();
         assert_eq!(State::load(&nested), s);
@@ -93,6 +99,27 @@ mod tests {
         )
         .unwrap();
         assert_eq!(State::load(dir.path()).streak_days, 2);
+    }
+    #[test]
+    fn old_state_files_without_the_memory_test_keys_load_with_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("state.json"), r#"{"streak_days":2}"#).unwrap();
+        let s = State::load(dir.path());
+        assert_eq!(s.memory_test_best_kb, 0);
+        assert!(!s.memory_test_cleared);
+    }
+    #[test]
+    fn the_memory_test_high_score_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = State {
+            memory_test_best_kb: 37748736,
+            memory_test_cleared: true,
+            ..State::default()
+        };
+        s.save(dir.path()).unwrap();
+        let loaded = State::load(dir.path());
+        assert_eq!(loaded.memory_test_best_kb, 37748736);
+        assert!(loaded.memory_test_cleared);
     }
     #[test]
     fn streak_rules() {

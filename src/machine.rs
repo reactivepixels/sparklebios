@@ -45,6 +45,44 @@ pub enum Step {
     },
 }
 
+/// One row of a machine's `[[calendar]]` table: a line that replaces the quip, on the day it
+/// names, in the Full show and in the preview. Exactly one of `month` plus `day`, `weekday` plus
+/// `day`, or `day_of_year` says which day that is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CalendarRule {
+    pub month: Option<u32>,
+    pub day: Option<u32>,
+    pub weekday: Option<String>,
+    pub day_of_year: Option<u32>,
+    pub text: String,
+}
+
+impl CalendarRule {
+    /// Whether this rule fires for `(year, month, day)`.
+    pub fn matches(&self, year: i32, month: u32, day: u32) -> bool {
+        if let (Some(rule_month), Some(rule_day)) = (self.month, self.day) {
+            return month == rule_month && day == rule_day;
+        }
+        if let (Some(rule_weekday), Some(rule_day)) = (&self.weekday, self.day) {
+            return day == rule_day && crate::clock::weekday_name(year, month, day) == rule_weekday;
+        }
+        if let Some(rule_day_of_year) = self.day_of_year {
+            return crate::clock::day_of_year(year, month, day) == rule_day_of_year;
+        }
+        false
+    }
+}
+
+/// The text of the first of `machine`'s calendar rules that fires for `(year, month, day)`, if
+/// any.
+pub fn matching_calendar_text(machine: &Machine, year: i32, month: u32, day: u32) -> Option<&str> {
+    machine
+        .calendar
+        .iter()
+        .find(|rule| rule.matches(year, month, day))
+        .map(|rule| rule.text.as_str())
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Machine {
     pub id: String,
@@ -65,6 +103,7 @@ pub struct Machine {
     pub flavoured: bool,
     pub detect_width: Option<u16>,
     pub findings: BTreeMap<String, String>,
+    pub calendar: Vec<CalendarRule>,
     pub steps: Vec<Step>,
 }
 
@@ -113,6 +152,8 @@ struct RawMachine {
     detect_width: Option<u16>,
     #[serde(default)]
     findings: BTreeMap<String, String>,
+    #[serde(rename = "calendar", default)]
+    calendar: Vec<RawCalendarRule>,
     #[serde(rename = "step", default)]
     steps: Vec<RawStep>,
 }
@@ -123,6 +164,15 @@ fn default_pad_x() -> u8 {
 
 fn default_pad_y() -> u8 {
     1
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCalendarRule {
+    text: String,
+    month: Option<u32>,
+    day: Option<u32>,
+    weekday: Option<String>,
+    day_of_year: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -239,6 +289,84 @@ fn validate_findings(findings: &BTreeMap<String, String>) -> Result<(), MachineE
     Ok(())
 }
 
+const WEEKDAY_NAMES: [&str; 7] = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+];
+
+fn valid_weekday(weekday: &str) -> bool {
+    WEEKDAY_NAMES.contains(&weekday)
+}
+
+/// A `[[calendar]]` row has `text` plus exactly one of `month` and `day`, `weekday` and `day`, or
+/// `day_of_year` alone.
+fn validate_calendar_rule(idx: usize, raw: RawCalendarRule) -> Result<CalendarRule, MachineError> {
+    if raw.text.is_empty() {
+        return Err(MachineError::Invalid(format!(
+            "calendar {idx}: text is empty"
+        )));
+    }
+    let shapes = [
+        raw.month.is_some()
+            && raw.day.is_some()
+            && raw.weekday.is_none()
+            && raw.day_of_year.is_none(),
+        raw.weekday.is_some()
+            && raw.day.is_some()
+            && raw.month.is_none()
+            && raw.day_of_year.is_none(),
+        raw.day_of_year.is_some()
+            && raw.month.is_none()
+            && raw.day.is_none()
+            && raw.weekday.is_none(),
+    ];
+    if shapes.iter().filter(|present| **present).count() != 1 {
+        return Err(MachineError::Invalid(format!(
+            "calendar {idx}: must have exactly one of month plus day, weekday plus day, or day_of_year"
+        )));
+    }
+    if let Some(month) = raw.month {
+        if !(1..=12).contains(&month) {
+            return Err(MachineError::Invalid(format!(
+                "calendar {idx}: month {month} is not between 1 and 12"
+            )));
+        }
+    }
+    if let Some(day) = raw.day {
+        if !(1..=31).contains(&day) {
+            return Err(MachineError::Invalid(format!(
+                "calendar {idx}: day {day} is not between 1 and 31"
+            )));
+        }
+    }
+    if let Some(weekday) = &raw.weekday {
+        if !valid_weekday(weekday) {
+            return Err(MachineError::Invalid(format!(
+                "calendar {idx}: weekday {weekday:?} is not a day of the week"
+            )));
+        }
+    }
+    if let Some(day_of_year) = raw.day_of_year {
+        if !(1..=366).contains(&day_of_year) {
+            return Err(MachineError::Invalid(format!(
+                "calendar {idx}: day_of_year {day_of_year} is not between 1 and 366"
+            )));
+        }
+    }
+    Ok(CalendarRule {
+        month: raw.month,
+        day: raw.day,
+        weekday: raw.weekday,
+        day_of_year: raw.day_of_year,
+        text: raw.text,
+    })
+}
+
 fn parse_style(raw: Option<&str>, idx: usize) -> Result<Style, MachineError> {
     match raw {
         None => Ok(Style::Normal),
@@ -344,6 +472,12 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
         }
     }
     validate_findings(&raw.findings)?;
+    let calendar = raw
+        .calendar
+        .into_iter()
+        .enumerate()
+        .map(|(idx, rule)| validate_calendar_rule(idx, rule))
+        .collect::<Result<Vec<_>, _>>()?;
     if raw.steps.is_empty() {
         return Err(MachineError::Invalid("machine has no steps".into()));
     }
@@ -459,6 +593,7 @@ fn validate(raw: RawMachine) -> Result<Machine, MachineError> {
         flavoured: raw.flavoured,
         detect_width: raw.detect_width,
         findings: raw.findings,
+        calendar,
         steps,
     })
 }
@@ -861,6 +996,249 @@ print = "hello"
             "f1_resume",
         ] {
             assert!(m.findings.contains_key(key), "missing {key}");
+        }
+    }
+
+    // --- [[calendar]] -----------------------------------------------------------------------
+
+    #[test]
+    fn a_minimal_machine_has_no_calendar_rules_by_default() {
+        let m = parse(MINIMAL).unwrap();
+        assert!(m.calendar.is_empty());
+    }
+
+    #[test]
+    fn parses_a_month_and_day_calendar_rule() {
+        let src =
+            format!("{MINIMAL}\n[[calendar]]\ntext = \"Happy new year.\"\nmonth = 1\nday = 1\n");
+        let m = parse(&src).unwrap();
+        assert_eq!(m.calendar.len(), 1);
+        assert_eq!(m.calendar[0].text, "Happy new year.");
+        assert_eq!(m.calendar[0].month, Some(1));
+        assert_eq!(m.calendar[0].day, Some(1));
+        assert_eq!(m.calendar[0].weekday, None);
+        assert_eq!(m.calendar[0].day_of_year, None);
+    }
+
+    #[test]
+    fn parses_a_weekday_and_day_calendar_rule() {
+        let src = format!(
+            "{MINIMAL}\n[[calendar]]\ntext = \"Spooky.\"\nweekday = \"friday\"\nday = 13\n"
+        );
+        let m = parse(&src).unwrap();
+        assert_eq!(m.calendar[0].weekday.as_deref(), Some("friday"));
+        assert_eq!(m.calendar[0].day, Some(13));
+        assert_eq!(m.calendar[0].month, None);
+        assert_eq!(m.calendar[0].day_of_year, None);
+    }
+
+    #[test]
+    fn parses_a_day_of_year_calendar_rule() {
+        let src = format!("{MINIMAL}\n[[calendar]]\ntext = \"Day 256.\"\nday_of_year = 256\n");
+        let m = parse(&src).unwrap();
+        assert_eq!(m.calendar[0].day_of_year, Some(256));
+        assert_eq!(m.calendar[0].month, None);
+        assert_eq!(m.calendar[0].day, None);
+        assert_eq!(m.calendar[0].weekday, None);
+    }
+
+    #[test]
+    fn rejects_a_calendar_rule_with_no_shape_or_more_than_one() {
+        let none = format!("{MINIMAL}\n[[calendar]]\ntext = \"x\"\n");
+        assert!(matches!(parse(&none), Err(MachineError::Invalid(_))));
+        let two_shapes =
+            format!("{MINIMAL}\n[[calendar]]\ntext = \"x\"\nmonth = 1\nday = 1\nday_of_year = 5\n");
+        assert!(matches!(parse(&two_shapes), Err(MachineError::Invalid(_))));
+        let month_without_day = format!("{MINIMAL}\n[[calendar]]\ntext = \"x\"\nmonth = 1\n");
+        assert!(matches!(
+            parse(&month_without_day),
+            Err(MachineError::Invalid(_))
+        ));
+        let weekday_without_day =
+            format!("{MINIMAL}\n[[calendar]]\ntext = \"x\"\nweekday = \"friday\"\n");
+        assert!(matches!(
+            parse(&weekday_without_day),
+            Err(MachineError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_calendar_rules_out_of_range_or_with_a_bad_weekday_or_empty_text() {
+        let bad_month = format!("{MINIMAL}\n[[calendar]]\ntext = \"x\"\nmonth = 13\nday = 1\n");
+        assert!(matches!(parse(&bad_month), Err(MachineError::Invalid(_))));
+        let bad_day = format!("{MINIMAL}\n[[calendar]]\ntext = \"x\"\nmonth = 1\nday = 32\n");
+        assert!(matches!(parse(&bad_day), Err(MachineError::Invalid(_))));
+        let bad_weekday =
+            format!("{MINIMAL}\n[[calendar]]\ntext = \"x\"\nweekday = \"blursday\"\nday = 13\n");
+        assert!(matches!(parse(&bad_weekday), Err(MachineError::Invalid(_))));
+        let bad_day_of_year = format!("{MINIMAL}\n[[calendar]]\ntext = \"x\"\nday_of_year = 400\n");
+        assert!(matches!(
+            parse(&bad_day_of_year),
+            Err(MachineError::Invalid(_))
+        ));
+        let empty_text = format!("{MINIMAL}\n[[calendar]]\ntext = \"\"\nmonth = 1\nday = 1\n");
+        assert!(matches!(parse(&empty_text), Err(MachineError::Invalid(_))));
+    }
+
+    #[test]
+    fn calendar_rule_matches_by_month_and_day_only_on_that_date() {
+        let rule = CalendarRule {
+            month: Some(1),
+            day: Some(1),
+            weekday: None,
+            day_of_year: None,
+            text: "x".into(),
+        };
+        assert!(rule.matches(2026, 1, 1));
+        assert!(!rule.matches(2026, 1, 2));
+        assert!(!rule.matches(2025, 2, 1));
+    }
+
+    #[test]
+    fn calendar_rule_matches_friday_the_13th_only_when_the_13th_is_really_a_friday() {
+        let rule = CalendarRule {
+            month: None,
+            day: Some(13),
+            weekday: Some("friday".into()),
+            day_of_year: None,
+            text: "x".into(),
+        };
+        // 13 September 2024 is a real Friday the 13th.
+        assert!(rule.matches(2024, 9, 13));
+        // 13 September 2026 is a Sunday: the same day of the month, not the same day of the week.
+        assert!(!rule.matches(2026, 9, 13));
+        // 30 October 2026 is a Friday, but not the 13th.
+        assert!(!rule.matches(2026, 10, 30));
+    }
+
+    #[test]
+    fn calendar_rule_matches_day_of_year_256_landing_on_different_calendar_dates() {
+        let rule = CalendarRule {
+            month: None,
+            day: None,
+            weekday: None,
+            day_of_year: Some(256),
+            text: "x".into(),
+        };
+        assert!(rule.matches(2025, 9, 13)); // common year
+        assert!(!rule.matches(2025, 9, 12));
+        assert!(rule.matches(2024, 9, 12)); // leap year
+        assert!(!rule.matches(2024, 9, 13));
+    }
+
+    #[test]
+    fn pc95_has_all_twelve_calendar_rules() {
+        let m = find("pc95", None).unwrap();
+        assert_eq!(m.calendar.len(), 12);
+    }
+
+    #[test]
+    fn each_pc95_calendar_rule_fires_on_its_own_date_and_no_other() {
+        let m = find("pc95", None).unwrap();
+        let cases: [(i32, u32, u32, &str); 12] = [
+            (
+                2026,
+                1,
+                1,
+                "Year {date.year} rollover complete. Nothing caught fire. Again.",
+            ),
+            (
+                2026,
+                1,
+                19,
+                "Y2038 check: {y2038.days} days until 32-bit time runs out. Noted.",
+            ),
+            (
+                2024,
+                2,
+                29,
+                "Leap day detected. The calendar chip has been dreading this.",
+            ),
+            (
+                2026,
+                3,
+                14,
+                "Pi Day. Math coprocessor reports 3.14159 and refuses to stop.",
+            ),
+            (
+                2026,
+                3,
+                31,
+                "World Backup Day. The BIOS asks only that you think about it.",
+            ),
+            (
+                2026,
+                4,
+                1,
+                "No jokes today. The BIOS does not trust anyone.",
+            ),
+            (
+                2026,
+                5,
+                4,
+                "Force detected: not found. Proceeding on ordinary electricity.",
+            ),
+            (
+                2025,
+                9,
+                13,
+                "Day 256 of the year. The day counter did not overflow. This time.",
+            ),
+            (
+                2024,
+                9,
+                13,
+                "Friday the 13th. Booting anyway, against advice.",
+            ),
+            (
+                2026,
+                10,
+                31,
+                "Ghost processes are checked for every day. Today it just feels right.",
+            ),
+            (
+                2026,
+                12,
+                25,
+                "Holiday boot. Nobody is watching the build. Go outside.",
+            ),
+            (
+                2026,
+                12,
+                31,
+                "Last boot of {date.year}? Real-time clock standing by.",
+            ),
+        ];
+
+        for (year, month, day, expected_text) in cases {
+            assert_eq!(
+                matching_calendar_text(&m, year, month, day),
+                Some(expected_text),
+                "expected {expected_text:?} to fire on {year:04}-{month:02}-{day:02}"
+            );
+        }
+
+        // Ordinary days, days either side of a rule's own date, and the years a date-specific
+        // rule does not apply in: none of these fire any rule.
+        for (year, month, day) in [
+            (2026, 1, 2),   // day after New Year
+            (2025, 2, 28),  // no leap day in a common year
+            (2026, 3, 12),  // day before Pi Day
+            (2026, 3, 30),  // day before World Backup Day
+            (2026, 4, 2),   // day after April Fools
+            (2026, 5, 3),   // day before Star Wars Day
+            (2026, 10, 30), // day before Halloween
+            (2026, 12, 24), // day before Christmas
+            (2026, 12, 30), // day before New Year's Eve
+            (2026, 6, 15),  // an ordinary day
+            (2026, 9, 12),  // day 255, one before day 256 in a common year
+            (2026, 9, 14),  // day 257, one after day 256 in a common year
+        ] {
+            assert_eq!(
+                matching_calendar_text(&m, year, month, day),
+                None,
+                "expected no calendar line on {year:04}-{month:02}-{day:02}"
+            );
         }
     }
 }

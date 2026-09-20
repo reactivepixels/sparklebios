@@ -163,6 +163,113 @@ pub fn builtins() -> Vec<Flavour> {
     .collect()
 }
 
+/// True when `id` names one of the built-in flavours.
+pub fn is_builtin_id(id: &str) -> bool {
+    builtins().iter().any(|f| f.id == id)
+}
+
+/// The id rule for `bios flavour new`: lowercase letters, digits and hyphens, starting with a
+/// letter. Stricter than `valid_id` (which also allows an underscore or a leading digit), so that
+/// nothing that looks like a path, a hidden file or `..` can ever reach a join with the flavours
+/// directory.
+pub fn well_formed_new_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// `id`, read as a human readable label: each hyphen separated part capitalised and joined with a
+/// space, for example `my-flavour` becomes `My Flavour`.
+pub fn display_name(id: &str) -> String {
+    id.split('-')
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The starter file `bios flavour new <id>` writes: a complete, valid flavour with every key
+/// filled in and a comment above each one, built from the real schema (this struct, plus every
+/// event in `presence::EVENTS`), so `bios boot --flavour <id>` works before a single character is
+/// changed. `id` must already satisfy `well_formed_new_id`; the caller is responsible for that.
+pub fn starter_template(id: &str, name: &str) -> String {
+    let upper = id.to_uppercase();
+    format!(
+        "\
+# {name}, a SparkleBIOS flavour.
+#
+# A flavour is one personality: the mascot, the firmware and vendor wording, the
+# boot streak line, the footer code and the quips. Every key below is required
+# and already works; change the wording and keep the shape. See
+# docs/flavours.md for the full schema and docs/voice.md before you write a
+# joke of your own.
+
+# Lowercase letters, digits and hyphens, starting with a letter. The file name must match.
+id = \"{id}\"
+
+# A human readable label, shown by `bios flavours`.
+name = \"{name}\"
+
+# A built-in sprite: unicorn, sumo, ninja, viking, luchador, yeti, raccoon or wizard.
+# Shown as a real image where the terminal speaks the Kitty graphics protocol.
+sprite = \"unicorn\"
+
+# The BIOS/firmware banner line, the first thing the boot screen prints.
+firmware = \"{name} Modular BIOS v1.0, Homebrew Edition\"
+
+# The copyright line. {{date.year}} is filled in with the current year.
+vendor = \"Copyright (C) {{date.year}}, {name} Systems.\"
+
+# The board or chassis revision line.
+board = \"{upper}-1 Board Revision A\"
+
+# The trailing joke on the processor line.
+cpu_gag = \"0 problems detected\"
+
+# The name of the one part this flavour detects, for example the unicorn flavour's Horn.
+part = \"Mascot\"
+
+# The result shown for that part's detect line.
+part_result = \"1 found (unverified)\"
+
+# The boot streak line. {{streak.label}} is filled in once there is a streak to report,
+# and the line is left out entirely until then, same as a preview never showing it.
+streak = \"Boot streak: {{streak.label}}.\"
+
+# The trailing segment of the footer serial.
+footer = \"{upper}-1-HOME-0001BREW-00\"
+
+# At least 3 one line jokes, deadpan, in the voice docs/voice.md sets out.
+quips = [
+  \"{name} detected. Diagnostics inconclusive.\",
+  \"Self test passed. Nobody checked the results.\",
+  \"Floppy drive A: not found. Nobody is surprised.\",
+]
+
+# What this flavour says away from the boot screen: the tab title, the line after a
+# long command, the goodbye, and so on. A built-in may leave one out and stay silent
+# for that moment; a flavour you write yourself should keep all eight.
+[presence]
+title = \"{upper}-1\"
+done = \"{name}: done in {{took}}.\"
+failed = \"{name}: failed after {{took}}.\"
+goodbye = \"{name}: goodbye.\"
+not_found = \"Bad command. {name} looked everywhere.\"
+refresh = \"{name}: checks refreshed.\"
+resume = \"{name}: booting {{device}}.\"
+switched = \"{name} is loaded.\"
+"
+    )
+}
+
 /// `<user_dir>/<id>.toml` wins over a built-in of the same id. Unreadable or invalid user files
 /// are ignored, and only a plain id (no path separators) is looked up.
 pub fn find(id: &str, user_dir: Option<&std::path::Path>) -> Option<Flavour> {

@@ -42,6 +42,14 @@ impl Facts {
         facts.insert("date.bios", "09/19/2026");
         facts.insert("date.year", "2026");
         facts.insert("date.today", "2026-09-19");
+        facts.insert(
+            "date.day_of_year",
+            crate::clock::day_of_year(2026, 9, 19).to_string(),
+        );
+        facts.insert(
+            "y2038.days",
+            crate::clock::days_until_y2038(2026, 9, 19).to_string(),
+        );
         facts.insert("streak.days", "12");
         facts.insert("streak.label", "12 days");
         facts
@@ -57,6 +65,14 @@ pub fn gather() -> Facts {
     facts.insert("date.today", format!("{year:04}-{month:02}-{day:02}"));
     facts.insert("date.bios", format!("{month:02}/{day:02}/{year:04}"));
     facts.insert("date.year", format!("{year:04}"));
+    facts.insert(
+        "date.day_of_year",
+        crate::clock::day_of_year(year, month, day).to_string(),
+    );
+    facts.insert(
+        "y2038.days",
+        crate::clock::days_until_y2038(year, month, day).to_string(),
+    );
 
     #[cfg(target_os = "macos")]
     macos::probe(&mut facts);
@@ -122,6 +138,23 @@ mod tests {
         assert_eq!(f.get("date.today").unwrap().len(), 10);
         assert_eq!(f.get("date.bios").unwrap().len(), 10);
         assert_eq!(f.get("date.year").unwrap().len(), 4);
+        assert!(f.get("date.day_of_year").unwrap().parse::<u32>().unwrap() >= 1);
+        // `y2038.days` may already be negative on a machine whose clock is set past that day, so
+        // only its shape (a plain signed integer) is checked here.
+        assert!(f.get("y2038.days").unwrap().parse::<i64>().is_ok());
+    }
+
+    #[test]
+    fn fixture_carries_the_two_calendar_facts_derived_from_its_fixed_date() {
+        let f = Facts::fixture();
+        assert_eq!(
+            f.get("date.day_of_year"),
+            Some(crate::clock::day_of_year(2026, 9, 19).to_string()).as_deref()
+        );
+        assert_eq!(
+            f.get("y2038.days"),
+            Some(crate::clock::days_until_y2038(2026, 9, 19).to_string()).as_deref()
+        );
     }
 
     #[cfg(target_os = "macos")]

@@ -20,6 +20,7 @@ Everyday:
   refresh            Run the health checks again now
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
+  flavour new <ID>   Start your own flavour from a working template
   sprinkles [LEVEL]  Optional effects: off, light or full
   theme list         List the matching Ghostty themes
   theme use <NAME>   Install the themes and switch Ghostty to one
@@ -84,6 +85,11 @@ enum Command {
     Flavours,
     /// Show or set which flavour boots.
     Use(UseCliArgs),
+    /// Flavour file commands.
+    Flavour {
+        #[command(subcommand)]
+        command: FlavourCommand,
+    },
     /// Show or set the sprinkles level.
     Sprinkles(SprinklesCliArgs),
     /// Print the current flavour's line for a moment. For tests and for shells we do not emit.
@@ -93,7 +99,7 @@ enum Command {
     #[command(hide = true)]
     Prompt,
     /// The CMOS Setup Utility.
-    Setup,
+    Setup(SetupCliArgs),
     /// Ghostty theme commands.
     Theme {
         #[command(subcommand)]
@@ -173,6 +179,18 @@ struct SayCliArgs {
 struct UseCliArgs {
     /// The flavour to use from now on, for example unicorn or sumo. Omit to print the current one.
     id: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+enum FlavourCommand {
+    /// Start a new flavour file, a complete working template, from your own name.
+    New(FlavourNewCliArgs),
+}
+
+#[derive(Debug, Args)]
+struct FlavourNewCliArgs {
+    /// The flavour id: lowercase letters, digits and hyphens, starting with a letter.
+    id: String,
 }
 
 #[derive(Debug, Args)]
@@ -261,13 +279,16 @@ pub fn run() -> i32 {
             0
         }
         Command::Use(args) => use_flavour(args),
+        Command::Flavour {
+            command: FlavourCommand::New(args),
+        } => flavour_new(&args.id),
         Command::Sprinkles(args) => sprinkles(args),
         Command::Theme {
             command: ThemeCommand::Install { dir },
         } => install_theme(dir),
         Command::Say(args) => say(args),
         Command::Prompt => prompt(),
-        Command::Setup => crate::setup::run(),
+        Command::Setup(args) => crate::setup::run(args.memory_test),
         Command::Theme {
             command: ThemeCommand::List,
         } => theme_list(),
@@ -451,6 +472,13 @@ fn streak_days() -> u32 {
         .map_or(0, |state| state.streak_days)
 }
 
+#[derive(Args, Debug)]
+pub struct SetupCliArgs {
+    /// Go straight to the memory test.
+    #[arg(long, hide = true)]
+    pub memory_test: bool,
+}
+
 fn say(args: SayCliArgs) -> i32 {
     let took = args.took.map(crate::presence::duration);
     let mut slots: Vec<(&str, &str)> = Vec::new();
@@ -557,6 +585,51 @@ fn use_flavour(args: UseCliArgs) -> i32 {
             println!("{line}");
         }
     }
+    0
+}
+
+/// Writes `<user flavours dir>/<id>.toml`, a complete working flavour built from `id` alone, so
+/// `bios boot --flavour <id>` works before a single character of it is edited. Writes nothing on
+/// any of the four error cases: a malformed id, an id that names a built-in, a file that already
+/// exists, or a flavours directory that cannot be worked out.
+fn flavour_new(id: &str) -> i32 {
+    if !crate::flavour::well_formed_new_id(id) {
+        eprintln!(
+            "bios: a flavour id is lowercase letters, digits and hyphens, starting with a letter."
+        );
+        return 1;
+    }
+    if crate::flavour::is_builtin_id(id) {
+        eprintln!("bios: {id} is a built in flavour. Pick another name.");
+        return 1;
+    }
+    let Some(dir) = crate::paths::user_flavours_dir() else {
+        eprintln!("bios: could not work out where your flavours live.");
+        return 1;
+    };
+    let path = dir.join(format!("{id}.toml"));
+    if path.exists() {
+        eprintln!(
+            "bios: {} already exists. Delete it or pick another name.",
+            path.display()
+        );
+        return 1;
+    }
+    if std::fs::create_dir_all(&dir).is_err() {
+        eprintln!("bios: could not work out where your flavours live.");
+        return 1;
+    }
+    let name = crate::flavour::display_name(id);
+    let template = crate::flavour::starter_template(id, &name);
+    if std::fs::write(&path, template).is_err() {
+        eprintln!("bios: could not work out where your flavours live.");
+        return 1;
+    }
+    println!("Created {}", path.display());
+    println!();
+    println!("Open it and make it yours, then:");
+    println!("  bios boot --flavour {id}    Preview it");
+    println!("  bios use {id}               Boot as it from now on");
     0
 }
 

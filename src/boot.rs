@@ -145,9 +145,13 @@ fn animate_enabled(
 /// `animate` is true and, if a key is to be polled, raw mode can actually be entered; the final
 /// static screen otherwise. `flavour`, for a flavoured machine, supplies its quips and its logo
 /// sprite. `findings` supplies the `Findings` and `F1` lines, empty when checks are off or there
-/// is nothing fresh in the cache. `sprinkles` is only ever read once the show actually animates:
-/// the static path never spends a cycle on it. Returns the raw bytes read from `key_fd` while the
-/// show played, in order, empty when it did not animate or nothing was typed.
+/// is nothing fresh in the cache. `calendar_line`, when given, may replace the `quip` step's line;
+/// whether one is passed at all is entirely this function's caller's decision (see
+/// `calendar_line_for`), forwarded unchanged to whichever of the two paths below actually draws
+/// the screen, so a calendar day can never look different depending on whether it animated.
+/// `sprinkles` is only ever read once the show actually animates: the static path never spends a
+/// cycle on it. Returns the raw bytes read from `key_fd` while the show played, in order, empty
+/// when it did not animate or nothing was typed.
 #[allow(clippy::too_many_arguments)]
 fn play_or_render(
     machine: &crate::machine::Machine,
@@ -158,6 +162,7 @@ fn play_or_render(
     graphics: crate::render::Graphics,
     flavour: Option<&crate::flavour::Flavour>,
     findings: &[crate::checks::Finding],
+    calendar_line: Option<&str>,
     animate: bool,
     out: &mut dyn Write,
     key_fd: Option<i32>,
@@ -173,17 +178,55 @@ fn play_or_render(
                 graphics,
             };
             return crate::show::play(
-                machine, facts, seed, geometry, flavour, findings, out, key_fd, 1.0, sprinkles,
+                machine,
+                facts,
+                seed,
+                geometry,
+                flavour,
+                findings,
+                calendar_line,
+                out,
+                key_fd,
+                1.0,
+                sprinkles,
             )
             .typed;
         }
     }
-    let output = crate::render::render_static(
-        machine, facts, mode, seed, term_cols, graphics, flavour, findings,
+    let output = crate::render::render_static_with_calendar(
+        machine,
+        facts,
+        mode,
+        seed,
+        term_cols,
+        graphics,
+        flavour,
+        findings,
+        calendar_line,
     );
     let _ = out.write_all(output.as_bytes());
     let _ = out.flush();
     Vec::new()
+}
+
+/// The calendar line to show in the `quip` slot today, or `None` when the current boot should
+/// never show one. This is the single place that decision is made: `render.rs` only ever obeys
+/// whatever it is given, and never asks which show it is in. `applies` is `true` for a Full boot
+/// and for a preview (`run_preview` always plays the Full show), `false` for Fast and Quiet, so a
+/// calendar day never changes what those two print. Returns the raw, unrendered text (still
+/// carrying its `{slot}`s) of the first of `machine`'s calendar rules that fires on `(year, month,
+/// day)`, or `None` when `applies` is `false` or no rule fires.
+fn calendar_line_for(
+    machine: &crate::machine::Machine,
+    applies: bool,
+    year: i32,
+    month: u32,
+    day: u32,
+) -> Option<&str> {
+    if !applies {
+        return None;
+    }
+    crate::machine::matching_calendar_text(machine, year, month, day)
 }
 
 /// The effective sprinkles level: `SPARKLEBIOS_SPRINKLES`, when set, wins over
@@ -227,6 +270,24 @@ pub fn run(args: &BootArgs) {
 /// `SPARKLEBIOS_ANIMATE=0`, `--no-animate` and the `graphics` setting. The streak line shows the
 /// streak already on disk, read without advancing it; a preview's `shell.boot_ms` is never a real
 /// shell startup, so it is dropped rather than shown.
+/// The facts that come from the state file, for both the preview and a real boot.
+///
+/// Zero is never inserted for either of these. "Boot streak: 0 days" and a best memory test of
+/// 0K read as broken counters rather than true ones, so the slots stay unset and the lines that
+/// use them are left out under the usual omission rule.
+fn insert_state_facts(facts: &mut crate::facts::Facts, state: &crate::state::State) {
+    if state.streak_days > 0 {
+        facts.insert("streak.days", state.streak_days.to_string());
+        facts.insert("streak.label", state.streak_label());
+    }
+    if state.memory_test_best_kb > 0 {
+        facts.insert(
+            "memory.best_test",
+            format!("{}K", state.memory_test_best_kb),
+        );
+    }
+}
+
 fn run_preview(args: &BootArgs) {
     let user_dir = crate::paths::user_machines_dir();
     let config = crate::config::load(crate::paths::config_dir().as_deref());
@@ -248,13 +309,7 @@ fn run_preview(args: &BootArgs) {
         Some(dir) => crate::state::State::load(dir),
         None => crate::state::State::default(),
     };
-    // A streak of zero is not a streak. It can only happen on an explicit `bios boot` before the
-    // shell hook has ever run, and "Boot streak: 0 days" reads as a broken counter rather than a
-    // true one, so the slots stay unset and the line is omitted under the usual rule.
-    if state.streak_days > 0 {
-        facts.insert("streak.days", state.streak_days.to_string());
-        facts.insert("streak.label", state.streak_label());
-    }
+    insert_state_facts(&mut facts, &state);
 
     let now = crate::clock::now_unix();
     let cache = load_cache(&config);
@@ -281,6 +336,8 @@ fn run_preview(args: &BootArgs) {
         config.sprinkles,
         env_var("SPARKLEBIOS_SPRINKLES").as_deref(),
     );
+    let (year, month, day) = crate::clock::local_ymd(now as i64);
+    let calendar_line = calendar_line_for(&machine, true, year, month, day);
     let mut stdout = std::io::stdout();
     play_or_render(
         &machine,
@@ -291,6 +348,7 @@ fn run_preview(args: &BootArgs) {
         graphics(&config),
         flavour.as_ref(),
         &findings,
+        calendar_line,
         animate,
         &mut stdout,
         key_fd,
@@ -362,13 +420,7 @@ fn run_shell_boot(args: &BootArgs) {
     let yesterday = crate::clock::day_string(now as i64 - 86_400);
     state.advance_streak(&today, &yesterday);
     let mut facts = crate::facts::gather();
-    // A streak of zero is not a streak. It can only happen on an explicit `bios boot` before the
-    // shell hook has ever run, and "Boot streak: 0 days" reads as a broken counter rather than a
-    // true one, so the slots stay unset and the line is omitted under the usual rule.
-    if state.streak_days > 0 {
-        facts.insert("streak.days", state.streak_days.to_string());
-        facts.insert("streak.label", state.streak_label());
-    }
+    insert_state_facts(&mut facts, &state);
 
     let cache = load_cache(&config);
     let findings: Vec<crate::checks::Finding> = cache
@@ -397,6 +449,10 @@ fn run_shell_boot(args: &BootArgs) {
         config.sprinkles,
         env_var("SPARKLEBIOS_SPRINKLES").as_deref(),
     );
+    // A calendar line only ever replaces the quip on a Full boot: Fast and Quiet stay exactly as
+    // they were before calendar lines existed. Quiet never reaches this far (it returned above).
+    let (year, month, day) = crate::clock::local_ymd(now as i64);
+    let calendar_line = calendar_line_for(&machine, decision == BootMode::Full, year, month, day);
     let typed = play_or_render(
         &machine,
         &facts,
@@ -406,6 +462,7 @@ fn run_shell_boot(args: &BootArgs) {
         graphics(&config),
         flavour.as_ref(),
         &findings,
+        calendar_line,
         animate,
         &mut tty_file,
         key_fd,
@@ -539,5 +596,136 @@ mod tests {
             resolve_sprinkles(Level::Full, Some("holographic")),
             Level::Off
         );
+    }
+
+    // --- Calendar lines -------------------------------------------------------------------------
+
+    /// This is the single place Full/preview vs Fast/Quiet is decided for a calendar line:
+    /// `render.rs` and `show.rs` only ever obey whatever they are handed. `applies` stands in for
+    /// that decision (`true` for Full and for a preview, `false` for Fast; Quiet never reaches
+    /// this function at all, see `run_shell_boot`). 1 January is a real date `pc95` carries a
+    /// rule for, checked directly against `machine::matching_calendar_text` rather than assumed.
+    #[test]
+    fn a_zero_counter_never_becomes_a_fact() {
+        // Both of these read as broken hardware rather than a true reading, so the line that
+        // would use them is omitted instead.
+        let mut facts = crate::facts::Facts::new();
+        insert_state_facts(&mut facts, &crate::state::State::default());
+        assert_eq!(facts.get("streak.days"), None);
+        assert_eq!(facts.get("memory.best_test"), None);
+    }
+
+    #[test]
+    fn the_best_memory_test_is_a_fact_once_there_is_one() {
+        let state = crate::state::State {
+            streak_days: 3,
+            memory_test_best_kb: 18_874_368,
+            ..Default::default()
+        };
+        let mut facts = crate::facts::Facts::new();
+        insert_state_facts(&mut facts, &state);
+        assert_eq!(facts.get("streak.days"), Some("3"));
+        assert_eq!(facts.get("memory.best_test"), Some("18874368K"));
+    }
+
+    #[test]
+    fn calendar_line_for_applies_only_when_told_to_even_on_a_real_calendar_date() {
+        let m = crate::machine::find("pc95", None).unwrap();
+        let real_match = crate::machine::matching_calendar_text(&m, 2026, 1, 1);
+        assert!(
+            real_match.is_some(),
+            "1 January should be a real calendar date for pc95"
+        );
+        assert_eq!(calendar_line_for(&m, true, 2026, 1, 1), real_match);
+        assert_eq!(calendar_line_for(&m, false, 2026, 1, 1), None);
+    }
+
+    #[test]
+    fn calendar_line_for_is_none_on_an_ordinary_day_regardless_of_whether_it_applies() {
+        let m = crate::machine::find("pc95", None).unwrap();
+        assert_eq!(calendar_line_for(&m, true, 2026, 6, 15), None);
+        assert_eq!(calendar_line_for(&m, false, 2026, 6, 15), None);
+    }
+
+    /// Fast draws through `play_or_render` with `animate: false` and whatever `calendar_line` it
+    /// is given; on a real calendar date it is given `None` (`calendar_line_for(..., false, ...)`,
+    /// exactly as `run_shell_boot` computes for a Fast decision), so its output must be byte for
+    /// byte identical to `render::render_static`, the calendar-oblivious entry point that existed
+    /// before calendar lines did. This is checked against 1 January, a real date `pc95` has a rule
+    /// for, not a mocked matcher.
+    #[test]
+    fn fast_renders_byte_for_byte_the_same_as_the_calendar_oblivious_render_on_a_real_calendar_date(
+    ) {
+        let m = crate::machine::find("pc95", None).unwrap();
+        let flavour = crate::flavour::find("unicorn", None).unwrap();
+        let mut facts = crate::facts::Facts::fixture();
+        facts.insert("date.year", "2026");
+        facts.insert("date.today", "2026-01-01");
+        crate::flavour::apply(&flavour, &mut facts);
+
+        assert!(crate::machine::matching_calendar_text(&m, 2026, 1, 1).is_some());
+        let calendar_line = calendar_line_for(&m, false, 2026, 1, 1);
+        assert_eq!(calendar_line, None, "Fast must never apply a calendar line");
+
+        let mut fast_out: Vec<u8> = Vec::new();
+        play_or_render(
+            &m,
+            &facts,
+            0,
+            crate::render::ColorMode::None,
+            None,
+            crate::render::Graphics::None,
+            Some(&flavour),
+            &[],
+            calendar_line,
+            false,
+            &mut fast_out,
+            None,
+            crate::sprinkles::Level::Off,
+        );
+
+        let expected = crate::render::render_static(
+            &m,
+            &facts,
+            crate::render::ColorMode::None,
+            0,
+            None,
+            crate::render::Graphics::None,
+            Some(&flavour),
+            &[],
+        );
+        assert_eq!(String::from_utf8(fast_out).unwrap(), expected);
+    }
+
+    /// Quiet is unaffected by construction, not merely by test: `run_shell_boot` returns through
+    /// `run_quiet_fail_line` before any calendar computation runs (see the `decision ==
+    /// BootMode::Quiet` branch above `calendar_line_for` is ever called), and `run_quiet_fail_line`
+    /// draws its one possible line through `render::finding_text`, a function this milestone never
+    /// gave a `calendar_line` parameter, so there is no path by which a calendar day could reach
+    /// it. Exercising `run_quiet_fail_line` itself needs a real cache directory resolved from
+    /// `XDG_CACHE_HOME`/`HOME`, which is not sandboxed anywhere else in this file; mutating those
+    /// process wide variables from a test in a shared, concurrently edited tree risks exactly the
+    /// kind of cross-test leakage the sandboxing rule exists to prevent, so that path is left to
+    /// the integration suite rather than added here.
+    #[test]
+    fn quiet_never_calls_the_calendar_override() {
+        let m = crate::machine::find("pc95", None).unwrap();
+        // Quiet's own render call, `render::finding_text`, takes no `calendar_line` of any kind.
+        let finding = crate::checks::Finding {
+            id: "boot_order".to_string(),
+            severity: crate::checks::Severity::Info,
+            ttl: 100,
+            facts: vec![("boot.devices".to_string(), "eko-pro".to_string())]
+                .into_iter()
+                .collect(),
+        };
+        let mut facts = crate::facts::Facts::fixture();
+        facts.insert("date.year", "2026");
+        facts.insert("date.today", "2026-01-01");
+        facts.insert("boot.devices", "eko-pro");
+        let with_calendar_date = crate::render::finding_text(&m, &facts, None, &finding);
+        facts.insert("date.today", "2026-06-15");
+        let on_an_ordinary_day = crate::render::finding_text(&m, &facts, None, &finding);
+        assert_eq!(with_calendar_date, on_an_ordinary_day);
     }
 }

@@ -117,6 +117,33 @@ fn resolve_quip(quips: &[String], cols: u16, facts: &Facts, seed: u64) -> Option
     })
 }
 
+/// A single candidate's own resolve-and-fit rule: its slots all resolve against `facts`, and the
+/// rendered result is no longer than `cols`. The same rule `resolve_quip` applies to each of its
+/// candidates in turn, used here for the one calendar candidate a day may bring.
+fn resolve_one(candidate: &str, cols: u16, facts: &Facts) -> Option<String> {
+    let text = template::render(candidate, facts)?;
+    (text.chars().count() <= cols as usize).then_some(text)
+}
+
+/// The line a `Quip` step actually shows: `calendar_line` (a machine's own calendar text, still
+/// carrying its `{slot}`s) when one is active and it resolves and fits `cols`, otherwise the
+/// ordinary quip rotation, exactly as if no calendar line existed. This is the one place a `Quip`
+/// step is ever resolved, reached by both the animated show and the static render, so a calendar
+/// day can never look different depending on which of the two drew it. Whether `calendar_line` is
+/// `Some` at all is entirely the caller's decision (`boot.rs`, which knows whether this is a Full
+/// boot, a preview, a Fast boot or Quiet): this function never asks which show it is in.
+fn resolve_quip_line(
+    calendar_line: Option<&str>,
+    quips: &[String],
+    cols: u16,
+    facts: &Facts,
+    seed: u64,
+) -> Option<String> {
+    calendar_line
+        .and_then(|candidate| resolve_one(candidate, cols, facts))
+        .or_else(|| resolve_quip(quips, cols, facts, seed))
+}
+
 /// The sprite drawn as a machine's logo, if any, as its PNG bytes: for a flavoured machine, the
 /// current flavour's own sprite; for any other machine, its `logo` key (only `"unicorn"` exists
 /// today).
@@ -298,6 +325,7 @@ fn f1_line(
 /// Resolves a single step to its logical lines: zero for an unresolvable `print`, `count` or
 /// `detect`; exactly one for a resolved `print`, `count`, `detect` or `quip`; zero or more for
 /// `findings` (one per finding whose phrasing resolves); zero or one for `f1`.
+#[allow(clippy::too_many_arguments)]
 fn layout_step(
     machine: &Machine,
     facts: &Facts,
@@ -305,6 +333,7 @@ fn layout_step(
     step: &Step,
     flavour: Option<&Flavour>,
     findings: &[Finding],
+    calendar_line: Option<&str>,
 ) -> Vec<Vec<Span>> {
     match step {
         Step::Print { text, style, .. } => match template::render(text, facts) {
@@ -362,7 +391,8 @@ fn layout_step(
             ]]
         }
         Step::Quip { style, .. } => {
-            match resolve_quip(quips_for(machine, flavour), machine.cols, facts, seed) {
+            let quips = quips_for(machine, flavour);
+            match resolve_quip_line(calendar_line, quips, machine.cols, facts, seed) {
                 Some(quip) => vec![vec![Span {
                     text: apply_case(machine, quip),
                     style: *style,
@@ -400,18 +430,20 @@ fn collapse_blank_lines(lines: Vec<Vec<Span>>) -> Vec<Vec<Span>> {
 /// The machine's steps resolved into logical lines, with unresolvable and too-long-to-fit
 /// lines omitted and blank lines collapsed. `seed` picks the quip: start at `seed % quips.len()`.
 /// `flavour`, when the machine is flavoured, supplies its quips and (in the painted path) its
-/// logo; ignored otherwise.
+/// logo; ignored otherwise. `calendar_line`, when given, is tried ahead of the ordinary quip
+/// rotation for the `quip` step; see `resolve_quip_line`.
 pub fn layout(
     machine: &Machine,
     facts: &Facts,
     seed: u64,
     flavour: Option<&Flavour>,
     findings: &[Finding],
+    calendar_line: Option<&str>,
 ) -> Vec<Vec<Span>> {
     let lines: Vec<Vec<Span>> = machine
         .steps
         .iter()
-        .flat_map(|step| layout_step(machine, facts, seed, step, flavour, findings))
+        .flat_map(|step| layout_step(machine, facts, seed, step, flavour, findings, calendar_line))
         .collect();
     collapse_blank_lines(lines)
 }
@@ -448,6 +480,7 @@ const COUNT_FRAMES: u64 = 24;
 /// `layout_step` exactly for the final state (`AnimatedStep::spans`), so `layout` and
 /// `animated_layout` always agree on which lines are visible and what they finally say.
 /// `findings` and `f1` are always `AnimatedKind::Instant`, one `AnimatedStep` per finding line.
+#[allow(clippy::too_many_arguments)]
 fn animate_step(
     machine: &Machine,
     facts: &Facts,
@@ -455,6 +488,7 @@ fn animate_step(
     step: &Step,
     flavour: Option<&Flavour>,
     findings: &[Finding],
+    calendar_line: Option<&str>,
 ) -> Vec<AnimatedStep> {
     match step {
         Step::Print { text, style, ms } => match template::render(text, facts) {
@@ -476,7 +510,8 @@ fn animate_step(
             None => vec![],
         },
         Step::Quip { style, ms } => {
-            match resolve_quip(quips_for(machine, flavour), machine.cols, facts, seed) {
+            let quips = quips_for(machine, flavour);
+            match resolve_quip_line(calendar_line, quips, machine.cols, facts, seed) {
                 Some(quip) => {
                     let spans = vec![Span {
                         text: apply_case(machine, quip),
@@ -608,18 +643,20 @@ fn collapse_blank_animated(steps: Vec<AnimatedStep>) -> Vec<AnimatedStep> {
 
 /// The machine's steps resolved for the animated show: one `AnimatedStep` per visible logical
 /// line, in the same order and under the same omission and blank-collapsing rules as `layout`,
-/// whose final `spans` always agree with it.
+/// whose final `spans` always agree with it. `calendar_line` is forwarded to the `quip` step
+/// exactly as `layout` does; see `resolve_quip_line`.
 pub fn animated_layout(
     machine: &Machine,
     facts: &Facts,
     seed: u64,
     flavour: Option<&Flavour>,
     findings: &[Finding],
+    calendar_line: Option<&str>,
 ) -> Vec<AnimatedStep> {
     let steps: Vec<AnimatedStep> = machine
         .steps
         .iter()
-        .flat_map(|step| animate_step(machine, facts, seed, step, flavour, findings))
+        .flat_map(|step| animate_step(machine, facts, seed, step, flavour, findings, calendar_line))
         .collect();
     collapse_blank_animated(steps)
 }
@@ -1076,7 +1113,8 @@ impl<'a> RowGeometry<'a> {
 /// when the width is unknown, or the mode is not TrueColor). `graphics` chooses how a logo is
 /// drawn in the painted path; the plain path never shows a logo or badge regardless of it.
 /// `flavour`, for a flavoured machine, supplies its quips and its logo sprite; with `None` a
-/// flavoured machine simply omits whatever it cannot resolve.
+/// flavoured machine simply omits whatever it cannot resolve. Never shows a calendar line; see
+/// `render_static_with_calendar` for the entry point that can.
 #[allow(clippy::too_many_arguments)]
 pub fn render_static(
     machine: &Machine,
@@ -1088,7 +1126,33 @@ pub fn render_static(
     flavour: Option<&Flavour>,
     findings: &[Finding],
 ) -> String {
-    let lines = layout(machine, facts, seed, flavour, findings);
+    render_static_with_calendar(
+        machine, facts, mode, seed, term_cols, graphics, flavour, findings, None,
+    )
+}
+
+/// `render_static`, but the `quip` step may show `calendar_line` instead: a machine's own
+/// calendar text (still carrying its `{slot}`s, unrendered), tried ahead of the ordinary quip
+/// rotation under the same resolve-and-fit rule every quip candidate follows, so an unresolved or
+/// over-long calendar line falls back to an ordinary quip rather than vanishing. This is the same
+/// `layout` call, and so the same `Step::Quip` handling, that `show::play` reaches through
+/// `render::animated_layout`: the one place a calendar line is ever chosen, whichever of the two
+/// shows it. `render_static` is this function called with `None`, so a caller with nothing to say
+/// about a calendar line never has to think about one. Whether `calendar_line` is `Some` at all is
+/// entirely `boot.rs`'s call: this function only ever obeys what it is given.
+#[allow(clippy::too_many_arguments)]
+pub fn render_static_with_calendar(
+    machine: &Machine,
+    facts: &Facts,
+    mode: ColorMode,
+    seed: u64,
+    term_cols: Option<u16>,
+    graphics: Graphics,
+    flavour: Option<&Flavour>,
+    findings: &[Finding],
+    calendar_line: Option<&str>,
+) -> String {
+    let lines = layout(machine, facts, seed, flavour, findings, calendar_line);
     let painted = machine.paint
         && mode == ColorMode::TrueColor
         && term_cols.is_some_and(|w| w >= painted_total_width(machine));
@@ -1898,14 +1962,14 @@ print = "{long_line}"
         let flavour = unicorn_flavour();
         let facts = fixture_with_flavour(&flavour);
         let m = machine::find("pc95", None).unwrap();
-        let lines = layout(&m, &facts, 0, Some(&flavour), &[]);
-        let animated = animated_layout(&m, &facts, 0, Some(&flavour), &[]);
+        let lines = layout(&m, &facts, 0, Some(&flavour), &[], None);
+        let animated = animated_layout(&m, &facts, 0, Some(&flavour), &[], None);
         let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
         assert_eq!(lines, animated_spans, "pc95 disagrees on its final lines");
 
         let m = other_machine();
-        let lines = layout(&m, &Facts::fixture(), 0, None, &[]);
-        let animated = animated_layout(&m, &Facts::fixture(), 0, None, &[]);
+        let lines = layout(&m, &Facts::fixture(), 0, None, &[], None);
+        let animated = animated_layout(&m, &Facts::fixture(), 0, None, &[], None);
         let animated_spans: Vec<Vec<Span>> = animated.into_iter().map(|s| s.spans).collect();
         assert_eq!(lines, animated_spans, "other disagrees on its final lines");
     }
@@ -1913,7 +1977,7 @@ print = "{long_line}"
     #[test]
     fn animated_count_steps_grow_from_zero_to_the_final_value() {
         let m = machine::find("pc95", None).unwrap();
-        let animated = animated_layout(&m, &Facts::fixture(), 0, None, &[]);
+        let animated = animated_layout(&m, &Facts::fixture(), 0, None, &[], None);
         let count = animated
             .iter()
             .find(|s| matches!(s.kind, AnimatedKind::Count { .. }))
@@ -1931,7 +1995,7 @@ print = "{long_line}"
         let m = machine::find("pc95", None).unwrap();
         let flavour = unicorn_flavour();
         let facts = fixture_with_flavour(&flavour);
-        let lines = layout(&m, &facts, 0, Some(&flavour), &[]);
+        let lines = layout(&m, &facts, 0, Some(&flavour), &[], None);
         let geometry = row_geometry(
             &m,
             ColorMode::TrueColor,
@@ -2433,5 +2497,196 @@ print = "{long_line}"
         assert!(geometry.painted());
         assert_eq!(geometry.text_start_col(0), 2);
         assert!(geometry.twinkle_margin_cols(0).is_empty());
+    }
+
+    // --- Calendar lines -------------------------------------------------------------------------
+
+    #[test]
+    fn resolve_quip_line_prefers_a_calendar_candidate_that_resolves_and_fits() {
+        let facts = Facts::fixture();
+        let quips = vec!["ordinary quip".to_string()];
+        let resolved = resolve_quip_line(
+            Some("Year {date.year} rollover complete. Nothing caught fire. Again."),
+            &quips,
+            80,
+            &facts,
+            0,
+        );
+        assert_eq!(
+            resolved.as_deref(),
+            Some("Year 2026 rollover complete. Nothing caught fire. Again.")
+        );
+    }
+
+    #[test]
+    fn resolve_quip_line_falls_back_to_the_ordinary_quip_when_the_calendar_slot_does_not_resolve() {
+        // `y2038.days` resolves in the fixture today, so the failing case has to be built by
+        // hand: remove the one slot the 19 January line needs.
+        let mut facts = Facts::fixture();
+        assert!(facts.get("y2038.days").is_some());
+        facts.remove("y2038.days");
+        let quips = vec!["ordinary quip".to_string()];
+        let resolved = resolve_quip_line(
+            Some("Y2038 check: {y2038.days} days until 32-bit time runs out. Noted."),
+            &quips,
+            80,
+            &facts,
+            0,
+        );
+        assert_eq!(resolved.as_deref(), Some("ordinary quip"));
+    }
+
+    #[test]
+    fn resolve_quip_line_falls_back_to_the_ordinary_quip_when_the_calendar_candidate_is_too_long() {
+        let facts = Facts::fixture();
+        // 15 columns: room enough for the ordinary quip (13 characters), not for the calendar
+        // candidate.
+        let quips = vec!["ordinary quip".to_string()];
+        let resolved = resolve_quip_line(
+            Some("this calendar line is far too long to fit in the space given here"),
+            &quips,
+            15,
+            &facts,
+            0,
+        );
+        assert_eq!(resolved.as_deref(), Some("ordinary quip"));
+    }
+
+    #[test]
+    fn resolve_quip_line_with_no_calendar_candidate_is_the_ordinary_rotation() {
+        let facts = Facts::fixture();
+        let quips = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        for seed in 0..quips.len() as u64 {
+            assert_eq!(
+                resolve_quip_line(None, &quips, 80, &facts, seed),
+                resolve_quip(&quips, 80, &facts, seed)
+            );
+        }
+    }
+
+    /// `render_static` (the calendar-oblivious entry point `src/setup/mod.rs` still calls) and
+    /// `render_static_with_calendar` called with `None` must never disagree: the whole point of
+    /// keeping both is that a caller with nothing to say about a calendar line gets exactly the
+    /// old behaviour.
+    #[test]
+    fn render_static_is_render_static_with_calendar_given_none() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let facts = fixture_with_flavour(&flavour);
+        let plain = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &[],
+        );
+        let explicit_none = render_static_with_calendar(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &[],
+            None,
+        );
+        assert_eq!(plain, explicit_none);
+    }
+
+    /// The static path (`render_static_with_calendar`, what `bios boot` falls back to under
+    /// `NO_COLOR`, a non-tty, or `--no-animate`, per `docs/machines.md`), on a real calendar date
+    /// (1 January), shows the calendar line in place of the quip, with no row added or removed.
+    #[test]
+    fn a_calendar_day_replaces_the_quip_on_the_static_path_with_no_row_added() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = fixture_with_flavour(&flavour);
+        facts.insert("date.year", "2026");
+        facts.insert("date.today", "2026-01-01");
+        let calendar_line = crate::machine::matching_calendar_text(&m, 2026, 1, 1);
+        assert_eq!(
+            calendar_line,
+            Some("Year {date.year} rollover complete. Nothing caught fire. Again.")
+        );
+
+        let geometry = (ColorMode::None, None, Graphics::None);
+        let ordinary = render_static(
+            &m,
+            &facts,
+            geometry.0,
+            0,
+            geometry.1,
+            geometry.2,
+            Some(&flavour),
+            &[],
+        );
+        let with_calendar = render_static_with_calendar(
+            &m,
+            &facts,
+            geometry.0,
+            0,
+            geometry.1,
+            geometry.2,
+            Some(&flavour),
+            &[],
+            calendar_line,
+        );
+
+        assert_eq!(
+            ordinary.lines().count(),
+            with_calendar.lines().count(),
+            "a calendar line must replace the quip row, never add one"
+        );
+        assert!(with_calendar.contains("Year 2026 rollover complete. Nothing caught fire. Again."));
+        assert!(!ordinary.contains("Year 2026 rollover complete"));
+    }
+
+    /// The omission rule still holds for a calendar line: on 19 January, with the one slot its
+    /// text needs deliberately missing, the screen falls back to the ordinary quip, byte for byte
+    /// identical to a screen with no calendar override at all, rather than dropping the row.
+    #[test]
+    fn an_unresolved_calendar_line_falls_back_to_the_ordinary_quip_on_the_static_path() {
+        let m = machine::find("pc95", None).unwrap();
+        let flavour = unicorn_flavour();
+        let mut facts = fixture_with_flavour(&flavour);
+        facts.insert("date.year", "2026");
+        facts.insert("date.today", "2026-01-19");
+        facts.remove("y2038.days");
+        let calendar_line = crate::machine::matching_calendar_text(&m, 2026, 1, 19);
+        assert_eq!(
+            calendar_line,
+            Some("Y2038 check: {y2038.days} days until 32-bit time runs out. Noted.")
+        );
+
+        let ordinary = render_static(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &[],
+        );
+        let with_calendar = render_static_with_calendar(
+            &m,
+            &facts,
+            ColorMode::None,
+            0,
+            None,
+            Graphics::None,
+            Some(&flavour),
+            &[],
+            calendar_line,
+        );
+        assert_eq!(
+            with_calendar, ordinary,
+            "an unresolved calendar line must fall back to the ordinary quip exactly"
+        );
+        assert!(!with_calendar.contains("Y2038 check"));
     }
 }

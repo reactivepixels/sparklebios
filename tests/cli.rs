@@ -43,6 +43,7 @@ Everyday:
   refresh            Run the health checks again now
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
+  flavour new <ID>   Start your own flavour from a working template
   sprinkles [LEVEL]  Optional effects: off, light or full
   theme list         List the matching Ghostty themes
   theme use <NAME>   Install the themes and switch Ghostty to one
@@ -1961,4 +1962,167 @@ fn presence_false_in_the_config_silences_say() {
         .assert()
         .success()
         .stdout(predicate::str::is_empty());
+}
+
+/// The one that matters most: a template with a hole in it is the whole failure mode of
+/// `bios flavour new`, and only booting it for real catches that.
+#[test]
+fn flavour_new_writes_a_template_that_boots_immediately() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["flavour", "new", "mine"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .args(["boot", "--flavour", "mine", "--no-animate"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Mine Modular BIOS"));
+}
+
+#[test]
+fn flavour_new_prints_the_exact_success_message_and_writes_the_file() {
+    let config = tempfile::tempdir().unwrap();
+    let path = config.path().join("sparklebios/flavours/mine.toml");
+    bios()
+        .args(["flavour", "new", "mine"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout(format!(
+            "Created {}\n\nOpen it and make it yours, then:\n  bios boot --flavour mine    Preview it\n  bios use mine               Boot as it from now on\n",
+            path.display()
+        ));
+    assert!(path.is_file());
+}
+
+#[test]
+fn flavour_new_rejects_ids_that_do_not_match_the_shape_rule_and_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    for id in ["Bad-Id", "1abc", "has_underscore", "UNICORN2", ""] {
+        bios()
+            .args(["flavour", "new", id])
+            .env("XDG_CONFIG_HOME", config.path())
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(
+                "bios: a flavour id is lowercase letters, digits and hyphens, starting with a letter.\n",
+            );
+    }
+    assert!(!config.path().join("sparklebios").exists());
+}
+
+#[test]
+fn flavour_new_rejects_an_id_starting_with_a_hyphen_and_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["flavour", "new", "--"])
+        .arg("-abc")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(
+            "bios: a flavour id is lowercase letters, digits and hyphens, starting with a letter.\n",
+        );
+    assert!(!config.path().join("sparklebios").exists());
+}
+
+/// The id rule is what has to catch these, since it runs before any path is ever built: an id
+/// with a path separator, a leading dot or `..` must never reach a join with the flavours
+/// directory.
+#[test]
+fn flavour_new_refuses_path_traversal_ids_and_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    for id in ["../../etc/passwd", "..", ".hidden", "a/b"] {
+        bios()
+            .args(["flavour", "new", id])
+            .env("XDG_CONFIG_HOME", config.path())
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(
+                "bios: a flavour id is lowercase letters, digits and hyphens, starting with a letter.\n",
+            );
+    }
+    assert!(!config.path().join("sparklebios").exists());
+}
+
+#[test]
+fn flavour_new_rejects_a_built_in_id_and_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["flavour", "new", "unicorn"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr("bios: unicorn is a built in flavour. Pick another name.\n");
+    assert!(!config.path().join("sparklebios").exists());
+}
+
+#[test]
+fn flavour_new_refuses_to_overwrite_an_existing_file() {
+    let config = tempfile::tempdir().unwrap();
+    let dir = config.path().join("sparklebios/flavours");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("mine.toml"), "already here\n").unwrap();
+    bios()
+        .args(["flavour", "new", "mine"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(format!(
+            "bios: {} already exists. Delete it or pick another name.\n",
+            dir.join("mine.toml").display()
+        ));
+    assert_eq!(
+        std::fs::read_to_string(dir.join("mine.toml")).unwrap(),
+        "already here\n"
+    );
+}
+
+#[test]
+fn flavour_new_writes_a_file_that_parses_and_has_every_presence_event() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["flavour", "new", "my-flavour"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    let path = config.path().join("sparklebios/flavours/my-flavour.toml");
+    let src = std::fs::read_to_string(&path).unwrap();
+    let flavour = sparklebios::flavour::parse(&src).unwrap();
+    assert_eq!(flavour.id, "my-flavour");
+    assert_eq!(flavour.name, "My Flavour");
+    assert!(flavour.quips.len() >= 3);
+    for event in sparklebios::presence::EVENTS {
+        assert!(
+            flavour.presence.contains_key(event),
+            "missing presence event {event}"
+        );
+        assert!(!flavour.presence[event].is_empty());
+    }
+}
+
+#[test]
+fn flavour_new_then_flavours_lists_it_by_id_and_name() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["flavour", "new", "my-flavour"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+    bios()
+        .arg("flavours")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("my-flavour"))
+        .stdout(predicate::str::contains("My Flavour"));
 }

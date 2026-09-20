@@ -6,6 +6,7 @@
 //! including a panic.
 
 pub mod keys;
+pub mod memtest;
 pub mod model;
 pub mod view;
 
@@ -61,8 +62,10 @@ enum Outcome {
     Save,
 }
 
-/// `bios setup`. Returns the process exit code.
-pub fn run() -> i32 {
+/// `bios setup`. Returns the process exit code. `memory_test` skips straight to the Memory Test
+/// easter egg instead of the CMOS screen: a hidden door for tests, and for anyone who reads the
+/// source far enough to find it. The screen itself gives no hint that either way in exists.
+pub fn run(memory_test: bool) -> i32 {
     let not_a_terminal = "bios: setup needs a terminal. This is not one.";
     let Ok(tty) = std::fs::OpenOptions::new()
         .read(true)
@@ -104,7 +107,12 @@ pub fn run() -> i32 {
             return 1;
         };
         let mut screen = Screen::enter(write_tty);
-        run_loop(&mut state, &mut screen, fd, cols, rows, &year)
+        if memory_test {
+            launch_memory_test(&mut screen, fd, cols, rows);
+            Outcome::Exit
+        } else {
+            run_loop(&mut state, &mut screen, fd, cols, rows, &year)
+        }
         // Both guards drop here, so the terminal is itself again before anything below prints.
     };
 
@@ -128,6 +136,10 @@ fn run_loop(
     redraw(screen, state);
 
     let mut pending: Vec<u8> = Vec::new();
+    let mut code = CodeTracker::new();
+    // Toggling Turbo ten times in one visit is the second, easier door in: a reward for anyone
+    // who pokes at the one setting that does nothing.
+    let mut turbo_toggles = 0u32;
     loop {
         // Bounded waits rather than a blocking read, so nothing can wedge here.
         pending.extend_from_slice(&crate::tty::wait_for_key(fd, 250));
@@ -142,14 +154,31 @@ fn run_loop(
 
         while !pending.is_empty() {
             let Some((input, used)) = keys::decode(&pending) else {
+                // Not a key setup acts on, but 'b' and 'a' still feed the secret sequence: it is
+                // watched at the byte level because setup otherwise ignores them completely.
+                let triggered = code.feed(SeqKey::from_byte(pending[0]));
                 pending.remove(0);
+                if triggered {
+                    launch_memory_test(screen, fd, cols, rows);
+                    code = CodeTracker::new();
+                    turbo_toggles = 0;
+                    redraw(screen, state);
+                }
                 continue;
             };
             pending.drain(..used);
+
+            let code_triggered = code.feed(SeqKey::from_input(input));
+            let is_turbo_step = is_turbo_toggle(input, state.current().setting);
+
             let effect = match input {
                 keys::Input::Key(key) => state.key(key),
                 keys::Input::Answer(yes) => state.answer(yes),
             };
+            if is_turbo_step {
+                turbo_toggles += 1;
+            }
+
             match effect {
                 Effect::Nothing => {}
                 Effect::Redraw => redraw(screen, state),
@@ -160,8 +189,131 @@ fn run_loop(
                 Effect::Save => return Outcome::Save,
                 Effect::Exit => return Outcome::Exit,
             }
+
+            if code_triggered || turbo_toggles >= 10 {
+                launch_memory_test(screen, fd, cols, rows);
+                code = CodeTracker::new();
+                turbo_toggles = 0;
+                redraw(screen, state);
+            }
         }
     }
+}
+
+/// Whether `input` is a Left or Right press landing on the Turbo row: one step towards the
+/// second door in, ten of these in one visit.
+fn is_turbo_toggle(input: keys::Input, current: Setting) -> bool {
+    matches!(
+        input,
+        keys::Input::Key(model::Key::Left | model::Key::Right)
+    ) && current == Setting::Turbo
+}
+
+/// One step of the way in: the setup screen's own arrow keys, or the plain `b` and `a` it
+/// otherwise ignores. Everything else is `Other`, which resets the sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SeqKey {
+    Up,
+    Down,
+    Left,
+    Right,
+    B,
+    A,
+    Other,
+}
+
+impl SeqKey {
+    fn from_input(input: keys::Input) -> SeqKey {
+        match input {
+            keys::Input::Key(model::Key::Up) => SeqKey::Up,
+            keys::Input::Key(model::Key::Down) => SeqKey::Down,
+            keys::Input::Key(model::Key::Left) => SeqKey::Left,
+            keys::Input::Key(model::Key::Right) => SeqKey::Right,
+            keys::Input::Key(_) | keys::Input::Answer(_) => SeqKey::Other,
+        }
+    }
+
+    fn from_byte(byte: u8) -> SeqKey {
+        match byte {
+            b'a' => SeqKey::A,
+            b'b' => SeqKey::B,
+            _ => SeqKey::Other,
+        }
+    }
+}
+
+/// Up Up Down Down Left Right Left Right b a: matched on the last ten keys, the classic way in.
+const CODE: [SeqKey; 10] = [
+    SeqKey::Up,
+    SeqKey::Up,
+    SeqKey::Down,
+    SeqKey::Down,
+    SeqKey::Left,
+    SeqKey::Right,
+    SeqKey::Left,
+    SeqKey::Right,
+    SeqKey::B,
+    SeqKey::A,
+];
+
+/// Tracks progress through `CODE`. Any key that is not the next one in the sequence resets
+/// progress to zero, unless it happens to be the sequence's own first key, in which case progress
+/// resets to one rather than being thrown away.
+struct CodeTracker {
+    progress: usize,
+}
+
+impl CodeTracker {
+    fn new() -> CodeTracker {
+        CodeTracker { progress: 0 }
+    }
+
+    /// Feeds one key in. Returns whether the sequence has just completed.
+    fn feed(&mut self, key: SeqKey) -> bool {
+        if key == CODE[self.progress] {
+            self.progress += 1;
+            if self.progress == CODE.len() {
+                self.progress = 0;
+                return true;
+            }
+        } else if key == CODE[0] {
+            self.progress = 1;
+        } else {
+            self.progress = 0;
+        }
+        false
+    }
+}
+
+/// Gathers what the Memory Test needs from the real machine and `state.json`, and plays one game
+/// on the screen and reader `run_loop` already has open.
+fn launch_memory_test(screen: &mut Screen, fd: i32, cols: u16, rows: u16) {
+    let mem_kb: u64 = crate::facts::gather()
+        .get("mem.kb")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let (best_kb, cleared_before) = match crate::paths::state_dir() {
+        Some(dir) => {
+            let state = crate::state::State::load(&dir);
+            (state.memory_test_best_kb, state.memory_test_cleared)
+        }
+        None => (0, false),
+    };
+    // The seed is the one place this door is allowed to be impure: the model it feeds is
+    // otherwise fully deterministic.
+    let seed = crate::clock::now_unix();
+    memtest::run(
+        screen,
+        memtest::Session {
+            fd,
+            cols,
+            rows,
+            mem_kb,
+            best_kb,
+            cleared_before,
+            seed,
+        },
+    );
 }
 
 /// Leaves the setup screen, draws the boot screen as the pending settings would make it, and
@@ -456,5 +608,88 @@ mod tests {
         for r in rows_for(&crate::config::Config::default()) {
             assert!(!r.help.is_empty(), "{} has no help", r.label);
         }
+    }
+
+    fn feed_all(code: &mut CodeTracker, keys: &[SeqKey]) -> bool {
+        let mut triggered = false;
+        for &k in keys {
+            triggered = code.feed(k);
+        }
+        triggered
+    }
+
+    #[test]
+    fn the_exact_key_sequence_starts_the_game() {
+        let mut code = CodeTracker::new();
+        assert!(feed_all(&mut code, &CODE));
+    }
+
+    #[test]
+    fn a_broken_sequence_does_not_start_it() {
+        let mut code = CodeTracker::new();
+        let mut broken = CODE.to_vec();
+        broken[4] = SeqKey::Right; // Left, where the real sequence expects it, swapped out
+        assert!(!feed_all(&mut code, &broken));
+    }
+
+    #[test]
+    fn near_misses_reset_progress_rather_than_leaving_it_stuck() {
+        let mut code = CodeTracker::new();
+        // Up Up Down Down Left, then something else entirely, then the sequence proper.
+        assert!(!feed_all(
+            &mut code,
+            &[
+                SeqKey::Up,
+                SeqKey::Up,
+                SeqKey::Down,
+                SeqKey::Down,
+                SeqKey::Left,
+                SeqKey::Other,
+            ]
+        ));
+        assert!(feed_all(&mut code, &CODE));
+    }
+
+    #[test]
+    fn an_extra_key_before_the_sequence_does_not_stop_it_starting_fresh_right_after() {
+        let mut code = CodeTracker::new();
+        // One stray key, then the sequence proper: the stray does not linger.
+        assert!(!code.feed(SeqKey::Other));
+        assert!(feed_all(&mut code, &CODE));
+    }
+
+    #[test]
+    fn ten_turbo_toggles_start_it_but_nine_do_not() {
+        let toggle = keys::Input::Key(model::Key::Left);
+        for count in [9, 10] {
+            let mut turbo_toggles = 0u32;
+            for _ in 0..count {
+                if is_turbo_toggle(toggle, Setting::Turbo) {
+                    turbo_toggles += 1;
+                }
+            }
+            assert_eq!(turbo_toggles >= 10, count == 10, "count={count}");
+        }
+    }
+
+    #[test]
+    fn only_left_and_right_on_the_turbo_row_count_as_a_toggle() {
+        assert!(is_turbo_toggle(
+            keys::Input::Key(model::Key::Left),
+            Setting::Turbo
+        ));
+        assert!(is_turbo_toggle(
+            keys::Input::Key(model::Key::Right),
+            Setting::Turbo
+        ));
+        assert!(!is_turbo_toggle(
+            keys::Input::Key(model::Key::Left),
+            Setting::Flavour
+        ));
+        assert!(!is_turbo_toggle(
+            keys::Input::Key(model::Key::Up),
+            Setting::Turbo
+        ));
+        assert!(!is_turbo_toggle(keys::Input::Answer(true), Setting::Turbo));
     }
 }
