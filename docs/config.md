@@ -28,6 +28,7 @@ ignored too, so an old config file never breaks a new `bios`.
 | `animate` | boolean | `true` | Whether the first boot of the day is animated. Every other boot is drawn instantly |
 | `graphics` | string | `"auto"` | Whether the mascot image is shown: `"auto"` shows it where the terminal can draw images, `"off"` never shows it. The retired `"image"` and `"blocks"` values, and any unknown value, read as `"auto"` |
 | `checks` | boolean | `true` | Whether the health checks run: the findings shown on the boot screen, and the background refresh that feeds them |
+| `boot` | boolean | `true` | The master switch. `false` means a new tab prints nothing at all. `SPARKLEBIOS_BOOT=0` does the same for one shell, and still wins over this |
 | `project_dirs` | array of strings | `[]` | Where to look for your git repositories. The boot screen lists the three touched most recently, and `bios resume` takes you to the first. An empty array means the built-in list: `~/Code`, `~/code`, `~/Projects`, `~/projects`, `~/src`, `~/dev`, `~/Developer`, `~/repos`, `~/work` and `~/git` |
 
 ## Subcommands

@@ -288,6 +288,23 @@ fn preview_shows_the_memory_count_on_macos() {
 /// A streak of zero is not a streak, so the line is left out rather than printed as
 /// "Boot streak: 0 days", which reads as a broken counter. This can only be reached by an
 /// explicit `bios boot` before the shell hook has ever run: a hooked boot counts as day one.
+/// The master switch in the config file, the persistent twin of `SPARKLEBIOS_BOOT=0`. The hook
+/// path is the one that honours it: an explicit `bios boot` is a viewing command and still draws.
+#[test]
+fn boot_false_in_the_config_silences_the_hook() {
+    let home = tempfile::tempdir().unwrap();
+    let cfg = home.path().join("sparklebios");
+    std::fs::create_dir_all(&cfg).unwrap();
+    std::fs::write(cfg.join("config.toml"), "boot = false\n").unwrap();
+    bios()
+        .args(["boot", "--hook"])
+        .env("XDG_CONFIG_HOME", home.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
 #[test]
 fn the_streak_line_is_omitted_when_there_is_no_state_file_yet() {
     let state = tempfile::tempdir().unwrap();
@@ -1602,7 +1619,8 @@ fn config_reset_then_use_preserves_every_comment_and_key_order_and_reads_back_th
             "graphics",
             "checks",
             "project_dirs",
-            "sprinkles"
+            "sprinkles",
+            "boot"
         ]
     );
     assert!(contents.contains("flavour = \"sumo\""));

@@ -326,10 +326,15 @@ fn run_shell_boot(args: &BootArgs) {
         None => crate::state::State::default(),
     };
 
+    // Loaded before the decision because the master switch lives in it. One small TOML read,
+    // well inside the budget for deciding not to boot at all.
+    let config = crate::config::load(crate::paths::config_dir().as_deref());
+
     let inputs = crate::mode::BootInputs {
         stdout_is_tty: is_tty,
         term: env_var("TERM"),
         kill_switch: env_var("SPARKLEBIOS_BOOT"),
+        boot_enabled: config.boot,
         already_booted: env_var("SPARKLEBIOS_BOOTED").is_some(),
         now,
         today: today.clone(),
@@ -341,8 +346,6 @@ fn run_shell_boot(args: &BootArgs) {
     if decision == BootMode::Off {
         return;
     }
-
-    let config = crate::config::load(crate::paths::config_dir().as_deref());
 
     if decision == BootMode::Quiet {
         run_quiet_fail_line(&config, now, tty_file);

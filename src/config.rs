@@ -31,6 +31,8 @@ pub struct Config {
     pub project_dirs: Vec<String>,
     pub graphics: GraphicsPref,
     pub sprinkles: crate::sprinkles::Level,
+    /// The master switch. False means a new tab prints nothing at all.
+    pub boot: bool,
 }
 
 impl Default for Config {
@@ -42,6 +44,7 @@ impl Default for Config {
             project_dirs: Vec::new(),
             graphics: GraphicsPref::Auto,
             sprinkles: crate::sprinkles::Level::Off,
+            boot: true,
         }
     }
 }
@@ -78,6 +81,10 @@ project_dirs = []
 # Sprinkles: optional effects during the once-a-day animated boot.
 # \"off\", \"light\" (text effects) or \"full\" (text effects and sound).
 sprinkles = \"off\"
+
+# The master switch. False means a new tab prints nothing at all, the same as setting
+# SPARKLEBIOS_BOOT=0, but for every shell rather than one.
+boot = true
 ";
 
 /// `<dir>/config.toml`.
@@ -137,6 +144,7 @@ struct RawConfig {
     project_dirs: Option<Vec<String>>,
     graphics: Option<String>,
     sprinkles: Option<String>,
+    boot: Option<bool>,
 }
 
 /// Missing, unreadable or invalid file yields the default. Unknown keys, including the retired
@@ -167,6 +175,7 @@ pub fn load(dir: Option<&std::path::Path>) -> Config {
             .as_deref()
             .map(crate::sprinkles::Level::parse)
             .unwrap_or(default.sprinkles),
+        boot: raw.boot.unwrap_or(default.boot),
     }
 }
 
@@ -245,6 +254,7 @@ mod tests {
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
+                boot: true,
             }
         );
     }
@@ -328,6 +338,7 @@ mod tests {
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
+                boot: true,
             }
         );
     }
@@ -355,6 +366,7 @@ mod tests {
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
+                boot: true,
             }
         );
     }

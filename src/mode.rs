@@ -13,6 +13,8 @@ pub struct BootInputs {
     pub stdout_is_tty: bool,
     pub term: Option<String>,
     pub kill_switch: Option<String>,
+    /// The config file's master switch. The environment variable still wins for one shell.
+    pub boot_enabled: bool,
     pub already_booted: bool,
     pub now: u64,
     pub today: String,
@@ -25,6 +27,7 @@ pub fn decide(i: &BootInputs) -> BootMode {
     let off = !i.stdout_is_tty
         || i.term.as_deref() == Some("dumb")
         || i.kill_switch.as_deref() == Some("0")
+        || !i.boot_enabled
         || i.already_booted;
     if off {
         return BootMode::Off;
@@ -53,6 +56,7 @@ mod tests {
             stdout_is_tty: true,
             term: Some("xterm-ghostty".into()),
             kill_switch: None,
+            boot_enabled: true,
             already_booted: false,
             now: 1_000_000,
             today: "2026-09-19".into(),
