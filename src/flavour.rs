@@ -51,7 +51,6 @@ const LUCHADOR_TOML: &str = include_str!("../flavours/luchador.toml");
 const YETI_TOML: &str = include_str!("../flavours/yeti.toml");
 const RACCOON_TOML: &str = include_str!("../flavours/raccoon.toml");
 const WIZARD_TOML: &str = include_str!("../flavours/wizard.toml");
-const CAVEMAN_TOML: &str = include_str!("../flavours/caveman.toml");
 
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -137,7 +136,7 @@ fn validate(raw: RawFlavour) -> Result<Flavour, String> {
 }
 
 /// Built-in flavours, in roster order: unicorn, sumo, ninja, viking, luchador, yeti, raccoon,
-/// wizard, caveman. A built-in that fails to parse is skipped.
+/// wizard. A built-in that fails to parse is skipped.
 pub fn builtins() -> Vec<Flavour> {
     [
         UNICORN_TOML,
@@ -148,7 +147,6 @@ pub fn builtins() -> Vec<Flavour> {
         YETI_TOML,
         RACCOON_TOML,
         WIZARD_TOML,
-        CAVEMAN_TOML,
     ]
     .into_iter()
     .filter_map(|src| parse(src).ok())
@@ -256,10 +254,7 @@ quips = ["a", "b", "c"]
         let ids: Vec<String> = builtins().into_iter().map(|f| f.id).collect();
         assert_eq!(
             ids,
-            vec![
-                "unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon", "wizard",
-                "caveman"
-            ]
+            vec!["unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon", "wizard",]
         );
     }
 
@@ -476,10 +471,7 @@ quips = ["a", "b", "c"]
         let ids: Vec<String> = list(Some(dir.path())).into_iter().map(|f| f.id).collect();
         assert_eq!(
             ids,
-            vec![
-                "unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon", "wizard",
-                "caveman"
-            ]
+            vec!["unicorn", "sumo", "ninja", "viking", "luchador", "yeti", "raccoon", "wizard",]
         );
     }
 

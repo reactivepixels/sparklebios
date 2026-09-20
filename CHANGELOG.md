@@ -13,7 +13,7 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The last two health checks. Disk trend reports when the disk will be full at the rate it has actually been filling, from a fortnight of daily readings, and says nothing until it has three days to reason from. Battery health reports how much of its original capacity the battery still holds, once when it first drops below 80 percent and then only at each further ten point step, so it never becomes wallpaper. Every flavour has its own words for all five.
 - Three more health checks. Stale stashes reports work you put down in a git stash over a month ago and never picked up. Changed dotfiles reports a tracked dotfiles repository with uncommitted work in it. Runtime drift reports a repository that pins a version of node, rust, python or ruby that is not the one on your PATH. All three are cached and refreshed in the background like the others, and phrased per flavour.
 - The mascot also draws in iTerm2 and WezTerm, through their own inline image protocol. Ghostty and kitty keep using the Kitty graphics protocol, and the terminal is never asked which it speaks: the answer comes from the environment, so nothing on the boot path waits for a reply.
-- Two more mascots, `wizard` and `caveman`, bringing the roster to nine.
+- Another mascot, `wizard`, bringing the roster to eight.
 - `bios boot` typed by hand now always plays the full show, whatever the once-a-day and nested-shell rules would have said. Those still apply to the boot your shell runs, and an explicit run leaves the state file alone, so looking at the screen does not use up the day's show.
 - The design, the voice rulebook, the theme palettes and the roadmap.
 - The crate scaffold: the `bios` binary, its command surface, the zsh hook, and a panic policy that never lets an error reach your terminal.
@@ -46,6 +46,10 @@ the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `bios fetch`, the neofetch slot: one static screen with the mascot at full size, a column of facts (OS, shell, terminal, processor, memory, disk, flavour, Ghostty theme and boot streak), and a palette swatch of the terminal's own sixteen colours. A missing value simply omits its line.
 - Fast Linux fact probes (processor, memory, disk, OS, hostname, shell, measured shell start time), matching the same fact keys the macOS probes already fill, plus `bios init bash` and `bios init fish` alongside `bios init zsh`. Bash has no way to push keys typed during the boot show back onto the command line this early in shell startup, so it reads and discards them rather than faking it; fish's `commandline` does the same job zsh's `print -z` does.
 - Sprinkles: an optional shimmer, twinkle and beep for the daily boot. Off unless you ask.
+
+### Removed
+
+- The caveman has gone back to the cave. He may return.
 
 ### Fixed
 

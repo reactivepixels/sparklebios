@@ -87,7 +87,6 @@ bios use sumo            # make it permanent
 </p>
 
 <p align="center">
-  <img src="docs/assets/screen-caveman.png" alt="The caveman flavour booting in a terminal" width="49%">
 </p>
 
 | Flavour | The BIOS detects | It says things like |
@@ -100,7 +99,6 @@ bios use sumo            # make it permanent
 | `yeti` | Yeti: 1 found (blurry) | Footprint detected. Size 27. Not yours. |
 | `raccoon` | Trash: located (smells promising) | Hands washed. Evidence also washed. |
 | `wizard` | Hat: 1 found (pointy, load bearing) | Floppy drive A: transmuted. Now a toad. |
-| `caveman` | Fire: 1 found (do not touch) | Fire: on. Do not put laptop near fire. |
 
 A flavour is one TOML file and one sprite, so adding yours needs no Rust. See
 [docs/flavours.md](docs/flavours.md).
