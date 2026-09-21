@@ -238,7 +238,10 @@ impl Session {
                 &mut master,
                 std::ptr::null_mut::<libc::c_char>(),
                 std::ptr::null_mut::<libc::termios>(),
-                &mut ws,
+                // A raw pointer, not `&mut ws`: this argument is `*mut winsize` on macOS and
+                // `*const winsize` on Linux. A mutable reference satisfies both by coercion but
+                // clippy calls it an unnecessary `mut` on Linux, so name the pointer instead.
+                std::ptr::addr_of_mut!(ws),
             )
         };
         assert!(
