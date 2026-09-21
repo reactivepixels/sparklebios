@@ -30,6 +30,7 @@ What 0.1.0 ships, grouped by part.
 - Eight flavours ship: `unicorn` (the default), `sumo`, `ninja`, `viking`, `luchador`, `yeti`, `raccoon` and `wizard`, each with its own mascot, wording and quips.
 - `bios flavours`, `bios use <flavour>`, `bios boot --flavour <id>`.
 - `bios flavour new <id>` writes a starter flavour file, ready to boot before you have changed a word.
+- `bios use random: a different mascot each day, the same one in every tab, and never the same two days running.`
 
 ### Themes
 

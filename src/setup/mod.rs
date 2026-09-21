@@ -352,9 +352,17 @@ fn launch_memory_test(screen: &mut Screen, fd: i32, cols: u16, rows: u16) {
 fn preview(state: &State, screen: &mut Screen, fd: i32) {
     let flavour = value_for(state, Setting::Flavour)
         .and_then(|name| {
-            crate::flavour::list(crate::paths::user_flavours_dir().as_deref())
-                .into_iter()
-                .find(|f| f.name == name)
+            if name == "Random" {
+                crate::flavour::resolve(
+                    "random",
+                    crate::paths::user_flavours_dir().as_deref(),
+                    crate::clock::now_unix(),
+                )
+            } else {
+                crate::flavour::list(crate::paths::user_flavours_dir().as_deref())
+                    .into_iter()
+                    .find(|f| f.name == name)
+            }
         })
         .or_else(|| crate::flavour::find("unicorn", None));
     let Some(machine) = crate::machine::find("pc95", crate::paths::user_machines_dir().as_deref())
@@ -413,13 +421,18 @@ const HELP_TURBO: &str = "Does nothing. It never did. Saved anyway, so the promp
 /// value.
 fn rows_for(config: &crate::config::Config, turbo_on: bool) -> Vec<Row> {
     let user_dir = crate::paths::user_flavours_dir();
-    let flavours: Vec<String> = crate::flavour::list(user_dir.as_deref())
+    let mut flavours: Vec<String> = crate::flavour::list(user_dir.as_deref())
         .into_iter()
         .map(|f| f.name)
         .collect();
-    let current = crate::flavour::find(&config.flavour, user_dir.as_deref())
-        .map(|f| f.name)
-        .unwrap_or_else(|| "Unicorn".to_string());
+    flavours.push("Random".to_string());
+    let current = if config.flavour == "random" {
+        "Random".to_string()
+    } else {
+        crate::flavour::find(&config.flavour, user_dir.as_deref())
+            .map(|f| f.name)
+            .unwrap_or_else(|| "Unicorn".to_string())
+    };
     let flavour_at = flavours.iter().position(|n| *n == current).unwrap_or(0);
 
     // The active Ghostty theme is not ours to read, so the row starts on leaving it alone.
@@ -555,13 +568,19 @@ fn save_to(
 
     for (setting, value) in state.changes() {
         let wrote = match setting {
-            Setting::Flavour => match crate::flavour::list(user_dir.as_deref())
-                .into_iter()
-                .find(|f| f.name == value)
-            {
-                Some(f) => crate::config::set_flavour(dir, &f.id),
-                None => Ok(()),
-            },
+            Setting::Flavour => {
+                if value == "Random" {
+                    crate::config::set_flavour(dir, "random")
+                } else {
+                    match crate::flavour::list(user_dir.as_deref())
+                        .into_iter()
+                        .find(|f| f.name == value)
+                    {
+                        Some(f) => crate::config::set_flavour(dir, &f.id),
+                        None => Ok(()),
+                    }
+                }
+            }
             Setting::Mascot => crate::config::set_key(
                 dir,
                 "graphics",
@@ -743,7 +762,33 @@ mod tests {
         let flavours = rows.iter().find(|r| r.setting == Setting::Flavour).unwrap();
         assert!(flavours.values.contains(&"Unicorn".to_string()));
         assert!(flavours.values.contains(&"Raccoon".to_string()));
-        assert_eq!(flavours.values.len(), crate::flavour::builtins().len());
+        assert!(flavours.values.contains(&"Random".to_string()));
+        assert_eq!(flavours.values.len(), crate::flavour::builtins().len() + 1);
+    }
+
+    #[test]
+    fn the_flavour_row_starts_on_random_when_that_is_configured() {
+        let config = crate::config::Config {
+            flavour: "random".to_string(),
+            ..crate::config::Config::default()
+        };
+        let rows = rows_for(&config, false);
+        let flavours = rows.iter().find(|r| r.setting == Setting::Flavour).unwrap();
+        assert_eq!(flavours.value(), "Random");
+    }
+
+    #[test]
+    fn saving_random_from_the_flavour_row_writes_it_to_the_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = State::new(rows_for(&crate::config::Config::default(), false));
+        while state.current().setting != Setting::Flavour {
+            state.key(model::Key::Down);
+        }
+        while state.current().value() != "Random" {
+            state.key(model::Key::Right);
+        }
+        assert_eq!(save_to(dir.path(), None, None, None, None, &state), 0);
+        assert_eq!(crate::config::load(Some(dir.path())).flavour, "random");
     }
 
     #[test]

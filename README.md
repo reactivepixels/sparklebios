@@ -102,6 +102,9 @@ bios use sumo            # make it permanent
 A flavour is one TOML file and one sprite, so adding yours needs no Rust. See
 [docs/flavours.md](docs/flavours.md).
 
+`bios use random` boots a different one of them every day, the same one in
+every tab, and never the one from the day before.
+
 ## SETUP
 
 Every option lives in one blue screen, as nature intended.

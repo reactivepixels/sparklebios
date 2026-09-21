@@ -1034,6 +1034,138 @@ fn use_flavour_sumo_then_boot_preview_picks_it_up_and_use_reports_it() {
 }
 
 #[test]
+fn use_random_prints_the_exact_line_shape_naming_a_real_flavour() {
+    let config = tempfile::tempdir().unwrap();
+    let output = bios()
+        .args(["use", "random"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+    let first_line = stdout.lines().next().unwrap();
+    let today = first_line
+        .strip_prefix("Flavour : random (today: ")
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("unexpected first line: {first_line:?}"));
+    assert!(
+        sparklebios::flavour::builtins()
+            .iter()
+            .any(|f| f.id == today),
+        "{today} is not a known flavour"
+    );
+}
+
+/// The two invocations here are two separate `bios` processes: this is the "across two processes
+/// on the same date" half of the stability claim (the same-process half is
+/// `flavour::tests::resolve_random_is_stable_for_the_same_moment`).
+#[test]
+fn use_with_no_id_prints_the_same_first_line_when_random_is_configured() {
+    let config = tempfile::tempdir().unwrap();
+    let first = bios()
+        .args(["use", "random"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let first_line = String::from_utf8(first)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+
+    let second = bios()
+        .arg("use")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let second_stdout = String::from_utf8(second).unwrap();
+
+    assert_eq!(second_stdout, format!("{first_line}\n"));
+}
+
+#[test]
+fn flavours_lists_the_random_row_last_with_the_exact_text() {
+    bios()
+        .arg("flavours")
+        .assert()
+        .success()
+        .stdout(predicate::str::ends_with(
+            "random    A different one each day\n",
+        ));
+}
+
+#[test]
+fn boot_preview_with_flavour_random_shows_a_real_flavours_board_line() {
+    let output = bios()
+        .args(["boot", "--flavour", "random"])
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).unwrap();
+    assert!(
+        sparklebios::flavour::builtins()
+            .iter()
+            .any(|f| stdout.contains(&f.board)),
+        "no known flavour's board line appears in: {stdout}"
+    );
+}
+
+/// The correctness requirement the whole feature rests on: a boot screen and the shell hook baked
+/// into the same tab must never disagree about which flavour "random" means today.
+#[test]
+fn boot_and_the_shell_hook_agree_on_todays_random_pick() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["use", "random"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success();
+
+    let boot_out = bios()
+        .args(["boot", "--machine", "pc95"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let boot_stdout = String::from_utf8(boot_out).unwrap();
+
+    let hook_out = bios()
+        .args(["init", "zsh"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let hook_stdout = String::from_utf8(hook_out).unwrap();
+
+    let picked = sparklebios::flavour::builtins()
+        .into_iter()
+        .find(|f| boot_stdout.contains(&f.board))
+        .unwrap_or_else(|| panic!("boot screen did not show any known flavour's board line"));
+    let title = &picked.presence["title"];
+    assert!(
+        hook_stdout.contains(&format!("'{title}'")),
+        "the hook does not bake in {title}, the same flavour the boot screen drew"
+    );
+}
+
+#[test]
 fn theme_install_writes_every_theme_file() {
     let dir = tempfile::tempdir().unwrap();
     bios()
@@ -2283,6 +2415,21 @@ fn flavour_new_rejects_a_built_in_id_and_writes_nothing() {
         .failure()
         .code(1)
         .stderr("bios: unicorn is a built-in flavour. Pick another name.\n");
+    assert!(!config.path().join("sparklebios").exists());
+}
+
+/// `random` is reserved the same way a built-in name is: it means "a different mascot each day",
+/// not a real flavour a user could write and boot.
+#[test]
+fn flavour_new_rejects_the_reserved_random_id_and_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["flavour", "new", "random"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr("bios: random is a built-in flavour. Pick another name.\n");
     assert!(!config.path().join("sparklebios").exists());
 }
 

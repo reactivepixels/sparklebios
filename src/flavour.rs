@@ -183,6 +183,123 @@ pub fn is_builtin_id(id: &str) -> bool {
     builtins().iter().any(|f| f.id == id)
 }
 
+/// True for a built-in flavour's id, or for `"random"`: the one other id `bios flavour new` must
+/// never let a user claim. `flavour = "random"` means something else entirely (see `resolve`), so
+/// a real flavour written under that id would be unreachable at best and silently wrong at worst.
+pub fn is_reserved_id(id: &str) -> bool {
+    id == "random" || is_builtin_id(id)
+}
+
+/// `id`, resolved the way `flavour = "<id>"` in the config, or `--flavour <id>` on the command
+/// line, is: today's random pick (see `pick_random`) when `id` is `"random"`, otherwise exactly
+/// `find(id, user_dir)`. This is the one place `"random"` is recognised as meaning anything other
+/// than a literal, missing flavour id, so every caller that resolves a configured or explicitly
+/// requested flavour goes through this rather than `find` directly, and a tab's boot screen, its
+/// shell hook, `bios fetch` and the rest can never disagree about what "random" means right now.
+pub fn resolve(id: &str, user_dir: Option<&std::path::Path>, now: u64) -> Option<Flavour> {
+    if id == "random" {
+        let day = crate::clock::day_number(now as i64);
+        return pick_random(day, user_dir);
+    }
+    find(id, user_dir)
+}
+
+/// Today's pick for `flavour = "random"`: walks a shuffled permutation of every flavour `list`
+/// returns (built-ins plus user flavours), drawing a fresh permutation for each stretch of `n`
+/// consecutive days, where `n` is the candidate count (a "round"). Within a round every flavour
+/// appears exactly once, so there is no repeat and no uneven coverage inside a round; see
+/// `pick_index` for how the one remaining seam, a round boundary, is closed. `day` is a
+/// sequential day number in local time (see `clock::day_number`); nothing here is stored, so
+/// every process that computes the same day number from the same moment computes the same pick.
+/// `None` only when there is no flavour at all to choose from, which never happens for the
+/// shipped built-in roster.
+pub fn pick_random(day: i64, user_dir: Option<&std::path::Path>) -> Option<Flavour> {
+    let candidates = list(user_dir);
+    if candidates.is_empty() {
+        return None;
+    }
+    let index = pick_index(day, candidates.len());
+    candidates.into_iter().nth(index)
+}
+
+/// The index into a list of `n` candidates that `day` picks. `n` must be greater than 0.
+///
+/// `n == 1` always yields the only index, 0. `n == 2` alternates strictly: `day` modulo 2. For
+/// `n >= 3`, `day` is split into a round (`day.div_euclid(n)`) and a position within that round
+/// (`day.rem_euclid(n)`); each round shuffles `0..n` (see `shuffled`) and walks it position by
+/// position, so every index in the round turns up exactly once.
+///
+/// That leaves exactly one seam: a round's last position meeting the next round's first. The
+/// previous round's last pick is compared against this round's first, and if they match, this
+/// round's first two positions are swapped, before either is read: `pick_index` is stateless and
+/// recomputes `perm` from scratch on every call, so the fix has to be applied for every `pos` in
+/// the round, not only when `pos == 0`, or a later call asking for `pos == 1` would see the
+/// unswapped permutation and disagree with the earlier call that already returned the swapped
+/// `perm[0]`. That comparison uses `shuffled(round - 1, n)`'s own last element directly rather
+/// than recursing into this function for `round - 1`, and that is safe precisely because the
+/// swap above only ever touches positions 0 and 1: for `n >= 3` that never includes position
+/// `n - 1`, so a round's last element is always the same whether or not that round's own
+/// boundary fix ran. Breaking that invariant (for example widening the swap, or shrinking `n`
+/// below 3 while keeping it) would make the previous round's last element depend on this same
+/// fix, and the lookup below would need to recurse to stay correct.
+fn pick_index(day: i64, n: usize) -> usize {
+    if n <= 1 {
+        return 0;
+    }
+    if n == 2 {
+        return day.rem_euclid(2) as usize;
+    }
+    let n64 = n as i64;
+    let round = day.div_euclid(n64);
+    let pos = day.rem_euclid(n64) as usize;
+    let mut perm = shuffled(round, n);
+    let previous_last = shuffled(round - 1, n)[n - 1];
+    if perm[0] == previous_last {
+        perm.swap(0, 1);
+    }
+    perm[pos]
+}
+
+/// A deterministic Fisher-Yates shuffle of `0..n`, seeded from `round` alone, so the same round
+/// gives the same permutation on every platform and every run forever: no `std::collections`
+/// hasher and no real randomness, just `fnv1a32` over `round`'s bytes feeding a small xorshift
+/// generator.
+fn shuffled(round: i64, n: usize) -> Vec<usize> {
+    let mut perm: Vec<usize> = (0..n).collect();
+    // xorshift32 has one bad state, all zero bits, where it stalls forever; `| 1` keeps the
+    // seed away from it without otherwise touching the hash.
+    let mut state = fnv1a32(&round.to_le_bytes()) | 1;
+    for i in (1..n).rev() {
+        state = next_u32(state);
+        let j = (state as usize) % (i + 1);
+        perm.swap(i, j);
+    }
+    perm
+}
+
+/// One step of xorshift32. Never fed a zero state (see `shuffled`), so it never gets stuck.
+fn next_u32(state: u32) -> u32 {
+    let mut x = state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    x
+}
+
+/// FNV-1a, 32 bit: hand rolled rather than pulling in a crate for it (see the "no new
+/// dependencies" rule), the same algorithm `shell::hook_hash` uses for its own fingerprint,
+/// reimplemented here so this module does not have to reach into `shell` for ten lines of code.
+fn fnv1a32(bytes: &[u8]) -> u32 {
+    const OFFSET: u32 = 0x811c_9dc5;
+    const PRIME: u32 = 0x0100_0193;
+    let mut hash = OFFSET;
+    for &b in bytes {
+        hash ^= u32::from(b);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
+}
+
 /// The id rule for `bios flavour new`: lowercase letters, digits and hyphens, starting with a
 /// letter. Stricter than `valid_id` (which also allows an underscore or a leading digit), so that
 /// nothing that looks like a path, a hidden file or `..` can ever reach a join with the flavours
@@ -677,5 +794,138 @@ quips = ["a", "b", "c"]
         assert!(parse(&bad_key).is_err());
         let empty_value = format!("{MINIMAL}\n[findings]\nboot_order = \"\"\n");
         assert!(parse(&empty_value).is_err());
+    }
+
+    // --- random -----------------------------------------------------------------------------
+
+    #[test]
+    fn random_is_a_reserved_id_alongside_every_builtin() {
+        assert!(is_reserved_id("random"));
+        for f in builtins() {
+            assert!(is_reserved_id(&f.id));
+        }
+        assert!(!is_reserved_id("mine"));
+    }
+
+    #[test]
+    fn resolve_of_a_literal_id_is_exactly_find() {
+        assert_eq!(
+            resolve("sumo", None, 0).map(|f| f.id),
+            find("sumo", None).map(|f| f.id)
+        );
+        assert_eq!(resolve("nope", None, 0), None);
+    }
+
+    #[test]
+    fn resolve_random_is_stable_for_the_same_moment() {
+        let now = 1_700_000_000;
+        assert_eq!(resolve("random", None, now), resolve("random", None, now));
+        assert!(resolve("random", None, now).is_some());
+    }
+
+    #[test]
+    fn pick_random_is_stable_for_the_same_day() {
+        let a = pick_random(19_000, None);
+        let b = pick_random(19_000, None);
+        assert_eq!(a, b);
+        assert!(a.is_some());
+    }
+
+    /// How many consecutive day numbers the property tests below walk. Comfortably more than the
+    /// 4380 days (12 years) the shipped algorithm was simulated over to find the old bug.
+    const PROPERTY_DAYS: i64 = 20_000;
+
+    #[test]
+    fn pick_index_never_repeats_between_consecutive_days_for_every_roster_size() {
+        for n in 2..=12usize {
+            let mut previous = pick_index(0, n);
+            for day in 1..PROPERTY_DAYS {
+                let current = pick_index(day, n);
+                assert_ne!(
+                    previous,
+                    current,
+                    "n={n}: day {} repeated day {}'s pick",
+                    day,
+                    day - 1
+                );
+                previous = current;
+            }
+        }
+    }
+
+    #[test]
+    fn pick_index_covers_every_aligned_window_exactly_once_for_every_roster_size() {
+        for n in 2..=12usize {
+            let windows = (PROPERTY_DAYS / n as i64) as usize;
+            for w in 0..windows {
+                let start = w as i64 * n as i64;
+                let mut seen: Vec<bool> = vec![false; n];
+                for day in start..start + n as i64 {
+                    let index = pick_index(day, n);
+                    assert!(
+                        !seen[index],
+                        "n={n}: window starting at {start} picked index {index} twice"
+                    );
+                    seen[index] = true;
+                }
+                assert!(
+                    seen.iter().all(|&s| s),
+                    "n={n}: window starting at {start} missed an index"
+                );
+            }
+        }
+    }
+
+    /// The pair the shipped, now replaced, algorithm got wrong: both landed on `sumo`. Noon UTC
+    /// on each date, so the local calendar day matches in every timezone this runs in.
+    #[test]
+    fn regression_2026_02_01_and_2026_02_02_no_longer_repeat() {
+        let day_one = crate::clock::day_number(1_769_947_200);
+        let day_two = crate::clock::day_number(1_770_033_600);
+        assert_eq!(day_two, day_one + 1);
+        let pick_one = pick_random(day_one, None).unwrap();
+        let pick_two = pick_random(day_two, None).unwrap();
+        assert_ne!(
+            pick_one.id, pick_two.id,
+            "2026-02-01 and 2026-02-02 picked the same flavour again"
+        );
+    }
+
+    #[test]
+    fn pick_random_includes_a_user_flavour_in_its_candidates() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("mine.toml"),
+            MINIMAL.replace("\"t1\"", "\"mine\""),
+        )
+        .unwrap();
+        let ever_mine =
+            (0..PROPERTY_DAYS).any(|day| pick_random(day, Some(dir.path())).unwrap().id == "mine");
+        assert!(ever_mine, "the user flavour never came up over 20000 days");
+    }
+
+    #[test]
+    fn pick_index_of_a_single_candidate_is_always_zero() {
+        for day in [-100, -1, 0, 1, 100, 20_000] {
+            assert_eq!(pick_index(day, 1), 0);
+        }
+    }
+
+    #[test]
+    fn pick_index_of_two_candidates_alternates_strictly() {
+        for day in 0..PROPERTY_DAYS {
+            assert_eq!(pick_index(day, 2), (day.rem_euclid(2)) as usize);
+        }
+    }
+
+    #[test]
+    fn shuffled_is_a_valid_permutation_across_roster_sizes_and_rounds() {
+        for n in 1..=12usize {
+            for round in -5..5 {
+                let mut perm = shuffled(round, n);
+                perm.sort_unstable();
+                assert_eq!(perm, (0..n).collect::<Vec<_>>(), "n={n} round={round}");
+            }
+        }
     }
 }

@@ -126,11 +126,11 @@ pub fn render_screen(
     out
 }
 
-/// The flavour to draw the screen as: the same resolution rule `bios boot` uses, the configured
-/// flavour falling back to the built-in `unicorn`.
-fn resolve_flavour(config_flavour: &str) -> Option<crate::flavour::Flavour> {
+/// The flavour to draw the screen as: the same resolution rule `bios boot` uses, `"random"`
+/// included, the configured flavour falling back to the built-in `unicorn`.
+fn resolve_flavour(config_flavour: &str, now: u64) -> Option<crate::flavour::Flavour> {
     let dir = crate::paths::user_flavours_dir();
-    crate::flavour::find(config_flavour, dir.as_deref())
+    crate::flavour::resolve(config_flavour, dir.as_deref(), now)
         .or_else(|| crate::flavour::find("unicorn", dir.as_deref()))
 }
 
@@ -170,7 +170,7 @@ fn theme_display(raw: &str) -> String {
 /// `bios fetch`: gathers the real facts and prints the screen once. Never panics outward.
 pub fn run() -> i32 {
     let config = crate::config::load(crate::paths::config_dir().as_deref());
-    let flavour = resolve_flavour(&config.flavour);
+    let flavour = resolve_flavour(&config.flavour, crate::clock::now_unix());
 
     let mut facts = crate::facts::gather();
     if let Some(kb) = facts.get("mem.kb").and_then(|v| v.parse::<u64>().ok()) {

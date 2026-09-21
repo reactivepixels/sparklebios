@@ -287,6 +287,7 @@ pub fn run() -> i32 {
             for flavour in crate::flavour::list(crate::paths::user_flavours_dir().as_deref()) {
                 println!("{:<10}{}", flavour.id, flavour.name);
             }
+            println!("{:<10}A different one each day", "random");
             0
         }
         Command::Use(args) => use_flavour(args),
@@ -437,9 +438,10 @@ fn print_cache(cache: &crate::cache::Cache) {
 /// already follow.
 fn init(shell: shell::Shell) -> i32 {
     let config = resolve_ultra_config(crate::config::load(crate::paths::config_dir().as_deref()));
-    let flavour = crate::flavour::find(
+    let flavour = crate::flavour::resolve(
         &config.flavour,
         crate::paths::user_flavours_dir().as_deref(),
+        crate::clock::now_unix(),
     );
     let mascot = mascot_for(flavour.as_ref(), shell.wrap());
     let turbo = turbo_on();
@@ -577,9 +579,10 @@ fn say(args: SayCliArgs) -> i32 {
 /// a prompt command must never be able to break a prompt.
 fn prompt() -> i32 {
     let config = crate::config::load(crate::paths::config_dir().as_deref());
-    let flavour = crate::flavour::find(
+    let flavour = crate::flavour::resolve(
         &config.flavour,
         crate::paths::user_flavours_dir().as_deref(),
+        crate::clock::now_unix(),
     );
     let mascot = mascot_for(flavour.as_ref(), shell::Wrap::None);
     if mascot.placement.is_empty() {
@@ -597,9 +600,10 @@ fn presence_line(event: &str, slots: &[(&str, &str)]) -> Option<String> {
     if !config.presence {
         return None;
     }
-    let flavour = crate::flavour::find(
+    let flavour = crate::flavour::resolve(
         &config.flavour,
         crate::paths::user_flavours_dir().as_deref(),
+        crate::clock::now_unix(),
     )?;
     crate::presence::line(&flavour, event, slots)
 }
@@ -633,7 +637,9 @@ fn use_flavour(args: UseCliArgs) -> i32 {
     };
 
     if let Some(id) = &args.id {
-        if crate::flavour::find(id, crate::paths::user_flavours_dir().as_deref()).is_none() {
+        let known = id == "random"
+            || crate::flavour::find(id, crate::paths::user_flavours_dir().as_deref()).is_some();
+        if !known {
             eprintln!("bios: no flavour called {id}. Try: bios flavours");
             return 1;
         }
@@ -643,13 +649,19 @@ fn use_flavour(args: UseCliArgs) -> i32 {
     }
 
     let config = crate::config::load(Some(&dir));
-    let flavour_id = crate::flavour::find(
-        &config.flavour,
-        crate::paths::user_flavours_dir().as_deref(),
-    )
-    .map(|f| f.id)
-    .unwrap_or_else(|| "unicorn".to_string());
-    println!("Flavour : {flavour_id}");
+    let user_dir = crate::paths::user_flavours_dir();
+    if config.flavour == "random" {
+        let today_id =
+            crate::flavour::resolve("random", user_dir.as_deref(), crate::clock::now_unix())
+                .map(|f| f.id)
+                .unwrap_or_else(|| "unicorn".to_string());
+        println!("Flavour : random (today: {today_id})");
+    } else {
+        let flavour_id = crate::flavour::find(&config.flavour, user_dir.as_deref())
+            .map(|f| f.id)
+            .unwrap_or_else(|| "unicorn".to_string());
+        println!("Flavour : {flavour_id}");
+    }
     if args.id.is_some() {
         if let Some(line) = presence_line("switched", &[]) {
             println!("{line}");
@@ -669,7 +681,7 @@ fn flavour_new(id: &str) -> i32 {
         );
         return 1;
     }
-    if crate::flavour::is_builtin_id(id) {
+    if crate::flavour::is_reserved_id(id) {
         eprintln!("bios: {id} is a built-in flavour. Pick another name.");
         return 1;
     }

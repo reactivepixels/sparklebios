@@ -128,7 +128,7 @@ pub const TEMPLATE: &str = "\
 # a file that cannot be read or parsed is ignored rather than reported, because
 # nothing on the boot path is allowed to complain.
 
-# Which personality boots. Run `bios flavours` for the roster.
+# Which personality boots. \"random\" is a different one each day. Run `bios flavours` for the roster.
 flavour = \"unicorn\"
 
 # Whether the first boot of the day is animated. Every other boot is drawn

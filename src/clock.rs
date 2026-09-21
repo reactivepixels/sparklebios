@@ -33,6 +33,14 @@ pub fn day_string(unix_secs: i64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// A sequential day number in local time: the same fixed epoch `days_from_civil` counts from,
+/// applied to the local calendar date for `unix_secs`. Two moments on the same local day always
+/// give the same number, and consecutive local days are always one apart.
+pub fn day_number(unix_secs: i64) -> i64 {
+    let (year, month, day) = local_ymd(unix_secs);
+    days_from_civil(year, month, day)
+}
+
 /// The day the calendar chip is on the run against: 2038-01-19, the last day the classic signed
 /// 32-bit unix clock can name before it wraps.
 const Y2038_YEAR: i32 = 2038;

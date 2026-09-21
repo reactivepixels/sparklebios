@@ -123,6 +123,17 @@ When you like it, `bios use <id>` makes it the one that boots every time. If
 the file already exists, or the id names a built-in flavour, `bios flavour
 new` refuses rather than overwrite anything.
 
+## Random
+
+`bios use random` (or `flavour = "random"` in `config.toml`) picks a
+different one of the flavours above every day, built-ins and any user
+flavours alike. The pick changes at midnight, not per tab: every `bios`
+command derives it fresh from today's date rather than storing it, so a boot
+screen and the shell hook baked into a tab opened the same day always agree
+on which flavour it is. It never repeats the flavour it picked yesterday.
+`random` is a reserved id: `bios flavour new random` refuses, the same way a
+built-in name does.
+
 ## Commands
 
 ```

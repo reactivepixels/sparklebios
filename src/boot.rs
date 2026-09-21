@@ -282,15 +282,17 @@ fn memory_count_sound_for(
 }
 
 /// Resolves the flavour to use: the explicit id when given and known, else the configured one,
-/// else the built-in `unicorn`. `None` only if even `unicorn` cannot be found, which never
+/// else the built-in `unicorn`. Either one may be `"random"`, resolved to today's pick (see
+/// `flavour::resolve`) as of `now`. `None` only if even `unicorn` cannot be found, which never
 /// happens for the shipped built-ins.
 fn resolve_flavour(
     explicit: Option<&str>,
     config_flavour: &str,
+    now: u64,
 ) -> Option<crate::flavour::Flavour> {
     let dir = crate::paths::user_flavours_dir();
     let id = explicit.unwrap_or(config_flavour);
-    crate::flavour::find(id, dir.as_deref())
+    crate::flavour::resolve(id, dir.as_deref(), now)
         .or_else(|| crate::flavour::find("unicorn", dir.as_deref()))
 }
 
@@ -365,7 +367,7 @@ fn run_preview(args: &BootArgs) {
         }
     }
 
-    let flavour = resolve_flavour(args.flavour.as_deref(), &config.flavour);
+    let flavour = resolve_flavour(args.flavour.as_deref(), &config.flavour, now);
     if let Some(f) = &flavour {
         crate::flavour::apply(f, &mut facts);
     }
@@ -488,7 +490,7 @@ fn run_shell_boot(args: &BootArgs) {
         }
     }
 
-    let flavour = resolve_flavour(None, &config.flavour);
+    let flavour = resolve_flavour(None, &config.flavour, now);
     if let Some(f) = &flavour {
         crate::flavour::apply(f, &mut facts);
     }
@@ -572,7 +574,7 @@ fn run_quiet_fail_line(config: &crate::config::Config, now: u64, mut target: std
             for (key, value) in &finding.facts {
                 facts.insert(key, value.clone());
             }
-            let flavour = resolve_flavour(None, &config.flavour);
+            let flavour = resolve_flavour(None, &config.flavour, now);
             if let Some(f) = &flavour {
                 crate::flavour::apply(f, &mut facts);
             }
