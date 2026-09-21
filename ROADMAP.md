@@ -19,7 +19,7 @@ this is in [docs/design.md](docs/design.md).
 - **neigh**, the rainbow pipe
 - **stable**: a unicorn that lives in your prompt, with commit streaks and opinions about your commands
 - Exit code theatre
-- **Horn Check**, a second game
+- **Horn Check**, a game
 
 ## Flavour wishlist
 

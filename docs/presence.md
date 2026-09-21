@@ -30,7 +30,9 @@ rides on the finish line changes.
 
 1. **Tab title.** The window title becomes `{title} {cwd}`, for example
    `SHINOBI-0 ~/Code/sparklebios`, with `$HOME` shown as `~`. Set on every
-   prompt, skipped on `TERM=dumb` and `TERM=linux`. Config key: `title`.
+   prompt. In zsh and bash it is skipped on `TERM=dumb` and `TERM=linux`. In
+   fish it goes through `fish_title`, so fish decides where a title is worth
+   setting. Config key: `title`.
 2. **The mascot in the prompt.** `SPARKLEBIOS_MASCOT` holds what goes in
    front of your prompt. Put it there and it costs only a `printf` of a
    string the shell already holds.
