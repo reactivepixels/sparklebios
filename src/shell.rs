@@ -542,7 +542,6 @@ fn ultra_block_zsh(vars: &UltraVars) -> String {
     }
 
     _sparklebios_ultra_exit() {
-      _sparklebios_ultra_sound power_off
       [[ -t 1 ]] || return 0
       [[ -n "${NO_COLOR:-}" ]] && return 0
       # $COLUMNS and $LINES are not guaranteed to still be set by zshexit, so this falls back
@@ -809,7 +808,6 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
     fi
 
     _sparklebios_ultra_exit() {
-      _sparklebios_ultra_sound power_off
       [[ -t 1 ]] || return 0
       [[ -n "${NO_COLOR:-}" ]] && return 0
       local mid=$(( ${LINES:-24} / 2 )) cols=${COLUMNS:-80} w bar i
@@ -1036,7 +1034,6 @@ fn ultra_block_fish(vars: &UltraVars) -> String {
         end
 
         function _sparklebios_ultra_exit --on-event fish_exit
-            _sparklebios_ultra_sound power_off
             test -t 1; or return 0
             test -n "$NO_COLOR"; and return 0
             set -l mid (math "floor($LINES / 2)")
@@ -1514,5 +1511,28 @@ mod tests {
         );
         assert!(out.contains("_sparklebios_ultra_sound_on=0"));
         assert!(out.contains("Saving to CMOS... done."));
+    }
+
+    /// The shutdown click didn't feel authentic, so it no longer plays; the shutdown visual
+    /// (the collapsing line `_sparklebios_ultra_exit` draws) stays. `power_off` remains one of
+    /// the sixteen generated sounds (see `sound.rs`), just never called from here, the same as
+    /// `floppy_seek`, `hdd_chatter`, `hdd_spindown` and `modem`.
+    #[test]
+    fn an_ultra_hook_never_calls_power_off() {
+        let cfg = crate::config::Config {
+            sprinkles: crate::sprinkles::Level::Ultra,
+            ..config()
+        };
+        for shell in [Shell::Zsh, Shell::Bash, Shell::Fish] {
+            let out = render_hook(shell, &cfg, Some(&ninja()), Mascot::none(), true, "/sounds");
+            assert!(
+                !out.contains("power_off"),
+                "{shell:?} still calls power_off:\n{out}"
+            );
+            assert!(
+                out.contains("_sparklebios_ultra_exit"),
+                "{shell:?} lost the shutdown visual:\n{out}"
+            );
+        }
     }
 }

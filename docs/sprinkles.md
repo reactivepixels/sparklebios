@@ -12,7 +12,7 @@ One key, `sprinkles`, four values:
 | `off` (default) | No sprinkle code runs. |
 | `light` | Text effects: a shimmer, a twinkle, and (only on a streak milestone) a stripe sweep. |
 | `full` | Everything `light` does, plus sound: the POST beep and the beep codes. |
-| `ultra` | Everything `full` does, plus a whole day of it: a jingle at start, the finish beep, folder remarks on `cd`, a shutdown click, and a screensaver. See [ultra](#ultra) below. |
+| `ultra` | Everything `full` does, plus a whole day of it: a jingle at start, the finish beep, folder remarks on `cd`, and a screensaver. See [ultra](#ultra) below. |
 
 Set it with `bios sprinkles <off\|light\|full\|ultra>`, or run `bios
 sprinkles` with no argument to print the level currently in effect.
@@ -79,18 +79,17 @@ something you just did rather than arriving out of nowhere:
 
 - `post_ok`, `post_fail`: the finish line's own beep, good and bad, once a
   command has run long enough to earn one (see "A long command" below).
-- `power_off`: the shutdown click, played once the shell exits.
 - `jingle_<flavour>`: one small tune per built-in flavour (`unicorn`, `sumo`,
   `ninja`, `viking`, `luchador`, `yeti`, `raccoon`, `wizard`), played once a
   shell starts. A flavour you write yourself gets no jingle.
 
-The other four are generated the same way and kept in the cache, but nothing
+The other five are generated the same way and kept in the cache, but nothing
 triggers them right now: `floppy_seek`, `hdd_chatter`, `hdd_spindown` and
 `modem` all used to fire while you were in the middle of something else, at
-random or on an everyday command like `cd` or `git status`, and that is
-exactly the sort of unprompted noise that got pulled. Wiring one back to a
-trigger is a small change to the shell hook, not a re-port, if it's ever
-wanted again.
+random or on an everyday command like `cd` or `git status`, and `power_off`
+used to fire on the way out, once the shell exited. That is exactly the sort
+of unprompted noise that got pulled. Wiring one back to a trigger is a small
+change to the shell hook, not a re-port, if it's ever wanted again.
 
 Playing one costs nothing running per prompt beyond starting the system's
 own audio player, detached: `afplay` on macOS, or the first of `pw-play`,
@@ -167,9 +166,8 @@ than failing. See [config.md](config.md).
   `RPROMPT="$SPARKLEBIOS_STATUS"` in zsh, `PS1="$PS1\$SPARKLEBIOS_STATUS"` in
   bash, or a `fish_right_prompt` function that prints `$SPARKLEBIOS_STATUS`
   in fish.
-- **A power-off**: on exit, the shutdown sound plays, and, on a real
-  terminal, a bright line at the middle row shrinks to nothing over about
-  300ms.
+- **A power-off**: on exit, on a real terminal, a bright line at the middle
+  row shrinks to nothing over about 300ms.
 
 ### One command
 
