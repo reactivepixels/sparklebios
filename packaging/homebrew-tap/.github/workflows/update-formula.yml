@@ -1,0 +1,108 @@
+# This workflow belongs in reactivepixels/homebrew-tap, at
+# .github/workflows/update-formula.yml. It is staged here in the sparklebios
+# repository, under packaging/homebrew-tap/, until that tap repository
+# exists. It does not run in this repository and will not show up in its
+# Actions tab.
+#
+# It carries no secrets. Every 30 minutes (and on demand) it asks the public
+# GitHub releases API for the latest sparklebios release, compares that
+# against the version already in Formula/sparklebios.rb, and if there is a
+# new one, rewrites the formula with the real checksums and pushes using the
+# tap repository's own built in GITHUB_TOKEN, since a repository's own token
+# can already write to that same repository.
+name: Update formula
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Check sparklebios for a new release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Look up the latest sparklebios release
+        id: latest
+        run: |
+          release=$(curl -sf https://api.github.com/repos/reactivepixels/sparklebios/releases/latest)
+          tag=$(echo "$release" | jq -r '.tag_name')
+          sums_url=$(echo "$release" | jq -r '.assets[] | select(.name == "SHA256SUMS") | .browser_download_url')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sums_url=$sums_url" >> "$GITHUB_OUTPUT"
+
+      - name: Compare against the formula already in the tap
+        id: compare
+        run: |
+          current=$(grep -m1 'version "' Formula/sparklebios.rb | sed -E 's/.*version "([^"]+)".*/\1/')
+          latest="${{ steps.latest.outputs.tag }}"
+          latest="${latest#v}"
+          if [ "$current" = "$latest" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch the checksums for the new release
+        if: steps.compare.outputs.current == 'false'
+        run: curl -sfL "${{ steps.latest.outputs.sums_url }}" -o SHA256SUMS
+
+      - name: Rewrite the formula with the new version and checksums
+        if: steps.compare.outputs.current == 'false'
+        run: |
+          version="${{ steps.latest.outputs.tag }}"
+          version="${version#v}"
+          arm_mac=$(grep "aarch64-apple-darwin.tar.gz" SHA256SUMS | cut -d' ' -f1)
+          intel_mac=$(grep "x86_64-apple-darwin.tar.gz" SHA256SUMS | cut -d' ' -f1)
+          arm_linux=$(grep "aarch64-unknown-linux-gnu.tar.gz" SHA256SUMS | cut -d' ' -f1)
+          intel_linux=$(grep "x86_64-unknown-linux-gnu.tar.gz" SHA256SUMS | cut -d' ' -f1)
+          python3 - "$version" "$arm_mac" "$intel_mac" "$arm_linux" "$intel_linux" <<'PY'
+          import re
+          import sys
+
+          version, arm_mac, intel_mac, arm_linux, intel_linux = sys.argv[1:6]
+          shas = {
+              "aarch64-apple-darwin": arm_mac,
+              "x86_64-apple-darwin": intel_mac,
+              "aarch64-unknown-linux-gnu": arm_linux,
+              "x86_64-unknown-linux-gnu": intel_linux,
+          }
+
+          with open("Formula/sparklebios.rb") as f:
+              content = f.read()
+
+          content, n = re.subn(r'version "[^"]+"', f'version "{version}"', content, count=1)
+          if n != 1:
+              sys.exit("could not find the version line")
+
+          for target, sha in shas.items():
+              pattern = re.compile(
+                  r'(url "[^"]*-' + re.escape(target) + r'\.tar\.gz")\n(\s*)sha256 "[0-9a-f]{64}"'
+              )
+              content, n = pattern.subn(
+                  lambda m: f'{m.group(1)}\n{m.group(2)}sha256 "{sha}"',
+                  content,
+              )
+              if n != 1:
+                  sys.exit(f"expected one sha256 line after the {target} url, found {n}")
+
+          with open("Formula/sparklebios.rb", "w") as f:
+              f.write(content)
+          PY
+          rm -f SHA256SUMS
+
+      - name: Commit and push
+        if: steps.compare.outputs.current == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/sparklebios.rb
+          git commit -m "sparklebios ${{ steps.latest.outputs.tag }}"
+          git push
