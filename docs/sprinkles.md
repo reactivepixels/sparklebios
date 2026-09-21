@@ -12,7 +12,7 @@ One key, `sprinkles`, four values:
 | `off` (default) | No sprinkle code runs. |
 | `light` | Text effects: a shimmer, a twinkle, and (only on a streak milestone) a stripe sweep. |
 | `full` | Everything `light` does, plus sound: the POST beep and the beep codes. |
-| `ultra` | Everything `full` does, plus a whole day of it: sound, reactions to everyday commands, a screensaver and a defrag screen. See [ultra](#ultra) below. |
+| `ultra` | Everything `full` does, plus a whole day of it: sound, reactions to everyday commands and a screensaver. See [ultra](#ultra) below. |
 
 Set it with `bios sprinkles <off\|light\|full\|ultra>`, or run `bios
 sprinkles` with no argument to print the level currently in effect.
@@ -130,7 +130,10 @@ than failing. See [config.md](config.md).
   commit` that succeeds, and the screen filling with falling glyphs for 1.2
   seconds after a `git push` that succeeds, or for 1.6 seconds the first
   time a command that failed last time succeeds and took two seconds or
-  more.
+  more. The rain waits between frames without spawning anything in zsh, and
+  in bash from version 4 on; bash 3.2 (what macOS ships) and fish have no
+  fractional builtin wait, so both spawn a `sleep` per frame, with fish
+  capped at twenty frames for that reason.
 - **A status flag**, `SPARKLEBIOS_STATUS`: `ERR 0x<hex>` after a command
   fails (Ctrl-C excluded), plus ` 66MHz` while Turbo is on, empty otherwise.
   Nothing is added to your prompt for you; wire it in yourself, for example
@@ -141,10 +144,10 @@ than failing. See [config.md](config.md).
   terminal, a bright line at the middle row shrinks to nothing over about
   300ms.
 
-### Two commands
+### One command
 
-`ultra` also ships two screens of their own, run by hand rather than
-triggered automatically:
+`ultra` also ships a screen of its own, run by hand rather than triggered
+automatically:
 
 - `bios screensaver` bounces the SPARKLEBIOS wordmark around the screen, DVD
   style, until you press a key. Where the terminal speaks the Kitty graphics
@@ -152,17 +155,10 @@ triggered automatically:
   WezTerm, whose own image protocol has no way to move an already sent image
   without resending the whole picture, it draws the wordmark as six colour
   text instead.
-- `bios defrag [PATH]` draws the classic block grid defragmenter over a
-  directory's real disk usage: one colour per top level entry, for the six
-  largest, filled in over about two seconds, then a legend and
-  `Defragmentation complete. It was never fragmented. Any key.` An empty
-  directory just prints `Nothing here to defragment. Cluster map clean.`
-  Under `NO_COLOR` each block shows the entry's own digit, 1 to 6, instead
-  of a colour.
 
-Both need a terminal at least 80 columns by 24 rows, the same floor `bios
-setup` uses, and both hand the terminal back exactly as they found it, on
-Esc, Ctrl-C, or even a panic.
+It needs a terminal at least 80 columns by 24 rows, the same floor `bios
+setup` uses, and it hands the terminal back exactly as it found it, on Esc,
+Ctrl-C, or even a panic.
 
 ### Muting it
 

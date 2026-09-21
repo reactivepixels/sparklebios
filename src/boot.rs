@@ -157,6 +157,11 @@ fn animate_enabled(
 /// `sprinkles` is only ever read once the show actually animates: the static path never spends a
 /// cycle on it. Returns the raw bytes read from `key_fd` while the show played, in order, empty
 /// when it did not animate or nothing was typed.
+///
+/// `memory_count_sound`, when `Some`, is forwarded to `show::play` unchanged, and so only ever
+/// takes effect when this call actually animates; the static path drops it silently, the same way
+/// it never spends a cycle on `sprinkles`. See `memory_count_sound_for` for the one place that
+/// decides whether to build one at all.
 #[allow(clippy::too_many_arguments)]
 fn play_or_render(
     machine: &crate::machine::Machine,
@@ -172,6 +177,7 @@ fn play_or_render(
     out: &mut dyn Write,
     key_fd: Option<i32>,
     sprinkles: crate::sprinkles::Level,
+    memory_count_sound: Option<crate::show::MemoryCountSound>,
 ) -> Vec<u8> {
     if animate {
         let guard = key_fd.and_then(crate::tty::RawGuard::new);
@@ -194,6 +200,7 @@ fn play_or_render(
                 key_fd,
                 1.0,
                 sprinkles,
+                memory_count_sound,
             )
             .typed;
         }
@@ -242,6 +249,34 @@ fn resolve_sprinkles(
     sprinkles_env: Option<&str>,
 ) -> crate::sprinkles::Level {
     crate::sprinkles::resolve(config_sprinkles, sprinkles_env)
+}
+
+/// The ULTRA `memory_count` sound to hand `show::play`, or `None`. Built only for a real `Full`
+/// daily boot (`decision`) at sprinkles `ultra`: never for Fast or Quiet, and never for a preview,
+/// since `run_preview` never calls this at all. Beyond that gate, it still needs somewhere to find
+/// a player: `player_env` (the raw `$SPARKLEBIOS_ULTRA_PLAYER`, set by the shell hook) must name
+/// one, or there is no sound. The boot path never searches `PATH` for one itself (that search
+/// exists for a person to run deliberately, in `bios sprinkles --check`, not for every boot to pay
+/// for), so an unset or empty value reads the same as no player at all. `sounds_dir` must resolve
+/// too, to find `memory_count.wav` in; taken as a parameter, like `player_env`, rather than read
+/// from `paths::sounds_dir()` directly, so both can be fed fixed values in a test.
+fn memory_count_sound_for(
+    decision: BootMode,
+    sprinkles: crate::sprinkles::Level,
+    player_env: Option<&str>,
+    sounds_dir: Option<std::path::PathBuf>,
+    volume: f64,
+) -> Option<crate::show::MemoryCountSound> {
+    if decision != BootMode::Full || sprinkles != crate::sprinkles::Level::Ultra {
+        return None;
+    }
+    let player = player_env.filter(|p| !p.is_empty())?;
+    let sound_path = sounds_dir?.join("memory_count.wav");
+    Some(crate::show::MemoryCountSound {
+        player: player.to_string(),
+        sound_path,
+        volume,
+    })
 }
 
 /// Resolves the flavour to use: the explicit id when given and known, else the configured one,
@@ -344,6 +379,8 @@ fn run_preview(args: &BootArgs) {
     let (year, month, day) = crate::clock::local_ymd(now as i64);
     let calendar_line = calendar_line_for(&machine, true, year, month, day);
     let mut stdout = std::io::stdout();
+    // A preview is never the real daily boot, so the ULTRA memory count sound never plays here,
+    // whatever the level: see `memory_count_sound_for`, which only `run_shell_boot` calls.
     play_or_render(
         &machine,
         &facts,
@@ -358,6 +395,7 @@ fn run_preview(args: &BootArgs) {
         &mut stdout,
         key_fd,
         sprinkles,
+        None,
     );
 
     refresh_if_stale(cache.as_ref(), now);
@@ -454,6 +492,13 @@ fn run_shell_boot(args: &BootArgs) {
         config.sprinkles,
         env_var("SPARKLEBIOS_SPRINKLES").as_deref(),
     );
+    let memory_count_sound = memory_count_sound_for(
+        decision,
+        sprinkles,
+        env_var("SPARKLEBIOS_ULTRA_PLAYER").as_deref(),
+        crate::paths::sounds_dir(),
+        config.ultra_volume,
+    );
     // A calendar line only ever replaces the quip on a Full boot: Fast and Quiet stay exactly as
     // they were before calendar lines existed. Quiet never reaches this far (it returned above).
     let (year, month, day) = crate::clock::local_ymd(now as i64);
@@ -472,6 +517,7 @@ fn run_shell_boot(args: &BootArgs) {
         &mut tty_file,
         key_fd,
         sprinkles,
+        memory_count_sound,
     );
     write_stdout_bytes(&crate::show::filter_typed(&typed));
 
@@ -603,6 +649,66 @@ mod tests {
         );
     }
 
+    // --- The ULTRA memory count sound ------------------------------------------------------------
+
+    #[test]
+    fn memory_count_sound_only_builds_for_a_full_boot_at_ultra_with_a_player_and_a_sounds_dir() {
+        use crate::sprinkles::Level;
+        let dir = Some(std::path::PathBuf::from("/sounds"));
+        let sound = memory_count_sound_for(BootMode::Full, Level::Ultra, Some("afplay"), dir, 0.5)
+            .expect("Full, ultra, a player and a sounds dir should build a sound");
+        assert_eq!(sound.player, "afplay");
+        assert_eq!(
+            sound.sound_path,
+            std::path::Path::new("/sounds/memory_count.wav")
+        );
+        assert_eq!(sound.volume, 0.5);
+    }
+
+    #[test]
+    fn memory_count_sound_is_none_off_full_never_mind_the_level() {
+        use crate::sprinkles::Level;
+        let dir = || Some(std::path::PathBuf::from("/sounds"));
+        for decision in [BootMode::Fast, BootMode::Quiet, BootMode::Off] {
+            assert!(
+                memory_count_sound_for(decision, Level::Ultra, Some("afplay"), dir(), 0.5)
+                    .is_none(),
+                "{decision:?} must never play the memory count sound"
+            );
+        }
+    }
+
+    #[test]
+    fn memory_count_sound_is_none_below_ultra_even_on_a_full_boot() {
+        use crate::sprinkles::Level;
+        let dir = || Some(std::path::PathBuf::from("/sounds"));
+        for level in [Level::Off, Level::Light, Level::Full] {
+            assert!(
+                memory_count_sound_for(BootMode::Full, level, Some("afplay"), dir(), 0.5).is_none(),
+                "{level:?} must never play the memory count sound"
+            );
+        }
+    }
+
+    #[test]
+    fn memory_count_sound_is_none_with_no_player() {
+        use crate::sprinkles::Level;
+        let dir = Some(std::path::PathBuf::from("/sounds"));
+        assert!(
+            memory_count_sound_for(BootMode::Full, Level::Ultra, None, dir.clone(), 0.5).is_none()
+        );
+        assert!(memory_count_sound_for(BootMode::Full, Level::Ultra, Some(""), dir, 0.5).is_none());
+    }
+
+    #[test]
+    fn memory_count_sound_is_none_with_no_sounds_dir() {
+        use crate::sprinkles::Level;
+        assert!(
+            memory_count_sound_for(BootMode::Full, Level::Ultra, Some("afplay"), None, 0.5)
+                .is_none()
+        );
+    }
+
     // --- Calendar lines -------------------------------------------------------------------------
 
     /// This is the single place Full/preview vs Fast/Quiet is decided for a calendar line:
@@ -687,6 +793,7 @@ mod tests {
             &mut fast_out,
             None,
             crate::sprinkles::Level::Off,
+            None,
         );
 
         let expected = crate::render::render_static(

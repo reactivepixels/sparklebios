@@ -26,6 +26,16 @@ impl Shell {
         }
     }
 
+    /// The name `bios init` and the generated hook itself use for this shell: `bios init
+    /// {name}`, and the value `{{HOOK_SHELL}}` stamps into `SPARKLEBIOS_HOOK_SHELL`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Shell::Zsh => "zsh",
+            Shell::Bash => "bash",
+            Shell::Fish => "fish",
+        }
+    }
+
     pub fn wrap(self) -> Wrap {
         match self {
             Shell::Zsh => Wrap::Zsh,
@@ -192,6 +202,25 @@ pub fn render_hook(
     turbo: bool,
     sounds_dir: &str,
 ) -> String {
+    let body = render_hook_body(shell, config, flavour, mascot, turbo, sounds_dir);
+    body.replace(
+        "{{HOOK_HASH}}",
+        &shell.quote(&hook_hash(shell, config, flavour)),
+    )
+    .replace("{{HOOK_SHELL}}", &shell.quote(shell.name()))
+}
+
+/// Everything `render_hook` does except stamping the fingerprint on: shared with `hook_hash`,
+/// which needs the same body but must never call `render_hook` itself, or the two would call
+/// each other forever (`render_hook` needs a hash, `hook_hash` would need a hook).
+fn render_hook_body(
+    shell: Shell,
+    config: &crate::config::Config,
+    flavour: Option<&crate::flavour::Flavour>,
+    mascot: Mascot,
+    turbo: bool,
+    sounds_dir: &str,
+) -> String {
     let quote = |s: &str| shell.quote(s);
     let say = |event: &str| -> String {
         flavour
@@ -228,6 +257,42 @@ pub fn render_hook(
         shell,
         &ultra_block(shell, config, flavour, turbo, sounds_dir),
     )
+}
+
+/// A short fingerprint of what `bios init <shell>` would print right now: the same shell
+/// template, the same config values and the same flavour lines `render_hook_body` splices into
+/// it. A hook stamps this into `SPARKLEBIOS_HOOK` when it is generated (see `render_hook`), so
+/// something later, in a shell that might be holding a stale or hand-pasted copy, can call this
+/// again and compare: unequal means today's config or flavour would print a different hook.
+///
+/// Turbo and the sounds directory are runtime state, baked into a real hook only because
+/// `render_hook` happens to be generating one at that moment, not settings a person edits in
+/// `config.toml`; a mascot placement depends on which terminal a hook happens to be printed
+/// into, not on config either. All three are pinned to their "nothing special" value here, the
+/// same one `render` (not `render_hook`) uses, so the hash tracks only what a person actually
+/// controls: template text, config, flavour.
+pub fn hook_hash(
+    shell: Shell,
+    config: &crate::config::Config,
+    flavour: Option<&crate::flavour::Flavour>,
+) -> String {
+    let body = render_hook_body(shell, config, flavour, Mascot::none(), false, "");
+    format!("{:08x}", fnv1a32(body.as_bytes()))
+}
+
+/// FNV-1a, 32 bit. Hand rolled rather than pulling in a crate for it (see the "no new
+/// dependencies" rule): small, dependency free, and stable forever, which a hash meant to be
+/// compared between two separately built binaries has to be. `std`'s own `Hash`/`Hasher` make no
+/// such promise across compiler or std versions, which is exactly wrong for this job.
+fn fnv1a32(bytes: &[u8]) -> u32 {
+    const OFFSET: u32 = 0x811c9dc5;
+    const PRIME: u32 = 0x0100_0193;
+    let mut hash = OFFSET;
+    for &b in bytes {
+        hash ^= u32::from(b);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
 }
 
 /// Every template has exactly one `eval {{ULTRA}}` line (see `shell/init.*`): a plain `eval` of
@@ -347,14 +412,22 @@ fn ultra_block_zsh(vars: &UltraVars) -> String {
     typeset -g _sparklebios_ultra_cmd="" _sparklebios_ultra_last_failed=""
     zmodload zsh/datetime zsh/zselect 2>/dev/null
 
+    # SPARKLEBIOS_ULTRA_PLAYER is exported once, here, so `bios boot` can play its own sound
+    # (the memory-count tick) without a filesystem search of its own: that search is exactly
+    # what the boot path's time budget rules out. Left unexported, not empty, when nothing was
+    # found, so the boot side can tell "no hook installed" from "hook installed, no player".
     if (( $+commands[afplay] )); then
       _sparklebios_ultra_play() { exec afplay -v "$_sparklebios_ultra_volume" "$1" }
+      export SPARKLEBIOS_ULTRA_PLAYER=afplay
     elif (( $+commands[pw-play] )); then
       _sparklebios_ultra_play() { exec pw-play "$1" }
+      export SPARKLEBIOS_ULTRA_PLAYER=pw-play
     elif (( $+commands[paplay] )); then
       _sparklebios_ultra_play() { exec paplay "$1" }
+      export SPARKLEBIOS_ULTRA_PLAYER=paplay
     elif (( $+commands[aplay] )); then
       _sparklebios_ultra_play() { exec aplay -q "$1" }
+      export SPARKLEBIOS_ULTRA_PLAYER=aplay
     else
       _sparklebios_ultra_play() { : }
     fi
@@ -395,7 +468,8 @@ fn ultra_block_zsh(vars: &UltraVars) -> String {
       [[ -t 1 ]] || return 0
       [[ -n "${NO_COLOR:-}" ]] && return 0
       local -F secs=${1:-1.5}
-      local cols=$COLUMNS rows=$LINES i x y c
+      # Same reasoning as `_sparklebios_ultra_exit`: fall back rather than assume these are set.
+      local cols=${COLUMNS:-80} rows=${LINES:-24} i x y c
       local -a glyphs=('*' '+' '.' 'o' '•' '✦' '✧') colours=(1 3 2 6 4 5)
       local -a drops
       local out
@@ -497,10 +571,19 @@ fn ultra_block_zsh(vars: &UltraVars) -> String {
       _sparklebios_ultra_sound power_off
       [[ -t 1 ]] || return 0
       [[ -n "${NO_COLOR:-}" ]] && return 0
-      local mid=$(( LINES / 2 )) w
+      # $COLUMNS and $LINES are not guaranteed to still be set by zshexit, so this falls back
+      # to a normal terminal's size rather than assuming they are still there.
+      local cols=${COLUMNS:-80} lines=${LINES:-24}
+      local mid=$(( lines / 2 )) w
+      # The `(l: : :)` padding flag repeats its pad character onto whatever parameter follows
+      # it; with none named, that is an implicit, never-declared parameter, which is exactly
+      # what `parameter not set` under `setopt nounset` was seeing (found sourcing the real
+      # hook in a pty with nounset on, only at zshexit, never earlier in the same session).
+      # Naming an explicitly empty local here is what stops that parameter from being implicit.
+      local blank=''
       print -n '\e[?25l\e[2J'
-      for w in $COLUMNS $(( COLUMNS * 2 / 3 )) $(( COLUMNS / 3 )) $(( COLUMNS / 8 )) 1; do
-        print -n "\e[${mid};1H\e[2K\e[${mid};$(( (COLUMNS - w) / 2 + 1 ))H\e[97m${(l:$w::━:)}\e[0m"
+      for w in $cols $(( cols * 2 / 3 )) $(( cols / 3 )) $(( cols / 8 )) 1; do
+        print -n "\e[${mid};1H\e[2K\e[${mid};$(( (cols - w) / 2 + 1 ))H\e[97m${(l:$w::━:)blank}\e[0m"
         zselect -t 5
       done
       zselect -t 8
@@ -549,14 +632,22 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
     _sparklebios_ultra_last_failed=""
     _sparklebios_ultra_prev_pwd="$PWD"
 
+    # SPARKLEBIOS_ULTRA_PLAYER is exported once, here, so `bios boot` can play its own sound
+    # (the memory-count tick) without a filesystem search of its own: that search is exactly
+    # what the boot path's time budget rules out. Left unexported, not empty, when nothing was
+    # found, so the boot side can tell "no hook installed" from "hook installed, no player".
     if command -v afplay >/dev/null 2>&1; then
       _sparklebios_ultra_play() { exec afplay -v "$_sparklebios_ultra_volume" "$1"; }
+      export SPARKLEBIOS_ULTRA_PLAYER=afplay
     elif command -v pw-play >/dev/null 2>&1; then
       _sparklebios_ultra_play() { exec pw-play "$1"; }
+      export SPARKLEBIOS_ULTRA_PLAYER=pw-play
     elif command -v paplay >/dev/null 2>&1; then
       _sparklebios_ultra_play() { exec paplay "$1"; }
+      export SPARKLEBIOS_ULTRA_PLAYER=paplay
     elif command -v aplay >/dev/null 2>&1; then
       _sparklebios_ultra_play() { exec aplay -q "$1"; }
+      export SPARKLEBIOS_ULTRA_PLAYER=aplay
     else
       _sparklebios_ultra_play() { :; }
     fi
@@ -568,6 +659,28 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
       _sparklebios_ultra_play "$f" >/dev/null 2>&1 &
       disown 2>/dev/null
     }
+
+    if (( ${BASH_VERSINFO[0]:-0} >= 4 )); then
+      # bash 4 added a fractional `-t` and the `-N` count, so the animation's frame wait can
+      # be a builtin instead of forking `sleep` around thirty times per rain. The FIFO is
+      # opened for both read and write by this same shell, so it never sees EOF and nothing
+      # ever writes to it either: `read` can only return by timing out. Reading from it,
+      # rather than from stdin, means a keystroke typed ahead of the rain is never eaten by
+      # the wait.
+      _sparklebios_ultra_wait_fifo="${TMPDIR:-/tmp}/.sparklebios-wait.$$"
+      if mkfifo -m 600 "$_sparklebios_ultra_wait_fifo" 2>/dev/null && exec 8<>"$_sparklebios_ultra_wait_fifo"; then
+        rm -f "$_sparklebios_ultra_wait_fifo"
+        _sparklebios_ultra_frame_wait() { read -t "$1" -N 1 -u 8; }
+      else
+        _sparklebios_ultra_frame_wait() { sleep "$1"; }
+      fi
+      unset _sparklebios_ultra_wait_fifo
+    else
+      # bash 3.2, what macOS ships, has neither `-N` nor a fractional `-t`: there is no
+      # builtin way here to wait less than a whole second, so this one external process per
+      # frame stays, for that version only.
+      _sparklebios_ultra_frame_wait() { sleep "$1"; }
+    fi
 
     _sparklebios_ultra_maybe() {
       local chance=${1:-$_sparklebios_ultra_chance}
@@ -592,17 +705,29 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
     _sparklebios_ultra_rain() {
       [[ -t 1 ]] || return 0
       [[ -n "${NO_COLOR:-}" ]] && return 0
-      local secs=${1:-1} cols=${COLUMNS:-80} rows=${LINES:-24} i x y c glyph out start
+      local secs=${1:-1} cols=${COLUMNS:-80} rows=${LINES:-24} i x y c glyph out
       local glyphs=('*' '+' '.' 'o' '•' '✦' '✧') colours=(1 3 2 6 4 5)
       local -a dropx dropy
       local ndrops=$(( cols / 3 ))
       (( ndrops < 1 )) && ndrops=1
+      # `(( ))` is integer only, so comparing a running clock against a fractional duration
+      # like the "1.2" and "1.6" both real callers pass used to error on the very first check
+      # ("invalid arithmetic operator") and exit before drawing a single frame: this has never
+      # actually run in bash. Converting the duration to hundredths of a second and counting
+      # frames against the fixed 0.04s frame wait below keeps 1.2s exactly 1.2s and 1.6s
+      # exactly 1.6s without needing any float arithmetic at all.
+      local whole=${secs%%.*} frac=${secs#*.}
+      [[ $secs == "$whole" ]] && frac=0
+      frac="${frac}00"
+      frac=${frac:0:2}
+      local hundredths=$(( 10#$whole * 100 + 10#$frac ))
+      local frame frames=$(( hundredths / 4 ))
+      (( frames < 1 )) && frames=1
       printf '\e[?1049h\e[?25l\e[2J'
       for (( i = 0; i < ndrops; i++ )); do
         dropx[i]=$(( RANDOM % cols + 1 )); dropy[i]=$(( RANDOM % rows + 1 ))
       done
-      start=$SECONDS
-      while (( SECONDS - start < secs )); do
+      for (( frame = 0; frame < frames; frame++ )); do
         out=""
         for (( i = 0; i < ndrops; i++ )); do
           x=${dropx[i]}; y=${dropy[i]}
@@ -615,7 +740,7 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
           dropx[i]=$x; dropy[i]=$y
         done
         printf '%b' "$out"
-        sleep 0.04
+        _sparklebios_ultra_frame_wait 0.04
       done
       printf '\e[2J\e[?25h\e[?1049l'
     }
@@ -703,6 +828,13 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
         _sparklebios_ultra_prev_pwd="$PWD"
         _sparklebios_ultra_chpwd
       fi
+
+      # PROMPT_COMMAND is one semicolon-joined string, so whichever of this project's own
+      # hooks runs next reads this function's own exit status as its `$?`, not the user's
+      # command's: returning the status this function opened with, rather than falling off
+      # the end with whatever its last `if` happened to return, is what keeps that intact
+      # regardless of chain order.
+      return "$ultra_status"
     }
 
     _sparklebios_ultra_prior_debug="$(trap -p DEBUG)"
@@ -785,14 +917,23 @@ fn ultra_block_fish(vars: &UltraVars) -> String {
         set -g _sparklebios_ultra_last_failed 0
         set -g _sparklebios_ultra_started 0
 
+        # SPARKLEBIOS_ULTRA_PLAYER is exported once, here, so `bios boot` can play its own
+        # sound (the memory-count tick) without a filesystem search of its own: that search is
+        # exactly what the boot path's time budget rules out. Left unexported, not empty, when
+        # nothing was found, so the boot side can tell "no hook installed" from "hook
+        # installed, no player".
         if command -v afplay >/dev/null 2>&1
             set -g _sparklebios_ultra_player afplay -v $_sparklebios_ultra_volume
+            set -gx SPARKLEBIOS_ULTRA_PLAYER afplay
         else if command -v pw-play >/dev/null 2>&1
             set -g _sparklebios_ultra_player pw-play
+            set -gx SPARKLEBIOS_ULTRA_PLAYER pw-play
         else if command -v paplay >/dev/null 2>&1
             set -g _sparklebios_ultra_player paplay
+            set -gx SPARKLEBIOS_ULTRA_PLAYER paplay
         else if command -v aplay >/dev/null 2>&1
             set -g _sparklebios_ultra_player aplay -q
+            set -gx SPARKLEBIOS_ULTRA_PLAYER aplay
         else
             set -g _sparklebios_ultra_player ""
         end
@@ -846,9 +987,14 @@ fn ultra_block_fish(vars: &UltraVars) -> String {
                 set -a dropy (random 1 $rows)
             end
             set -l start (date +%s)
+            # fish has no builtin wait either, so each frame here still forks `sleep`; capped
+            # at twenty frames (0.8s at the 0.04s frame wait below) so a long rain never
+            # spawns more than that, whatever $secs asks for.
+            set -l frame 0
             while true
                 set -l now (date +%s)
                 test (math "$now - $start") -lt $secs; or break
+                test $frame -lt 20; or break
                 for i in (seq 1 $ndrops)
                     set -l x $dropx[$i]
                     set -l y $dropy[$i]
@@ -867,6 +1013,7 @@ fn ultra_block_fish(vars: &UltraVars) -> String {
                     set dropy[$i] $y
                 end
                 sleep 0.04
+                set frame (math "$frame + 1")
             end
             printf '\e[2J\e[?25h\e[?1049l'
         end

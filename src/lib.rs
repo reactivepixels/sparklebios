@@ -7,7 +7,6 @@ pub mod checks;
 pub mod cli;
 pub mod clock;
 pub mod config;
-pub mod defrag;
 pub mod facts;
 pub mod fetch;
 pub mod flavour;

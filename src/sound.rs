@@ -258,6 +258,21 @@ fn resonator(impulses: &HashMap<usize, f64>, freq: f64, decay_ms: f64, n: usize)
     out
 }
 
+/// The strictly regular ticks behind `memory_count`: one impulse a `RATE / rate_hz` samples,
+/// starting at 0, for as long as `n` allows. Unlike `hdd_knocks`' irregular bursts, a memory
+/// count on a real machine ticked at a steady rate as it counted up, so these land on an exact
+/// metronome instead of a random one, and draw nothing from `Rng`.
+fn metronome(n: usize, rate_hz: f64) -> HashMap<usize, f64> {
+    let mut ticks = HashMap::new();
+    let interval = (RATE / rate_hz) as usize;
+    let mut i = 0usize;
+    while i < n {
+        ticks.insert(i, 1.0);
+        i += interval;
+    }
+    ticks
+}
+
 /// The irregular bursts of head seeks behind `hdd_chatter`: an impulse of a random
 /// strength every few tens of milliseconds, in groups, with a longer gap between groups.
 fn hdd_knocks(rng: &mut Rng, n_hdd: usize) -> HashMap<usize, f64> {
@@ -399,14 +414,17 @@ fn jingles() -> Vec<Jingle> {
     ]
 }
 
-/// The fifteen ULTRA sounds, in the order `gen_sounds.py` writes them, as raw (unpolished,
-/// unquantised) samples. A single `Rng` seeded at 4 is threaded through in that order,
-/// because `hdd_chatter`'s seek knocks and the hiss under `modem` and `power_off` draw
-/// from the same random stream in the reference script (its `random.seed(1985)` at the
-/// top is dead: nothing draws from it before the seed is reset to 4 for the knocks).
+/// The sixteen ULTRA sounds, in the order they are written, as raw (unpolished, unquantised)
+/// samples. A single `Rng` seeded at 4 is threaded through in that order, because
+/// `hdd_chatter`'s seek knocks and the hiss under `modem` and `power_off` draw from the same
+/// random stream in the reference script (its `random.seed(1985)` at the top is dead: nothing
+/// draws from it before the seed is reset to 4 for the knocks). Fifteen of the sixteen are a
+/// straight port of `gen_sounds.py`; `memory_count` has no Python reference (it was added after
+/// the port), draws nothing from `Rng`, and is otherwise built the same way as everything else
+/// here.
 fn recipes() -> Vec<(String, Vec<f64>)> {
     let mut rng = Rng::new(4);
-    let mut out = Vec::with_capacity(15);
+    let mut out = Vec::with_capacity(16);
 
     out.push(("post_ok".to_string(), square(1000.0, 140.0, 0.35, 0.5)));
     out.push((
@@ -427,6 +445,21 @@ fn recipes() -> Vec<(String, Vec<f64>)> {
         seek.extend(silence(14.0));
     }
     out.push(("floppy_seek".to_string(), seek));
+
+    // Memory count: the audible tick a real machine's RAM count made as it counted up, 32 clicks
+    // a second for 1.2 seconds, each one a 4ms decay through a 2400 Hz resonator, the drive's
+    // case ringing at a much higher, thinner pitch than `hdd_chatter`'s. Quiet: normalised to a
+    // peak of 0.2 rather than the louder sounds' 0.45, since it plays under a whole second of
+    // digits changing, not on its own.
+    let n_memory = (RATE * 1.2) as usize;
+    let ticks = metronome(n_memory, 32.0);
+    let clicks = resonator(&ticks, 2400.0, 4.0, n_memory);
+    let peak = clicks.iter().fold(0.0_f64, |m, &v| m.max(v.abs()));
+    let peak = if peak == 0.0 { 1.0 } else { peak };
+    out.push((
+        "memory_count".to_string(),
+        clicks.iter().map(|&v| 0.2 * v / peak).collect(),
+    ));
 
     let n_hdd = (RATE * 6.0) as usize;
     let knocks = hdd_knocks(&mut rng, n_hdd);
@@ -506,11 +539,12 @@ fn wav_bytes(pcm: &[i16]) -> Vec<u8> {
     bytes
 }
 
-/// The fifteen sound names, in the order `recipes()` produces them.
-const SOUND_NAMES: [&str; 15] = [
+/// The sixteen sound names, in the order `recipes()` produces them.
+const SOUND_NAMES: [&str; 16] = [
     "post_ok",
     "post_fail",
     "floppy_seek",
+    "memory_count",
     "hdd_chatter",
     "hdd_spindown",
     "modem",
@@ -527,9 +561,10 @@ const SOUND_NAMES: [&str; 15] = [
 
 /// Synthesises every ULTRA sound that is missing from `dir` and writes it as a 16 bit
 /// mono 44.1kHz WAV file, leaving whatever is already there untouched. Creates `dir` if
-/// needed. When every sound already exists this is just fifteen `stat` calls; otherwise
-/// it is cheap enough (well under 200ms for all fifteen) to call on every `bios init` and
-/// every `bios sprinkles ultra`.
+/// needed. When every sound already exists this is just sixteen `stat` calls; otherwise
+/// it is cheap enough (well under 200ms for all sixteen) to call on every `bios init`
+/// directly, and on every `bios sprinkles ultra` and every `bios setup` save that leaves
+/// sprinkles at ultra through `cli::ensure_ultra_sounds`, the one function those two share.
 pub fn ensure(dir: &Path) -> io::Result<()> {
     let already_have_everything = SOUND_NAMES
         .iter()
@@ -546,6 +581,33 @@ pub fn ensure(dir: &Path) -> io::Result<()> {
         std::fs::write(path, wav_bytes(&quantize(&raw)))?;
     }
     Ok(())
+}
+
+/// Starts `player` on the WAV file at `path`, detached (its own stdio, never waited on): the same
+/// shape the shell hook's own `_sparklebios_ultra_play` gives a player, so a sound started from
+/// inside the binary itself (the memory count, during a real Full boot) or from
+/// `bios sprinkles --check` behaves identically to one started from a running shell. `afplay`
+/// gets an explicit `-v volume`, matching the hook's own invocation of it; `aplay` gets `-q`;
+/// `pw-play` and `paplay` take just the path, exactly as the hook gives them. Never fails
+/// outward: a player that does not exist, a path that does not exist, or a spawn that cannot
+/// start are all silently a no-op, the tolerant rule every part of ULTRA sound follows.
+pub fn play_detached(player: &str, path: &Path, volume: f64) {
+    let mut command = std::process::Command::new(player);
+    match player {
+        "afplay" => {
+            command.arg("-v").arg(volume.to_string());
+        }
+        "aplay" => {
+            command.arg("-q");
+        }
+        _ => {}
+    }
+    let _ = command
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }
 
 #[cfg(test)]
@@ -567,9 +629,11 @@ mod tests {
     }
 
     // Samples pulled from a run of extras/ultra/gen_sounds.py (seed 1985, then reseeded to
-    // 4 for the knocks, exactly as the script does) at fixed offsets into each sound. If
-    // this test fails, the Rust port has drifted from the Python reference: fix the port,
-    // do not touch these numbers.
+    // 4 for the knocks, exactly as the script does) at fixed offsets into each sound, with one
+    // exception: `memory_count` has no Python reference (see `recipes`), so its numbers are
+    // pulled from this crate's own output instead, baked in the same way, so the recipe cannot
+    // silently drift even without a script to check it against. If this test fails, the Rust
+    // port has drifted from its reference: fix the recipe, do not touch these numbers.
     const CASES: &[(&str, &[(usize, i16)])] = &[
         (
             "post_ok",
@@ -614,6 +678,21 @@ mod tests {
                 (10313, 6674),
                 (12375, 6367),
                 (13613, 0),
+            ],
+        ),
+        (
+            "memory_count",
+            &[
+                (0, 1247),
+                (50, -4700),
+                (500, 363),
+                (1378, 1247),
+                (1379, 2900),
+                (15000, 3),
+                (25000, -1868),
+                (35000, -93),
+                (45000, 36),
+                (52919, 0),
             ],
         ),
         (
@@ -820,7 +899,7 @@ mod tests {
     }
 
     #[test]
-    fn fifteen_sounds_in_the_expected_order() {
+    fn sixteen_sounds_in_the_expected_order() {
         let names: Vec<_> = recipes().into_iter().map(|(n, _)| n.to_string()).collect();
         assert_eq!(
             names,
@@ -828,6 +907,7 @@ mod tests {
                 "post_ok",
                 "post_fail",
                 "floppy_seek",
+                "memory_count",
                 "hdd_chatter",
                 "hdd_spindown",
                 "modem",
@@ -858,7 +938,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_writes_fifteen_valid_wav_files_then_nothing_on_a_second_call() {
+    fn ensure_writes_sixteen_valid_wav_files_then_nothing_on_a_second_call() {
         let dir = tempfile::tempdir().unwrap();
         ensure(dir.path()).unwrap();
         let mut entries: Vec<_> = std::fs::read_dir(dir.path())
@@ -866,7 +946,7 @@ mod tests {
             .map(|e| e.unwrap().path())
             .collect();
         entries.sort();
-        assert_eq!(entries.len(), 15);
+        assert_eq!(entries.len(), 16);
         for entry in &entries {
             let bytes = std::fs::read(entry).unwrap();
             let (channels, sample_rate, bits_per_sample, data_len) = read_wav_header(&bytes);
@@ -891,7 +971,7 @@ mod tests {
     }
 
     #[test]
-    fn generating_all_fifteen_is_within_budget() {
+    fn generating_all_sixteen_is_within_budget() {
         let dir = tempfile::tempdir().unwrap();
         let start = std::time::Instant::now();
         ensure(dir.path()).unwrap();

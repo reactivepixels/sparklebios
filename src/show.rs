@@ -26,6 +26,19 @@ pub struct ShowOutcome {
     pub typed: Vec<u8>,
 }
 
+/// The ULTRA `memory_count` sound `play` is to start, detached, the moment the memory count's
+/// `Count` step begins. Built only by `boot::run_shell_boot`, and only for a real `Full` daily
+/// boot at sprinkles `ultra` with a player named and a sound file in place; see `play`'s own doc
+/// comment for the full gate. Everyone else hands `play` `None`.
+pub struct MemoryCountSound {
+    /// The player command named by `$SPARKLEBIOS_ULTRA_PLAYER`.
+    pub player: String,
+    /// `memory_count.wav`'s path in the ULTRA sounds directory.
+    pub sound_path: std::path::PathBuf,
+    /// The effective `ultra_volume`, passed straight to `sound::play_detached`.
+    pub volume: f64,
+}
+
 /// A test-only timeline of exactly what `play` wrote and exactly how long, nominally (before
 /// `speed`), it held between writes: every `write_bytes` call and every `wait_for_skip` call
 /// records itself here when `sim::record` is recording, so a test can measure the real frame
@@ -183,6 +196,13 @@ fn frames_for(step: &render::AnimatedStep) -> Vec<(&Vec<Span>, u64)> {
 /// only on a streak milestone, a stripe sweep across the streak line (`sprinkles::stripe_frame`).
 /// `Full` also beeps: once after the memory count, and three times, `sprinkles::BEEP_CODE_GAP_MS`
 /// apart, before the findings print, when one of them is a `fail`.
+///
+/// `memory_count_sound`, when `Some`, is started (`sound::play_detached`) the moment the memory
+/// count's `Count` step begins, and never touched again afterward: not waited on, not stopped
+/// early by a skip. `boot::run_shell_boot` is the only caller that ever builds one, and only for a
+/// real `Full` daily boot at sprinkles `ultra` with a player and a sound file to hand it; every
+/// other caller, including every test in this module, passes `None`, so the sound never plays for
+/// a preview, a Fast or Quiet boot, or anywhere `$SPARKLEBIOS_ULTRA_PLAYER` is unset.
 #[allow(clippy::too_many_arguments)]
 pub fn play(
     machine: &Machine,
@@ -196,6 +216,7 @@ pub fn play(
     key_fd: Option<i32>,
     speed: f32,
     sprinkles: sprinkles::Level,
+    mut memory_count_sound: Option<MemoryCountSound>,
 ) -> ShowOutcome {
     let row_geometry = render::row_geometry(
         machine,
@@ -305,6 +326,16 @@ pub fn play(
         } else {
             Vec::new()
         };
+
+        // The ULTRA memory count sound: started once, the moment this row's own `Count` step
+        // begins, and left to run to completion on its own (see `memory_count_sound`'s doc
+        // comment on `play`). `.take()` so a second `Count` step, were a machine ever to have
+        // one, would not start it twice.
+        if let AnimatedKind::Count { .. } = step.kind {
+            if let Some(sound) = memory_count_sound.take() {
+                crate::sound::play_detached(&sound.player, &sound.sound_path, sound.volume);
+            }
+        }
 
         let frames = frames_for(step);
         let mut elapsed_in_row: u64 = 0;
@@ -605,6 +636,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Off,
+            None,
         );
         resolve_rows(&buf)
     }
@@ -758,6 +790,7 @@ quip = true
                 None,
                 0.0,
                 sprinkles::Level::Off,
+                None,
             );
             let rows = resolve_rows(&buf);
             let expected =
@@ -790,6 +823,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Off,
+            None,
         );
         // The screen fill colour must never appear anywhere: a transparent painted screen never
         // emits a background SGR, and the mascot box, drawn as an actual image, never emits one
@@ -830,6 +864,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Off,
+            None,
         );
         let text = String::from_utf8_lossy(&buf);
         assert!(text.contains("Detecting Horn             ... \r"));
@@ -882,6 +917,7 @@ quip = true
             Some(read_fd),
             1000.0,
             sprinkles::Level::Off,
+            None,
         );
         assert_eq!(outcome.typed, b"x");
         let rows = resolve_rows(&buf);
@@ -1022,6 +1058,7 @@ quip = true
                 None,
                 0.0,
                 sprinkles::Level::Off,
+                None,
             );
 
             let mut baseline: Vec<u8> = Vec::new();
@@ -1067,6 +1104,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Light,
+            None,
         );
         let rows = resolve_rows(&buf);
         let expected = resolved_rows_of_render_static(&m, &facts, geometry, Some(&flavour), &[]);
@@ -1096,6 +1134,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Light,
+            None,
         );
         let text = String::from_utf8_lossy(&buf);
         assert!(text.contains("\x1b[97m"), "no shimmer highlight found");
@@ -1141,6 +1180,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Off,
+            None,
         );
         assert_eq!(apc_transmit_count(&off), 1);
         assert_apc_sequences_are_well_formed(&off);
@@ -1158,6 +1198,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Full,
+            None,
         );
         assert_eq!(
             apc_transmit_count(&full),
@@ -1207,6 +1248,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Light,
+            None,
         );
         let text = String::from_utf8_lossy(&buf);
         assert!(
@@ -1247,6 +1289,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Full,
+            None,
         );
         assert_eq!(buf_no_fail.iter().filter(|&&b| b == 0x07).count(), 1);
         assert_eq!(apc_transmit_count(&buf_no_fail), 1);
@@ -1267,6 +1310,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Full,
+            None,
         );
         assert_eq!(buf_fail.iter().filter(|&&b| b == 0x07).count(), 4);
         assert_eq!(apc_transmit_count(&buf_fail), 1);
@@ -1308,6 +1352,7 @@ quip = true
             Some(read_fd),
             1000.0,
             sprinkles::Level::Full,
+            None,
         );
         let text = String::from_utf8_lossy(&buf);
         assert!(!text.contains("\x1b[97m"));
@@ -1343,6 +1388,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Full,
+            None,
         );
         assert!(!String::from_utf8_lossy(&buf).contains("\x1b[97m"));
         assert!(!buf.contains(&0x07));
@@ -1375,6 +1421,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Light,
+            None,
         );
         let text = String::from_utf8_lossy(&buf);
         assert!(text.contains("\x1b[31m"), "no red in the rainbow sweep");
@@ -1398,6 +1445,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Light,
+            None,
         );
         assert!(!String::from_utf8_lossy(&buf2).contains("\x1b[31m"));
     }
@@ -1531,6 +1579,7 @@ quip = true
                 None,
                 0.0,
                 sprinkles::Level::Full,
+                None,
             );
         });
 
@@ -1670,6 +1719,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Off,
+            None,
         );
         let ordinary_rows = resolve_rows(&ordinary_buf);
 
@@ -1686,6 +1736,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Off,
+            None,
         );
         let calendar_rows = resolve_rows(&calendar_buf);
 
@@ -1753,6 +1804,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Off,
+            None,
         );
 
         let mut calendar_buf: Vec<u8> = Vec::new();
@@ -1768,6 +1820,7 @@ quip = true
             None,
             0.0,
             sprinkles::Level::Off,
+            None,
         );
 
         assert_eq!(

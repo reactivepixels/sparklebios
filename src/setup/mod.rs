@@ -519,16 +519,28 @@ fn save(state: &State) -> i32 {
         eprintln!("bios: cannot find a config directory");
         return 1;
     };
-    save_to(&dir, crate::paths::state_dir().as_deref(), state)
+    save_to(
+        &dir,
+        crate::paths::state_dir().as_deref(),
+        crate::paths::sounds_dir().as_deref(),
+        state,
+    )
 }
 
-/// `save`'s actual work, against explicit config and state directories rather than the real
-/// ones, so a test can point it at sandboxed directories instead of the user's own. Every row but
-/// Turbo writes into `dir`'s config file; Turbo writes into `state_dir`'s state file instead, the
-/// same flag `bios turbo` toggles, so a missing `state_dir` (no state directory could be found)
-/// silently skips that one write rather than erroring, the same way a missing config directory is
-/// handled everywhere else in this crate.
-fn save_to(dir: &std::path::Path, state_dir: Option<&std::path::Path>, state: &State) -> i32 {
+/// `save`'s actual work, against explicit config, state and sounds directories rather than the
+/// real ones, so a test can point it at sandboxed directories instead of the user's own. Every
+/// row but Turbo writes into `dir`'s config file; Turbo writes into `state_dir`'s state file
+/// instead, the same flag `bios turbo` toggles, so a missing `state_dir` (no state directory
+/// could be found) silently skips that one write rather than erroring, the same way a missing
+/// config directory is handled everywhere else in this crate. `sounds_dir`, similarly, is only
+/// ever read when the Sprinkles row is saved at Ultra (see `cli::ensure_ultra_sounds`), and a
+/// missing one just as silently means no sound is generated.
+fn save_to(
+    dir: &std::path::Path,
+    state_dir: Option<&std::path::Path>,
+    sounds_dir: Option<&std::path::Path>,
+    state: &State,
+) -> i32 {
     let user_dir = crate::paths::user_flavours_dir();
     let mut theme: Option<String> = None;
 
@@ -547,7 +559,18 @@ fn save_to(dir: &std::path::Path, state_dir: Option<&std::path::Path>, state: &S
                 &format!("\"{}\"", if value == "Hidden" { "off" } else { "auto" }),
             ),
             Setting::Sprinkles => {
-                crate::config::set_key(dir, "sprinkles", &format!("\"{}\"", value.to_lowercase()))
+                let level = value.to_lowercase();
+                let wrote = crate::config::set_key(dir, "sprinkles", &format!("\"{level}\""));
+                // Generate the sounds right away, through the same path `bios sprinkles ultra`
+                // uses: switching to ultra in here should not leave the maintainer's next tab
+                // silent just because that tab's own `bios init` is the first thing to ever ask
+                // for the sounds. Around 40ms in a release build, and only when the files are
+                // missing (see `cli::ensure_ultra_sounds`); silent either way, since the "CMOS
+                // updated" line below already says the save happened.
+                if wrote.is_ok() && level == "ultra" {
+                    crate::cli::ensure_ultra_sounds(sounds_dir);
+                }
+                wrote
             }
             Setting::DailyShow => {
                 crate::config::set_key(dir, "animate", bool_str(value == "Enabled"))
@@ -649,7 +672,7 @@ mod tests {
         let state = State::new(rows_for(&config, false));
         assert!(state.changes().is_empty());
 
-        assert_eq!(save_to(dir.path(), None, &state), 0);
+        assert_eq!(save_to(dir.path(), None, None, &state), 0);
 
         let after = std::fs::read(dir.path().join("config.toml")).unwrap();
         assert_eq!(before, after);
@@ -682,7 +705,7 @@ mod tests {
         state.key(model::Key::Right);
         assert!(state.current().changed());
 
-        assert_eq!(save_to(dir.path(), None, &state), 0);
+        assert_eq!(save_to(dir.path(), None, None, &state), 0);
 
         let contents = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
         assert!(contents.contains("future_field = true"));
@@ -885,7 +908,7 @@ mod tests {
         state.key(model::Key::Right); // Off -> On
         assert!(state.current().changed());
 
-        assert_eq!(save_to(dir.path(), Some(state_dir.path()), &state), 0);
+        assert_eq!(save_to(dir.path(), Some(state_dir.path()), None, &state), 0);
 
         assert!(crate::state::State::load(state_dir.path()).turbo);
     }
@@ -917,10 +940,88 @@ mod tests {
         move_to(&mut state, Setting::Turbo);
         state.key(model::Key::Right); // Off -> On
 
-        assert_eq!(save_to(dir.path(), Some(state_dir.path()), &state), 0);
+        assert_eq!(save_to(dir.path(), Some(state_dir.path()), None, &state), 0);
 
         let after = std::fs::read(dir.path().join("config.toml")).unwrap();
         assert_eq!(before, after, "turbo must never touch config.toml");
         assert!(crate::state::State::load(state_dir.path()).turbo);
+    }
+
+    /// Steps the Sprinkles row from wherever `rows_for` started it to `target`, by pressing
+    /// Right until its value matches. Wraps like the row itself does, so this works whichever
+    /// level the config started at.
+    fn step_sprinkles_to(state: &mut State, target: &str) {
+        move_to(state, Setting::Sprinkles);
+        while state.current().value() != target {
+            state.key(model::Key::Right);
+        }
+    }
+
+    /// The bug this guards against: Rod switched to ultra inside `bios setup`, tested sound in
+    /// the same tab, and heard nothing, because setup saved the config but never generated the
+    /// sounds; only `bios init`, at the next tab, did. A save that leaves Sprinkles at Ultra must
+    /// generate the sixteen sounds right then, through `cli::ensure_ultra_sounds`, the same
+    /// function `bios sprinkles ultra` calls.
+    #[test]
+    fn saving_with_sprinkles_set_to_ultra_generates_the_sixteen_sounds_on_the_spot() {
+        let dir = tempfile::tempdir().unwrap();
+        let sounds_dir = tempfile::tempdir().unwrap();
+        let mut state = State::new(rows_for(&crate::config::Config::default(), false));
+        step_sprinkles_to(&mut state, "Ultra");
+
+        assert_eq!(
+            save_to(dir.path(), None, Some(sounds_dir.path()), &state),
+            0
+        );
+
+        assert_eq!(std::fs::read_dir(sounds_dir.path()).unwrap().count(), 16);
+    }
+
+    #[test]
+    fn saving_with_sprinkles_set_to_any_other_level_generates_no_sounds() {
+        for target in ["Off", "Light", "Full"] {
+            let dir = tempfile::tempdir().unwrap();
+            let sounds_dir = tempfile::tempdir().unwrap();
+            // Start the config away from `target`, so the row actually reports a change: this is
+            // the same shape `save_to`'s Sprinkles arm only ever runs a write for.
+            let config = crate::config::Config {
+                sprinkles: crate::sprinkles::Level::Ultra,
+                ..crate::config::Config::default()
+            };
+            let mut state = State::new(rows_for(&config, false));
+            step_sprinkles_to(&mut state, target);
+
+            assert_eq!(
+                save_to(dir.path(), None, Some(sounds_dir.path()), &state),
+                0
+            );
+
+            assert_eq!(
+                std::fs::read_dir(sounds_dir.path()).unwrap().count(),
+                0,
+                "{target} must never generate the ULTRA sounds"
+            );
+        }
+    }
+
+    #[test]
+    fn saving_with_sprinkles_unchanged_never_touches_the_sounds_directory_even_at_ultra() {
+        let dir = tempfile::tempdir().unwrap();
+        let sounds_dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config {
+            sprinkles: crate::sprinkles::Level::Ultra,
+            ..crate::config::Config::default()
+        };
+        // Nothing moved, nothing changed: `state.changes()` has no Sprinkles entry, so `save_to`
+        // never even reaches the arm that would generate sounds.
+        let state = State::new(rows_for(&config, false));
+        assert!(state.changes().is_empty());
+
+        assert_eq!(
+            save_to(dir.path(), None, Some(sounds_dir.path()), &state),
+            0
+        );
+
+        assert_eq!(std::fs::read_dir(sounds_dir.path()).unwrap().count(), 0);
     }
 }

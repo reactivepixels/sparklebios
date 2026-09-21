@@ -51,7 +51,7 @@ What 0.1.0 ships, grouped by part.
 ### Sprinkles
 
 - An optional effects layer on the once-a-day show, off by default: `light` (a shimmer, a twinkle, and a stripe sweep on a streak milestone) or `full` (the same, plus the POST beep and beep codes). Never flashes, and costs nothing when off.
-- Sprinkles: ultra. Sound, reactions, a screensaver, a defrag screen, and a Turbo button that does nothing.
+- Sprinkles: ultra. Sound, reactions, a screensaver, and a Turbo button that does nothing.
 
 ### Shell
 

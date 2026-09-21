@@ -26,7 +26,6 @@ Everyday:
   theme use <NAME>   Install the themes and switch Ghostty to one
   turbo              Toggle the Turbo button. It does nothing.
   screensaver        Bounce the logo around until you press a key
-  defrag [PATH]      Defragment a folder. It was never fragmented.
 
 Install:
   init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
@@ -99,8 +98,6 @@ enum Command {
     Turbo,
     /// Bounce the wordmark around the screen until a key is pressed.
     Screensaver,
-    /// Defragment a folder. It was never fragmented.
-    Defrag(DefragCliArgs),
     /// Print the current flavour's line for a moment. For tests and for shells we do not emit.
     #[command(hide = true)]
     Say(SayCliArgs),
@@ -206,12 +203,12 @@ struct FlavourNewCliArgs {
 struct SprinklesCliArgs {
     /// The level to use from now on: off, light, full or ultra. Omit to print the current one.
     level: Option<String>,
-}
-
-#[derive(Debug, Args)]
-struct DefragCliArgs {
-    /// The directory to defragment. Defaults to the current directory.
-    path: Option<PathBuf>,
+    /// Diagnose ULTRA sound: print the effective level, the player found, and the sounds
+    /// directory, then play post_ok through the same detached path the shell hook uses. Hidden:
+    /// a command a person runs deliberately once something seems wrong, not part of the everyday
+    /// surface.
+    #[arg(long, hide = true)]
+    check: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -310,7 +307,6 @@ pub fn run() -> i32 {
         Command::Sprinkles(args) => sprinkles(args),
         Command::Turbo => turbo(),
         Command::Screensaver => crate::screensaver::run(),
-        Command::Defrag(args) => crate::defrag::run(args.path.as_deref()),
         Command::Theme {
             command: ThemeCommand::Install { dir },
         } => install_theme(dir),
@@ -743,11 +739,49 @@ fn sprinkles_set_message(level: crate::sprinkles::Level) -> &'static str {
     }
 }
 
+/// Whether `bios sprinkles <level>` also prints `"Preview it now: bios boot"`: every level but
+/// `Off`, since there is nothing to preview at `Off`.
+fn sprinkles_set_offers_a_preview(level: crate::sprinkles::Level) -> bool {
+    level != crate::sprinkles::Level::Off
+}
+
+/// The one further line `bios sprinkles ultra` prints, after its own set message and the preview
+/// line every non-`Off` level gets: `None` for every level but `Ultra`, since only `ultra` needs
+/// telling that the sound it just switched on will not be heard until the next tab (see
+/// `boot::memory_count_sound_for` and the shell hook's own player detection, both of which only
+/// ever run for a shell that starts after this one).
+fn sprinkles_set_ultra_sound_line(level: crate::sprinkles::Level) -> Option<&'static str> {
+    (level == crate::sprinkles::Level::Ultra).then_some("Sound starts in the next tab.")
+}
+
+/// Generates whichever ULTRA sounds are missing into `sounds_dir`, if there is one, silently. The
+/// one function both `bios sprinkles ultra` (see `sprinkles`) and a `bios setup` save that leaves
+/// the Sprinkles row at Ultra (see `setup::save_to`) call, so switching to ultra from either
+/// surface does not leave the very first tab or shell that starts right afterward waiting on the
+/// very first generation. (`bios init` does the same thing at the top of every shell, but already
+/// has its own resolved sounds directory in hand for the hook it is about to render, so it calls
+/// `sound::ensure` directly rather than through here.) `sounds_dir` is taken as a parameter,
+/// rather than resolved from `paths::sounds_dir()` in here, so a test can point this at a
+/// sandboxed directory instead of the user's own real one, the same way `setup::save_to` already
+/// takes its config and state directories explicitly. A no-op, just sixteen `stat` calls, once the
+/// sounds already exist; never prints anything of its own, since every caller already has its own
+/// line about what it just did.
+pub(crate) fn ensure_ultra_sounds(sounds_dir: Option<&std::path::Path>) {
+    if let Some(dir) = sounds_dir {
+        let _ = crate::sound::ensure(dir);
+    }
+}
+
 /// Shows or sets the sprinkles level, the same shape `use_flavour` follows for the flavour: no
 /// argument prints the effective level, an argument sets it (preserving every other config key)
 /// and prints the level-specific line, and an unknown level is rejected, exit 1, with nothing
-/// written.
+/// written. `--check` (hidden) ignores `level` entirely and runs the ULTRA sound diagnostic
+/// instead; see `sprinkles_check`.
 fn sprinkles(args: SprinklesCliArgs) -> i32 {
+    if args.check {
+        return sprinkles_check();
+    }
+
     let Some(dir) = crate::paths::config_dir() else {
         eprintln!("bios: cannot find a config directory");
         return 1;
@@ -762,27 +796,97 @@ fn sprinkles(args: SprinklesCliArgs) -> i32 {
             return 1;
         }
         if parsed == crate::sprinkles::Level::Ultra {
-            // The other place the ULTRA sounds are generated, besides `bios init`: switching
-            // to ultra should not leave the very first shell that starts afterward waiting on
-            // it. A no-op, just fifteen `stat` calls, once they already exist.
-            if let Some(sounds_dir) = crate::paths::sounds_dir() {
-                let _ = crate::sound::ensure(&sounds_dir);
-            }
+            // Switching to ultra should not leave the very first shell that starts afterward
+            // waiting on the sound generation.
+            ensure_ultra_sounds(crate::paths::sounds_dir().as_deref());
         }
         println!("{}", sprinkles_set_message(parsed));
-        if matches!(
-            parsed,
-            crate::sprinkles::Level::Light
-                | crate::sprinkles::Level::Full
-                | crate::sprinkles::Level::Ultra
-        ) {
+        if sprinkles_set_offers_a_preview(parsed) {
             println!("Preview it now: bios boot");
+        }
+        if let Some(line) = sprinkles_set_ultra_sound_line(parsed) {
+            println!("{line}");
         }
         return 0;
     }
 
     let config = crate::config::load(Some(&dir));
     println!("Sprinkles : {}", config.sprinkles.as_str());
+    0
+}
+
+/// Searches `PATH` for the first of `candidates` that exists as an executable file, in that
+/// order. Only ever called from `bios sprinkles --check`, a command a person runs deliberately:
+/// the shell hook and the boot path never do a filesystem search for a player themselves (see
+/// `boot::memory_count_sound_for`'s doc comment for why).
+fn find_on_path(candidates: &[&str], path_var: Option<&std::ffi::OsStr>) -> Option<String> {
+    let path_var = path_var?;
+    let dirs: Vec<_> = std::env::split_paths(path_var).collect();
+    candidates
+        .iter()
+        .find(|&&name| dirs.iter().any(|dir| is_executable(&dir.join(name))))
+        .map(|&name| name.to_string())
+}
+
+/// Whether `path` is a regular file with at least one executable bit set.
+fn is_executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+/// `bios sprinkles --check`: a diagnostic for "I switched to ultra and heard nothing", so the
+/// question of whether that is this machine or the BIOS itself can be answered in one command
+/// instead of a round trip. Prints one fact per line (the effective sprinkles level, the player
+/// found or `no player found`, and the sounds directory with how many files are in it), then
+/// plays `post_ok` through exactly the same detached path the shell hook uses
+/// (`sound::play_detached`) and prints the closing line. Never fails: no player, no sounds
+/// directory, and nothing generated yet all just print the fact in front of them and exit 0.
+fn sprinkles_check() -> i32 {
+    let config = crate::config::load(crate::paths::config_dir().as_deref());
+    let level = crate::sprinkles::resolve(
+        config.sprinkles,
+        std::env::var("SPARKLEBIOS_SPRINKLES").ok().as_deref(),
+    );
+    println!("Sprinkles level : {}", level.as_str());
+
+    let player = find_on_path(
+        &["afplay", "pw-play", "paplay", "aplay"],
+        std::env::var_os("PATH").as_deref(),
+    );
+    match &player {
+        Some(name) => println!("Player          : {name}"),
+        None => println!("Player          : no player found"),
+    }
+
+    let sounds_dir = crate::paths::sounds_dir();
+    match &sounds_dir {
+        Some(dir) => {
+            let count = std::fs::read_dir(dir)
+                .map(|entries| entries.filter(Result::is_ok).count())
+                .unwrap_or(0);
+            println!("Sounds directory: {} ({count} files)", dir.display());
+        }
+        None => println!("Sounds directory: could not be found"),
+    }
+
+    // Only claim to have played something when something was played. This is the command
+    // somebody runs to find out why they heard nothing, so it is the last place that should
+    // tell them a comforting untruth.
+    let sound = sounds_dir.as_ref().map(|dir| dir.join("post_ok.wav"));
+    match (&player, &sound) {
+        (Some(player), Some(path)) if path.exists() => {
+            crate::sound::play_detached(player, path, config.ultra_volume);
+            println!("played post_ok; if you heard nothing, check the volume and the player above");
+        }
+        (None, _) => println!(
+            "Nothing was played: no sound player found. Install one of afplay, pw-play, paplay or aplay."
+        ),
+        _ => println!(
+            "Nothing was played: the sounds have not been generated yet. Run bios sprinkles ultra."
+        ),
+    }
     0
 }
 
@@ -949,4 +1053,93 @@ fn resolve_starship_config_path(explicit: Option<PathBuf>) -> Option<PathBuf> {
         }
     }
     crate::paths::starship_config_path()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sprinkles::Level;
+
+    #[test]
+    fn sprinkles_set_ultra_sound_line_is_the_exact_line_for_ultra_and_none_for_every_other_level() {
+        for level in [Level::Off, Level::Light, Level::Full] {
+            assert_eq!(sprinkles_set_ultra_sound_line(level), None, "{level:?}");
+        }
+        assert_eq!(
+            sprinkles_set_ultra_sound_line(Level::Ultra),
+            Some("Sound starts in the next tab.")
+        );
+    }
+
+    #[test]
+    fn sprinkles_set_offers_a_preview_for_every_level_but_off() {
+        assert!(!sprinkles_set_offers_a_preview(Level::Off));
+        for level in [Level::Light, Level::Full, Level::Ultra] {
+            assert!(sprinkles_set_offers_a_preview(level), "{level:?}");
+        }
+    }
+
+    #[test]
+    fn parse_sprinkle_level_accepts_exactly_the_four_known_levels() {
+        assert_eq!(parse_sprinkle_level("off"), Some(Level::Off));
+        assert_eq!(parse_sprinkle_level("light"), Some(Level::Light));
+        assert_eq!(parse_sprinkle_level("full"), Some(Level::Full));
+        assert_eq!(parse_sprinkle_level("ultra"), Some(Level::Ultra));
+        for bad in ["", "ULTRA", "holographic"] {
+            assert_eq!(parse_sprinkle_level(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn ensure_ultra_sounds_writes_the_sixteen_sounds_into_a_given_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_ultra_sounds(Some(dir.path()));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 16);
+    }
+
+    #[test]
+    fn ensure_ultra_sounds_with_no_directory_does_nothing_and_never_panics() {
+        ensure_ultra_sounds(None);
+    }
+
+    #[test]
+    fn find_on_path_returns_the_earliest_candidate_present_in_any_path_directory() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        // `aplay` exists only in the first PATH directory; `paplay` exists only in the second.
+        // `paplay` comes before `aplay` in the candidate priority order, so it must win even
+        // though `aplay`'s directory comes first on `PATH`: candidate order outranks PATH order.
+        make_executable(&dir_a.path().join("aplay"));
+        make_executable(&dir_b.path().join("paplay"));
+        let path = std::env::join_paths([dir_a.path(), dir_b.path()]).unwrap();
+
+        assert_eq!(
+            find_on_path(&["afplay", "pw-play", "paplay", "aplay"], Some(&path)),
+            Some("paplay".to_string())
+        );
+    }
+
+    #[test]
+    fn find_on_path_is_none_when_nothing_on_path_matches_or_path_is_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+        assert_eq!(find_on_path(&["afplay", "aplay"], Some(&path)), None);
+        assert_eq!(find_on_path(&["afplay", "aplay"], None), None);
+    }
+
+    #[test]
+    fn find_on_path_ignores_a_matching_name_that_is_not_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("afplay"), b"not executable").unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+        assert_eq!(find_on_path(&["afplay"], Some(&path)), None);
+    }
+
+    fn make_executable(path: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(path, b"#!/bin/sh\n").unwrap();
+        let mut perms = std::fs::metadata(path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(path, perms).unwrap();
+    }
 }

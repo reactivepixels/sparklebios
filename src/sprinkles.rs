@@ -14,7 +14,7 @@ pub enum Level {
     /// Every sprinkle the show has.
     Full,
     /// The whole day: everything `full` has, plus sound, reactions to everyday commands,
-    /// ceremonies, a screensaver, a defrag screen and the Turbo button.
+    /// ceremonies, a screensaver and the Turbo button.
     Ultra,
 }
 

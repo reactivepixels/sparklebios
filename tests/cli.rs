@@ -76,7 +76,6 @@ Everyday:
   theme use <NAME>   Install the themes and switch Ghostty to one
   turbo              Toggle the Turbo button. It does nothing.
   screensaver        Bounce the logo around until you press a key
-  defrag [PATH]      Defragment a folder. It was never fragmented.
 
 Install:
   init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
@@ -114,7 +113,7 @@ Options:
 /// row, and runs each one with `--help`. A command that reaches the help block without being
 /// wired into the `Command` enum makes clap print "unrecognized subcommand", which this test
 /// catches in the same run rather than someone finding it by hand (as `screensaver` and
-/// `defrag` were, once). `say` and `prompt` are hidden by design and are not in the block at
+/// `defrag` was, once). `say` and `prompt` are hidden by design and are not in the block at
 /// all, so there is nothing to skip for them here.
 #[test]
 fn every_command_named_in_the_help_block_actually_exists() {
@@ -753,6 +752,68 @@ fn sprinkles_full_prints_you_asked_for_this_then_the_preview_hint() {
 }
 
 #[test]
+fn only_ultra_mentions_sound_starting_in_the_next_tab() {
+    // The line exists because ultra is the level that needs sounds generated, and a tab only
+    // picks them up when it regenerates its hook. Saying it at any other level would be noise.
+    for level in ["off", "light", "full"] {
+        let config = tempfile::tempdir().unwrap();
+        bios()
+            .args(["sprinkles", level])
+            .env("XDG_CONFIG_HOME", config.path())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Sound starts").not());
+    }
+}
+
+#[test]
+fn sprinkles_check_survives_having_nothing_to_report() {
+    // Somebody runs this because they heard nothing, so it is the one command that must not
+    // fail when the player, the sounds and the config are all missing.
+    let empty = tempfile::tempdir().unwrap();
+    bios()
+        .args(["sprinkles", "--check"])
+        .env("XDG_CONFIG_HOME", empty.path())
+        .env("XDG_CACHE_HOME", empty.path().join("cache"))
+        .env("PATH", "/nonexistent")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no player found"))
+        .stdout(predicate::str::contains(
+            "Nothing was played: no sound player found. Install one of afplay, pw-play, paplay or aplay.",
+        ))
+        .stdout(predicate::str::contains("played post_ok").not());
+}
+
+#[test]
+fn the_check_never_claims_to_have_played_when_the_sounds_are_missing() {
+    // This is the state the maintainer was actually in: a player on PATH, the level set, and
+    // the sounds never generated because he switched level inside setup and stayed in the tab.
+    // Claiming a sound was played here is the one answer that sends him looking in the wrong
+    // place.
+    let empty = tempfile::tempdir().unwrap();
+    bios()
+        .args(["sprinkles", "--check"])
+        .env("XDG_CONFIG_HOME", empty.path())
+        .env("XDG_CACHE_HOME", empty.path().join("cache"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Nothing was played: the sounds have not been generated yet. Run bios sprinkles ultra.",
+        ))
+        .stdout(predicate::str::contains("played post_ok").not());
+}
+
+#[test]
+fn the_check_flag_stays_out_of_the_help() {
+    bios()
+        .args(["sprinkles", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--check").not());
+}
+
+#[test]
 fn sprinkles_ultra_prints_the_exact_line_then_the_preview_hint_and_persists() {
     let config = tempfile::tempdir().unwrap();
     bios()
@@ -760,9 +821,13 @@ fn sprinkles_ultra_prints_the_exact_line_then_the_preview_hint_and_persists() {
         .env("XDG_CONFIG_HOME", config.path())
         .assert()
         .success()
-        .stdout(
-            "Sprinkles : ultra. Nobody asked for this. Here it is.\nPreview it now: bios boot\n",
-        );
+        .stdout(concat!(
+            "Sprinkles : ultra. Nobody asked for this. Here it is.\n",
+            "Preview it now: bios boot\n",
+            // Only ultra says this: it is the level that needs sounds generating, and they are
+            // only picked up when the next tab regenerates its hook.
+            "Sound starts in the next tab.\n",
+        ));
     bios()
         .arg("sprinkles")
         .env("XDG_CONFIG_HOME", config.path())

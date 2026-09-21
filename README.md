@@ -169,12 +169,11 @@ bios sprinkles full      # light, plus the POST beep and beep codes
 bios sprinkles ultra     # full, plus sound and reactions all day long
 ```
 
-`ultra` keeps going after the boot: sound, a screensaver, a defrag, and the
-flavour reacting to your day. Off unless you ask. Two commands come with it:
+`ultra` keeps going after the boot: sound, a screensaver, and the flavour
+reacting to your day. Off unless you ask. One command comes with it:
 
 ```
 bios screensaver         # bounce the logo around until you press a key
-bios defrag [PATH]       # a folder's real disk usage, drawn as a block map
 ```
 
 `bios turbo` toggles the Turbo button. It does nothing. It never did.
