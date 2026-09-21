@@ -271,10 +271,12 @@ boot` and `bios fetch` follow.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/sparklebios/config.toml` | Settings: `animate`, `flavour`, `checks`, `project_dirs`, `graphics`, `sprinkles`, `boot`, `presence`, `presence_after`, `title` |
+| `~/.config/sparklebios/config.toml` | Settings: `animate`, `flavour`, `checks`, `project_dirs`, `graphics`, `sprinkles`, `ultra_chance`, `ultra_volume`, `boot`, `presence`, `presence_after`, `title` |
 | `~/.config/sparklebios/machines/`, `flavours/` | User screen and flavour overrides and additions |
-| `~/.local/state/sparklebios/state.json` | Last boot time, last full-show day, boot-day streak |
+| `~/.local/state/sparklebios/state.json` | Last boot time, last full-show day, boot-day streak, the Turbo flag |
 | `~/.cache/sparklebios/facts.json` | The findings cache: when it was generated, and the findings from that run |
+| `~/.cache/sparklebios/sounds/` | Ultra: the synthesised sounds, generated once and reused |
+| `~/.config/sparklebios/shaders/` | Ultra: the two Ghostty shader files, installed when `sprinkles` reaches Ultra |
 
 ## 9. Architecture
 

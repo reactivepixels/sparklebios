@@ -21,10 +21,10 @@ each other in a couple of places worth knowing about. Ultra's own beep for a
 long command, `post_ok` or `post_fail`, only plays alongside moment 3's
 finish line below: it needs `presence_after` seconds to have passed and
 `presence` to be turned on, the same as the finish line itself. With
-`presence` off, a long command under `ultra` still gets a sound, just not
-that one: `hdd_spindown` instead, with no beep. Turn `presence` off and
-`ultra`'s everyday reactions, its jingle, its ceremonies and its power-off
-still run; only the piece that rides on the finish line changes.
+`presence` off, a long command under `ultra` gets no sound at all: there is
+no fallback for it. Turn `presence` off and `ultra`'s everyday reactions,
+its jingle, its ceremonies and its power-off still run; only the piece that
+rides on the finish line changes.
 
 ## The six moments
 

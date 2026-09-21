@@ -21,18 +21,30 @@ background beyond what is documented next. What runs, and when:
 - `bios refresh`, spawned detached by that same boot when the cache is stale:
   the only thing that runs a probe. It never runs inline, and a boot never
   waits on it.
+- With `sprinkles = "ultra"` (off by default): a `cd` triggers a folder remark
+  at `ultra_chance` percent, which reads the directory's entries and may run
+  `git --no-optional-locks symbolic-ref` and `git --no-optional-locks status
+  --porcelain` in the directory just entered. The same setting also spawns a
+  detached local audio player (`afplay`, `pw-play`, `paplay` or `aplay`) for a
+  jingle at shell start, a finish beep, and a click on shell exit. See
+  [sprinkles.md](docs/sprinkles.md).
 - Whatever you type by hand: `bios setup`, `bios fetch`, `bios theme use`,
   `bios flavour new`, and the rest of the command surface in
   [the manual](docs/README.md).
 
-Nothing else runs. There is no hook that fires on `cd`, no scheduled task, and
-nothing that reads a per-project config file.
+Nothing else runs. There is no scheduled task, and nothing that reads a
+per-project config file.
 
 ## What counts
 
 - Anything that runs a command, or reads a file, outside what is listed above.
 - Anything that makes a boot hang, crash a shell, or corrupt a terminal.
-- Anything that writes outside the documented paths (`~/.config/sparklebios`, `~/.local/state/sparklebios`, `~/.cache/sparklebios`, and the Ghostty themes directory when you run `bios theme install`).
+- Anything that writes outside the documented paths. Those are:
+  - `~/.config/sparklebios`, `~/.local/state/sparklebios` and `~/.cache/sparklebios`.
+  - The Ghostty themes directory, when you run `bios theme install` or `bios theme use`.
+  - The Ghostty config file, its `theme` line only, when you run `bios theme use`.
+  - The Ghostty config file, its two `custom-shader` lines only, when you run `bios sprinkles ultra` or drop back below it.
+  - An existing starship config's `palette` line, when you run `bios theme use` without `--no-prompt` and that file already sets a palette of its own.
 - Escape sequence injection: a way for text from the environment, a file name or a machine file to take control of the terminal.
 - Any network access at all. There is no network code in this project, the build enforces it (`deny.toml`), and finding some would be the most serious report this project could get.
 

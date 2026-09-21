@@ -6,9 +6,9 @@ log kept in a binder next to the machine.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-09-21
 
-What 0.1.0 ships, grouped by part.
+Grouped by part, since there is no earlier version to compare against.
 
 ### Boot screen
 
@@ -30,13 +30,13 @@ What 0.1.0 ships, grouped by part.
 - Eight flavours ship: `unicorn` (the default), `sumo`, `ninja`, `viking`, `luchador`, `yeti`, `raccoon` and `wizard`, each with its own mascot, wording and quips.
 - `bios flavours`, `bios use <flavour>`, `bios boot --flavour <id>`.
 - `bios flavour new <id>` writes a starter flavour file, ready to boot before you have changed a word.
-- `bios use random: a different mascot each day, the same one in every tab, and never the same two days running.`
+- `bios use random`: a different mascot each day, the same one in every tab, and never the same two days running.
 
 ### Themes
 
 - "Rainbows and Unicorns", a Ghostty theme in ten variants, with a test that fails if a theme file and its documentation ever disagree.
 - `bios theme list`, `bios theme install` and `bios theme use <name>`, which also points an existing starship prompt at a matching palette from `extras/starship-palette.toml`.
-- A cursor trail shader, terminal-following tool colours for `ls`, `eza`, `bat`, `fzf`, `man`, `grep` and `delta`, all optional, in `extras/`.
+- Scanline and cursor trail shaders, terminal-following tool colours for `ls`, `eza`, `bat`, `fzf`, `man`, `grep` and `delta`, all optional, in `extras/`.
 
 ### Setup
 
@@ -52,7 +52,7 @@ What 0.1.0 ships, grouped by part.
 ### Sprinkles
 
 - An optional effects layer on the once-a-day show, off by default: `light` (a shimmer, a twinkle, and a stripe sweep on a streak milestone) or `full` (the same, plus the POST beep and beep codes). Never flashes, and costs nothing when off.
-- Sprinkles: ultra. Sound, reactions, a screensaver, and a Turbo button that does nothing.
+- `ultra`, on top of `full`: the boot sounds and a jingle for each flavour, small reactions to what you type, a screensaver for an idle terminal, and a Turbo button that does nothing, faithfully. On Ghostty it also switches on the scanline and cursor trail shaders.
 
 ### Shell
 

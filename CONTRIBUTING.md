@@ -1,9 +1,9 @@
 # Contributing
 
-SparkleBIOS is pre-alpha. The most useful things right now:
+SparkleBIOS is at its first release. The most useful things right now:
 
 1. **Tell us about a boot screen.** Open an issue with the machine, the year, and what the screen actually said, ideally with a photo or an emulator screenshot. Accuracy is the whole joke.
-2. **Try the theme** once M0 lands and report how it looks in your terminal.
+2. **Try the theme** and report how it looks in your terminal.
 3. **Read [docs/design.md](docs/design.md)** and poke holes in it.
 
 ## Ground rules

@@ -70,9 +70,9 @@ long as the shell tab stays open. Off unless you ask for it.
 Fifteen sounds ship with `ultra`, and none of them ship as files. `bios
 sprinkles ultra`, and `bios init` whenever the effective level is already
 `ultra`, synthesise them once into `$XDG_CACHE_HOME/sparklebios/sounds/` and
-leave them there; a shell that already has every file pays for fifteen
-`stat` calls to notice that, and generating a missing one from scratch takes
-well under 200ms for all fifteen together.
+leave them there, alongside the sixteenth sound below; a shell that already
+has every file pays for sixteen `stat` calls to notice that, and generating
+a missing one from scratch takes well under 200ms for all sixteen together.
 
 Of the fifteen, only these still play on their own, and each one answers
 something you just did rather than arriving out of nowhere:
