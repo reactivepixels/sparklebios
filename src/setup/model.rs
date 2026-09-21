@@ -63,7 +63,8 @@ pub enum Setting {
     DailyShow,
     /// The boot screen's master switch.
     BootScreen,
-    /// Turbo. Engages nothing, saves nothing, and has done since 1995.
+    /// Turbo. Engages nothing, and has done since 1995, but the flag is saved anyway, into
+    /// `state.json` rather than the config file: it is the same flag `bios turbo` toggles.
     Turbo,
 }
 
@@ -130,12 +131,12 @@ impl State {
         }
     }
 
-    /// Every row whose value the user changed, excluding the ones that are not saved.
-    /// Turbo is deliberately absent: it is not a setting, it is a tribute.
+    /// Every row whose value the user changed. Turbo is included: the flag it carries is saved
+    /// like any other row's, just into a different file (see `Setting::Turbo`).
     pub fn changes(&self) -> Vec<(Setting, &str)> {
         self.rows
             .iter()
-            .filter(|r| r.changed() && r.setting != Setting::Turbo)
+            .filter(|r| r.changed())
             .map(|r| (r.setting, r.value()))
             .collect()
     }
@@ -296,14 +297,14 @@ mod tests {
     }
 
     #[test]
-    fn turbo_changes_on_screen_but_is_never_saved() {
+    fn turbo_changes_on_screen_and_is_saved_like_any_other_row() {
         let mut s = state();
         s.selected = 2;
         s.key(Key::Right);
         assert_eq!(s.current().value(), "Off");
-        assert!(s.current().changed(), "the row itself knows it moved");
-        assert!(s.changes().is_empty(), "but it is not a change to write");
-        assert!(!s.dirty());
+        assert!(s.current().changed());
+        assert_eq!(s.changes(), vec![(Setting::Turbo, "Off")]);
+        assert!(s.dirty());
     }
 
     #[test]
@@ -346,11 +347,14 @@ mod tests {
         let mut s = state();
         s.key(Key::Right); // Flavour -> Sumo
         s.selected = 2;
-        s.key(Key::Right); // Turbo -> Off, which is not a setting
+        s.key(Key::Right); // Turbo -> Off, saved too, just into a different file
         assert_eq!(s.key(Key::F10), Effect::Redraw);
         assert_eq!(s.dialog, Dialog::Save);
         assert_eq!(s.answer(true), Effect::Save);
-        assert_eq!(s.changes(), vec![(Setting::Flavour, "Sumo")]);
+        assert_eq!(
+            s.changes(),
+            vec![(Setting::Flavour, "Sumo"), (Setting::Turbo, "Off")]
+        );
     }
 
     #[test]

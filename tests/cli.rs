@@ -71,9 +71,12 @@ Everyday:
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
   flavour new <ID>   Start your own flavour from a working template
-  sprinkles [LEVEL]  Optional effects: off, light or full
+  sprinkles [LEVEL]  Optional effects: off, light, full or ultra
   theme list         List the matching Ghostty themes
   theme use <NAME>   Install the themes and switch Ghostty to one
+  turbo              Toggle the Turbo button. It does nothing.
+  screensaver        Bounce the logo around until you press a key
+  defrag [PATH]      Defragment a folder. It was never fragmented.
 
 Install:
   init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
@@ -103,6 +106,60 @@ Options:
             .assert()
             .success()
             .stdout(expected.clone());
+    }
+}
+
+/// Every command the top level help advertises must actually exist: this parses the Everyday
+/// and Install blocks straight out of `bios --help`'s own output, for the leading word of each
+/// row, and runs each one with `--help`. A command that reaches the help block without being
+/// wired into the `Command` enum makes clap print "unrecognized subcommand", which this test
+/// catches in the same run rather than someone finding it by hand (as `screensaver` and
+/// `defrag` were, once). `say` and `prompt` are hidden by design and are not in the block at
+/// all, so there is nothing to skip for them here.
+#[test]
+fn every_command_named_in_the_help_block_actually_exists() {
+    let output = bios().arg("--help").output().unwrap();
+    let help = String::from_utf8(output.stdout).unwrap();
+
+    let mut words: Vec<String> = Vec::new();
+    let mut in_block = false;
+    for line in help.lines() {
+        if line == "Everyday:" || line == "Install:" {
+            in_block = true;
+            continue;
+        }
+        if in_block && line.is_empty() {
+            in_block = false;
+            continue;
+        }
+        if !in_block {
+            continue;
+        }
+        // A row starts with exactly two leading spaces then the command's own name; the
+        // continuation line under `init zsh|bash|fish` has many more spaces before its text
+        // and is skipped by the second check.
+        let Some(rest) = line.strip_prefix("  ") else {
+            continue;
+        };
+        if rest.starts_with(' ') {
+            continue;
+        }
+        let word = rest.split_whitespace().next().unwrap().to_string();
+        if !words.contains(&word) {
+            words.push(word);
+        }
+    }
+    assert!(
+        words.len() >= 10,
+        "parsed too few commands out of the help block: {words:?}"
+    );
+
+    for word in words {
+        bios()
+            .args([word.as_str(), "--help"])
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("unrecognized subcommand").not());
     }
 }
 
@@ -582,6 +639,17 @@ fn sparklebios_sprinkles_env_override_is_accepted() {
 }
 
 #[test]
+fn sparklebios_sprinkles_env_override_accepts_ultra() {
+    bios()
+        .args(["boot", "--machine", "pc95"])
+        .env("SPARKLEBIOS_SPRINKLES", "ultra")
+        .env("NO_COLOR", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sparkle Modular BIOS"));
+}
+
+#[test]
 fn hook_prints_nothing_to_stdout_and_exits_zero() {
     let state = tempfile::tempdir().unwrap();
     bios()
@@ -685,6 +753,25 @@ fn sprinkles_full_prints_you_asked_for_this_then_the_preview_hint() {
 }
 
 #[test]
+fn sprinkles_ultra_prints_the_exact_line_then_the_preview_hint_and_persists() {
+    let config = tempfile::tempdir().unwrap();
+    bios()
+        .args(["sprinkles", "ultra"])
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout(
+            "Sprinkles : ultra. Nobody asked for this. Here it is.\nPreview it now: bios boot\n",
+        );
+    bios()
+        .arg("sprinkles")
+        .env("XDG_CONFIG_HOME", config.path())
+        .assert()
+        .success()
+        .stdout("Sprinkles : ultra\n");
+}
+
+#[test]
 fn sprinkles_off_prints_the_bios_is_not_hurt_line_with_no_preview_hint() {
     let config = tempfile::tempdir().unwrap();
     bios()
@@ -704,7 +791,7 @@ fn sprinkles_with_an_unknown_level_fails_and_writes_nothing() {
         .assert()
         .failure()
         .code(1)
-        .stderr("bios: no sprinkle level called sparkly. Try: off, light, full\n");
+        .stderr("bios: no sprinkle level called sparkly. Try: off, light, full, ultra\n");
     assert!(!config.path().join("sparklebios/config.toml").exists());
 }
 
@@ -727,6 +814,32 @@ fn sprinkles_setting_the_level_preserves_the_configured_flavour() {
         .assert()
         .success()
         .stdout("Flavour : sumo\n");
+}
+
+/// The default starting state, and the exact line each direction prints. `bios turbo` on its own
+/// (this crate's XDG defaults create the state directory itself, so no `XDG_STATE_HOME` needs
+/// setting beyond the sandbox `bios()` already points at) toggles a flag in `state.json` and
+/// leaves it there for the next run to read.
+#[test]
+fn turbo_toggles_and_prints_the_exact_line_and_persists_the_flag() {
+    let state = tempfile::tempdir().unwrap();
+    bios()
+        .arg("turbo")
+        .env("XDG_STATE_HOME", state.path())
+        .assert()
+        .success()
+        .stdout("Turbo on. 66 MHz. No measurable difference.\n");
+    let contents = std::fs::read_to_string(state.path().join("sparklebios/state.json")).unwrap();
+    assert!(contents.contains("\"turbo\":true"), "{contents}");
+
+    bios()
+        .arg("turbo")
+        .env("XDG_STATE_HOME", state.path())
+        .assert()
+        .success()
+        .stdout("Turbo off. 33 MHz. No measurable difference.\n");
+    let contents = std::fs::read_to_string(state.path().join("sparklebios/state.json")).unwrap();
+    assert!(contents.contains("\"turbo\":false"), "{contents}");
 }
 
 #[test]
@@ -1739,6 +1852,8 @@ fn config_reset_then_use_preserves_every_comment_and_key_order_and_reads_back_th
             "checks",
             "project_dirs",
             "sprinkles",
+            "ultra_chance",
+            "ultra_volume",
             "boot",
             "presence",
             "presence_after",

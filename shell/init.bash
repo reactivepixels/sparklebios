@@ -114,4 +114,5 @@ if [[ $- == *i* ]] && command -v bios >/dev/null 2>&1; then
       PROMPT_COMMAND="_sparklebios_title${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
     fi
   fi
+  eval {{ULTRA}}
 fi

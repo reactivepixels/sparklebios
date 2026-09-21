@@ -20,6 +20,9 @@ pub struct State {
     pub memory_test_best_kb: u64,
     /// Whether a Memory Test game has ever been cleared in full.
     pub memory_test_cleared: bool,
+    /// The Turbo button. `bios turbo` toggles it directly; `bios setup`'s own Turbo row reads and
+    /// writes this same flag, but only at F10. Engages nothing either way.
+    pub turbo: bool,
 }
 
 impl State {
@@ -86,6 +89,7 @@ mod tests {
             streak_last_day: Some("2026-09-19".into()),
             memory_test_best_kb: 18874368,
             memory_test_cleared: true,
+            turbo: true,
         };
         s.save(&nested).unwrap();
         assert_eq!(State::load(&nested), s);
@@ -112,6 +116,22 @@ mod tests {
         let s = State::load(dir.path());
         assert_eq!(s.memory_test_best_kb, 0);
         assert!(!s.memory_test_cleared);
+    }
+    #[test]
+    fn old_state_files_without_the_turbo_key_load_with_it_off() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("state.json"), r#"{"streak_days":2}"#).unwrap();
+        assert!(!State::load(dir.path()).turbo);
+    }
+    #[test]
+    fn the_turbo_flag_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = State {
+            turbo: true,
+            ..State::default()
+        };
+        s.save(dir.path()).unwrap();
+        assert!(State::load(dir.path()).turbo);
     }
     #[test]
     fn the_memory_test_high_score_round_trips() {

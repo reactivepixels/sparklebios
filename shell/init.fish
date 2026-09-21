@@ -39,6 +39,7 @@ if status is-interactive; and command -v bios >/dev/null 2>&1
         end
         string match -q '*/share/fish/functions/*' -- $file
     end
+    eval {{ULTRA}}
 
     # Set on its own, independent of presence: the tab title is its own config key. fish
     # owns the title through fish_title. Printing the escape from a prompt hook instead

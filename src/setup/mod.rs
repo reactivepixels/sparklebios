@@ -95,7 +95,10 @@ pub fn run(memory_test: bool) -> i32 {
     };
 
     let config = crate::config::load(crate::paths::config_dir().as_deref());
-    let mut state = State::new(rows_for(&config));
+    let turbo_on = crate::paths::state_dir()
+        .map(|dir| crate::state::State::load(&dir).turbo)
+        .unwrap_or(false);
+    let mut state = State::new(rows_for(&config, turbo_on));
     let year = crate::facts::gather()
         .get("date.year")
         .unwrap_or("2026")
@@ -399,16 +402,16 @@ const HELP_FLAVOUR: &str =
     "The mascot and its firmware. All flavours run the same checks. Only the attitude changes.";
 const HELP_THEME: &str = "The Ghostty colour theme. Unchanged leaves your terminal colours alone.";
 const HELP_MASCOT: &str = "Shown draws the mascot as a real image where the terminal supports one. Terminals that cannot show images boot without it. Hidden boots without it everywhere.";
-const HELP_SPRINKLES: &str =
-    "Optional effects during the daily show. Off by default, because not everyone wants sprinkles.";
+const HELP_SPRINKLES: &str = "Optional effects during the daily show. Ultra keeps going after it: sound, reactions and a screensaver. Off by default, because not everyone wants sprinkles.";
 const HELP_DAILY: &str = "The animated boot, once a day. Disabled boots instantly every time.";
 const HELP_BOOT: &str =
     "The master switch. Disabled means new tabs print nothing at all. The BIOS will wait.";
-const HELP_TURBO: &str =
-    "Does nothing. It never did. This setting is not saved, in keeping with tradition.";
+const HELP_TURBO: &str = "Does nothing. It never did. Saved anyway, so the prompt can say 66 MHz.";
 
-/// The rows, built from the config as it stands, so every one starts on its current value.
-fn rows_for(config: &crate::config::Config) -> Vec<Row> {
+/// The rows, built from the config as it stands and `turbo_on` (`state.json`'s own flag, read
+/// separately since Turbo is not part of the config file), so every one starts on its current
+/// value.
+fn rows_for(config: &crate::config::Config, turbo_on: bool) -> Vec<Row> {
     let user_dir = crate::paths::user_flavours_dir();
     let flavours: Vec<String> = crate::flavour::list(user_dir.as_deref())
         .into_iter()
@@ -431,6 +434,7 @@ fn rows_for(config: &crate::config::Config) -> Vec<Row> {
         crate::sprinkles::Level::Off => 0,
         crate::sprinkles::Level::Light => 1,
         crate::sprinkles::Level::Full => 2,
+        crate::sprinkles::Level::Ultra => 3,
     };
 
     vec![
@@ -452,7 +456,7 @@ fn rows_for(config: &crate::config::Config) -> Vec<Row> {
         row(
             "Sprinkles",
             Setting::Sprinkles,
-            strings(&["Off", "Light", "Full"]),
+            strings(&["Off", "Light", "Full", "Ultra"]),
             sprinkles_at,
             HELP_SPRINKLES,
         ),
@@ -474,7 +478,7 @@ fn rows_for(config: &crate::config::Config) -> Vec<Row> {
             "Turbo",
             Setting::Turbo,
             strings(&["On", "Off"]),
-            0,
+            usize::from(!turbo_on),
             HELP_TURBO,
         ),
     ]
@@ -515,12 +519,16 @@ fn save(state: &State) -> i32 {
         eprintln!("bios: cannot find a config directory");
         return 1;
     };
-    save_to(&dir, state)
+    save_to(&dir, crate::paths::state_dir().as_deref(), state)
 }
 
-/// `save`'s actual work, against an explicit config directory rather than the real one, so a
-/// test can point it at a sandboxed directory instead of the user's own.
-fn save_to(dir: &std::path::Path, state: &State) -> i32 {
+/// `save`'s actual work, against explicit config and state directories rather than the real
+/// ones, so a test can point it at sandboxed directories instead of the user's own. Every row but
+/// Turbo writes into `dir`'s config file; Turbo writes into `state_dir`'s state file instead, the
+/// same flag `bios turbo` toggles, so a missing `state_dir` (no state directory could be found)
+/// silently skips that one write rather than erroring, the same way a missing config directory is
+/// handled everywhere else in this crate.
+fn save_to(dir: &std::path::Path, state_dir: Option<&std::path::Path>, state: &State) -> i32 {
     let user_dir = crate::paths::user_flavours_dir();
     let mut theme: Option<String> = None;
 
@@ -551,7 +559,14 @@ fn save_to(dir: &std::path::Path, state: &State) -> i32 {
                 theme = Some(value.to_lowercase());
                 Ok(())
             }
-            Setting::Turbo => Ok(()),
+            Setting::Turbo => match state_dir {
+                Some(state_dir) => {
+                    let mut s = crate::state::State::load(state_dir);
+                    s.turbo = value == "On";
+                    s.save(state_dir)
+                }
+                None => Ok(()),
+            },
         };
         if wrote.is_err() {
             eprintln!("bios: cannot write the config file");
@@ -594,7 +609,7 @@ mod tests {
             sprinkles: crate::sprinkles::Level::Full,
             ..crate::config::Config::default()
         };
-        let rows = rows_for(&config);
+        let rows = rows_for(&config, false);
         let value = |s: Setting| {
             rows.iter()
                 .find(|r| r.setting == s)
@@ -614,7 +629,7 @@ mod tests {
 
     #[test]
     fn nothing_starts_out_changed() {
-        let state = State::new(rows_for(&crate::config::Config::default()));
+        let state = State::new(rows_for(&crate::config::Config::default(), false));
         assert!(!state.dirty());
         assert!(state.changes().is_empty());
     }
@@ -631,10 +646,10 @@ mod tests {
         let before = std::fs::read(dir.path().join("config.toml")).unwrap();
 
         let config = crate::config::load(Some(dir.path()));
-        let state = State::new(rows_for(&config));
+        let state = State::new(rows_for(&config, false));
         assert!(state.changes().is_empty());
 
-        assert_eq!(save_to(dir.path(), &state), 0);
+        assert_eq!(save_to(dir.path(), None, &state), 0);
 
         let after = std::fs::read(dir.path().join("config.toml")).unwrap();
         assert_eq!(before, after);
@@ -655,7 +670,7 @@ mod tests {
         .unwrap();
 
         let config = crate::config::load(Some(dir.path()));
-        let mut state = State::new(rows_for(&config));
+        let mut state = State::new(rows_for(&config, false));
         let boot_screen = state
             .rows
             .iter()
@@ -667,7 +682,7 @@ mod tests {
         state.key(model::Key::Right);
         assert!(state.current().changed());
 
-        assert_eq!(save_to(dir.path(), &state), 0);
+        assert_eq!(save_to(dir.path(), None, &state), 0);
 
         let contents = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
         assert!(contents.contains("future_field = true"));
@@ -676,7 +691,7 @@ mod tests {
 
     #[test]
     fn every_flavour_is_offered_by_name() {
-        let rows = rows_for(&crate::config::Config::default());
+        let rows = rows_for(&crate::config::Config::default(), false);
         let flavours = rows.iter().find(|r| r.setting == Setting::Flavour).unwrap();
         assert!(flavours.values.contains(&"Unicorn".to_string()));
         assert!(flavours.values.contains(&"Raccoon".to_string()));
@@ -685,7 +700,7 @@ mod tests {
 
     #[test]
     fn the_theme_row_offers_unchanged_first_then_every_theme() {
-        let rows = rows_for(&crate::config::Config::default());
+        let rows = rows_for(&crate::config::Config::default(), false);
         let themes = rows.iter().find(|r| r.setting == Setting::Theme).unwrap();
         assert_eq!(themes.values[0], "Unchanged");
         assert_eq!(themes.values.len(), crate::theme::SHORT_NAMES.len() + 1);
@@ -694,7 +709,7 @@ mod tests {
 
     #[test]
     fn every_row_has_help_that_fits_its_pane() {
-        for r in rows_for(&crate::config::Config::default()) {
+        for r in rows_for(&crate::config::Config::default(), false) {
             assert!(!r.help.is_empty(), "{} has no help", r.label);
         }
     }
@@ -780,5 +795,132 @@ mod tests {
             Setting::Turbo
         ));
         assert!(!is_turbo_toggle(keys::Input::Answer(true), Setting::Turbo));
+    }
+
+    #[test]
+    fn the_sprinkles_row_offers_all_four_levels_and_ultra_help_is_exact() {
+        let rows = rows_for(&crate::config::Config::default(), false);
+        let sprinkles = rows
+            .iter()
+            .find(|r| r.setting == Setting::Sprinkles)
+            .unwrap();
+        assert_eq!(sprinkles.values, vec!["Off", "Light", "Full", "Ultra"]);
+        assert_eq!(sprinkles.help, HELP_SPRINKLES);
+    }
+
+    #[test]
+    fn the_sprinkles_row_starts_on_ultra_when_configured() {
+        let config = crate::config::Config {
+            sprinkles: crate::sprinkles::Level::Ultra,
+            ..crate::config::Config::default()
+        };
+        let rows = rows_for(&config, false);
+        let value = rows
+            .iter()
+            .find(|r| r.setting == Setting::Sprinkles)
+            .unwrap()
+            .value()
+            .to_string();
+        assert_eq!(value, "Ultra");
+    }
+
+    /// The row's starting value comes from `turbo_on`, `run`'s own read of `state.json`, rather
+    /// than a fixed default: this is the pure half of that wiring (see `run`'s own call for the
+    /// impure half, which is the same `State::load` `the_memory_test_...` tests already cover).
+    #[test]
+    fn the_turbo_row_reflects_the_persisted_flag_when_setup_opens() {
+        let off = rows_for(&crate::config::Config::default(), false);
+        assert_eq!(
+            off.iter()
+                .find(|r| r.setting == Setting::Turbo)
+                .unwrap()
+                .value(),
+            "Off"
+        );
+        let on = rows_for(&crate::config::Config::default(), true);
+        assert_eq!(
+            on.iter()
+                .find(|r| r.setting == Setting::Turbo)
+                .unwrap()
+                .value(),
+            "On"
+        );
+    }
+
+    /// A `bios turbo` run before setup opens is exactly a flag already sitting in `state.json`:
+    /// the same round trip `state::the_turbo_flag_round_trips` proves, read back the way `run`
+    /// reads it before building the rows.
+    #[test]
+    fn a_turbo_flag_set_by_bios_turbo_is_reflected_when_setup_next_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let persisted = crate::state::State {
+            turbo: true,
+            ..crate::state::State::default()
+        };
+        persisted.save(dir.path()).unwrap();
+
+        let turbo_on = crate::state::State::load(dir.path()).turbo;
+        let rows = rows_for(&crate::config::Config::default(), turbo_on);
+        let turbo = rows.iter().find(|r| r.setting == Setting::Turbo).unwrap();
+        assert_eq!(turbo.value(), "On");
+    }
+
+    fn move_to(state: &mut State, setting: Setting) {
+        let index = state
+            .rows
+            .iter()
+            .position(|r| r.setting == setting)
+            .unwrap();
+        while state.selected != index {
+            state.key(model::Key::Down);
+        }
+    }
+
+    #[test]
+    fn toggling_turbo_and_saving_with_f10_persists_it_to_state_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = tempfile::tempdir().unwrap();
+        let mut state = State::new(rows_for(&crate::config::Config::default(), false));
+        move_to(&mut state, Setting::Turbo);
+        state.key(model::Key::Right); // Off -> On
+        assert!(state.current().changed());
+
+        assert_eq!(save_to(dir.path(), Some(state_dir.path()), &state), 0);
+
+        assert!(crate::state::State::load(state_dir.path()).turbo);
+    }
+
+    #[test]
+    fn toggling_turbo_and_leaving_with_esc_persists_nothing() {
+        let mut state = State::new(rows_for(&crate::config::Config::default(), false));
+        move_to(&mut state, Setting::Turbo);
+        state.key(model::Key::Right); // Off -> On
+        assert!(state.current().changed());
+
+        // Dirty, so Esc asks first rather than leaving at once.
+        assert_eq!(state.key(model::Key::Esc), Effect::Redraw);
+        assert_eq!(state.dialog, model::Dialog::Quit);
+        // Y on the quit dialog leaves without saving: `run` only ever calls `save` on
+        // `Effect::Save`, never on `Effect::Exit`, so nothing is written on this path.
+        assert_eq!(state.answer(true), Effect::Exit);
+    }
+
+    #[test]
+    fn toggling_only_turbo_and_saving_does_not_touch_config_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = tempfile::tempdir().unwrap();
+        crate::config::reset(dir.path()).unwrap();
+        let before = std::fs::read(dir.path().join("config.toml")).unwrap();
+
+        let config = crate::config::load(Some(dir.path()));
+        let mut state = State::new(rows_for(&config, false));
+        move_to(&mut state, Setting::Turbo);
+        state.key(model::Key::Right); // Off -> On
+
+        assert_eq!(save_to(dir.path(), Some(state_dir.path()), &state), 0);
+
+        let after = std::fs::read(dir.path().join("config.toml")).unwrap();
+        assert_eq!(before, after, "turbo must never touch config.toml");
+        assert!(crate::state::State::load(state_dir.path()).turbo);
     }
 }

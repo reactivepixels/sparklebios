@@ -53,6 +53,11 @@ pub fn cache_dir() -> Option<PathBuf> {
     )
 }
 
+/// Where the synthesised ULTRA sounds are cached, under `cache_dir`.
+pub fn sounds_dir() -> Option<PathBuf> {
+    cache_dir().map(|dir| dir.join("sounds"))
+}
+
 /// Where a user's own `machines/*.toml` files live, under `config_dir`.
 pub fn user_machines_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("machines"))

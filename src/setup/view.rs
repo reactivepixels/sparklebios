@@ -415,7 +415,7 @@ mod tests {
                 "The mascot and its firmware. All flavours run the same checks. Only the attitude changes.",
             ),
             row("Mascot", Setting::Mascot, &["Shown", "Hidden"], "Shown draws the mascot as a real image where the terminal supports one."),
-            row("Turbo", Setting::Turbo, &["On", "Off"], "Does nothing. It never did. This setting is not saved, in keeping with tradition."),
+            row("Turbo", Setting::Turbo, &["On", "Off"], "Does nothing. It never did. Saved anyway, so the prompt can say 66 MHz."),
         ])
     }
 

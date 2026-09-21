@@ -13,6 +13,9 @@ pub enum Level {
     Light,
     /// Every sprinkle the show has.
     Full,
+    /// The whole day: everything `full` has, plus sound, reactions to everyday commands,
+    /// ceremonies, a screensaver, a defrag screen and the Turbo button.
+    Ultra,
 }
 
 impl Level {
@@ -21,6 +24,7 @@ impl Level {
         match s {
             "light" => Level::Light,
             "full" => Level::Full,
+            "ultra" => Level::Ultra,
             _ => Level::Off,
         }
     }
@@ -31,17 +35,18 @@ impl Level {
             Level::Off => "off",
             Level::Light => "light",
             Level::Full => "full",
+            Level::Ultra => "ultra",
         }
     }
 
-    /// Shimmer, twinkle and the stripe sweep run at `light` and `full`.
+    /// Shimmer, twinkle and the stripe sweep run at `light`, `full` and `ultra`.
     pub fn text_effects(self) -> bool {
-        matches!(self, Level::Light | Level::Full)
+        matches!(self, Level::Light | Level::Full | Level::Ultra)
     }
 
-    /// The POST beep and the beep codes only run at `full`.
+    /// The POST beep and the beep codes run at `full` and `ultra`.
     pub fn sound(self) -> bool {
-        matches!(self, Level::Full)
+        matches!(self, Level::Full | Level::Ultra)
     }
 }
 
@@ -300,10 +305,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn level_parse_reads_the_three_values_and_anything_else_as_off() {
+    fn level_parse_reads_the_four_values_and_anything_else_as_off() {
         assert_eq!(Level::parse("off"), Level::Off);
         assert_eq!(Level::parse("light"), Level::Light);
         assert_eq!(Level::parse("full"), Level::Full);
+        assert_eq!(Level::parse("ultra"), Level::Ultra);
         for bad in ["", "LIGHT", "on", "holographic"] {
             assert_eq!(Level::parse(bad), Level::Off, "{bad}");
         }
@@ -311,7 +317,7 @@ mod tests {
 
     #[test]
     fn as_str_round_trips_through_parse() {
-        for level in [Level::Off, Level::Light, Level::Full] {
+        for level in [Level::Off, Level::Light, Level::Full, Level::Ultra] {
             assert_eq!(Level::parse(level.as_str()), level);
         }
     }
@@ -321,15 +327,18 @@ mod tests {
         assert!(!Level::Off.text_effects());
         assert!(Level::Light.text_effects());
         assert!(Level::Full.text_effects());
+        assert!(Level::Ultra.text_effects());
         assert!(!Level::Off.sound());
         assert!(!Level::Light.sound());
         assert!(Level::Full.sound());
+        assert!(Level::Ultra.sound());
     }
 
     #[test]
     fn resolve_falls_back_to_config_with_no_env_and_env_wins_including_when_unknown() {
         assert_eq!(resolve(Level::Full, None), Level::Full);
         assert_eq!(resolve(Level::Off, Some("full")), Level::Full);
+        assert_eq!(resolve(Level::Off, Some("ultra")), Level::Ultra);
         assert_eq!(resolve(Level::Full, Some("holographic")), Level::Off);
     }
 

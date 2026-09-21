@@ -24,6 +24,7 @@ if [[ -o interactive ]] && command -v bios >/dev/null 2>&1; then
       command bios "$@"
     fi
   }
+  eval {{ULTRA}}
 
   # Set on its own, independent of presence: the tab title is its own config key.
   if [[ {{TITLE}} == 1 ]]; then

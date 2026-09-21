@@ -40,6 +40,12 @@ pub struct Config {
     pub graphics: GraphicsPref,
     /// The sprinkles dial.
     pub sprinkles: crate::sprinkles::Level,
+    /// Ultra: how often the everyday commands get a reaction, in percent. Out of range or
+    /// unparseable reads as `DEFAULT_ULTRA_CHANCE`.
+    pub ultra_chance: u8,
+    /// Ultra: sound volume, 0 to 1. 0 keeps the visuals and mutes the sound. Out of range or
+    /// unparseable reads as `DEFAULT_ULTRA_VOLUME`.
+    pub ultra_volume: f64,
     /// The master switch. False means a new tab prints nothing at all.
     pub boot: bool,
     /// Whether the flavour says anything away from the boot screen.
@@ -59,11 +65,56 @@ impl Default for Config {
             project_dirs: Vec::new(),
             graphics: GraphicsPref::Auto,
             sprinkles: crate::sprinkles::Level::Off,
+            ultra_chance: DEFAULT_ULTRA_CHANCE,
+            ultra_volume: DEFAULT_ULTRA_VOLUME,
             boot: true,
             presence: true,
             presence_after: 10,
             title: true,
         }
+    }
+}
+
+/// The default `ultra_chance`, in percent: how often the everyday commands get a reaction.
+const DEFAULT_ULTRA_CHANCE: u8 = 20;
+/// The default `ultra_volume`, 0 to 1.
+const DEFAULT_ULTRA_VOLUME: f64 = 0.5;
+
+/// Reads an Ultra reaction chance from text, tolerantly: anything that is not an integer from 0
+/// to 100 reads as `DEFAULT_ULTRA_CHANCE`, the same tolerant way every other config value is read.
+fn parse_ultra_chance(s: &str) -> u8 {
+    s.parse::<u8>()
+        .ok()
+        .filter(|v| *v <= 100)
+        .unwrap_or(DEFAULT_ULTRA_CHANCE)
+}
+
+/// Reads an Ultra volume from text, tolerantly: anything that is not a number from 0 to 1 reads
+/// as `DEFAULT_ULTRA_VOLUME`.
+fn parse_ultra_volume(s: &str) -> f64 {
+    s.parse::<f64>()
+        .ok()
+        .filter(|v| (0.0..=1.0).contains(v))
+        .unwrap_or(DEFAULT_ULTRA_VOLUME)
+}
+
+/// `env`, when set at all, wins over `config_value`, even when it does not parse to an integer
+/// from 0 to 100 (it then reads as `DEFAULT_ULTRA_CHANCE`): the same rule `SPARKLEBIOS_SPRINKLES`
+/// follows for `sprinkles`, applied here for the `SPARKLEBIOS_ULTRA_CHANCE` override.
+pub fn resolve_ultra_chance(config_value: u8, env: Option<&str>) -> u8 {
+    match env {
+        Some(value) => parse_ultra_chance(value),
+        None => config_value,
+    }
+}
+
+/// `env`, when set at all, wins over `config_value`, even when it does not parse to a number from
+/// 0 to 1 (it then reads as `DEFAULT_ULTRA_VOLUME`): the same rule `SPARKLEBIOS_SPRINKLES` follows
+/// for `sprinkles`, applied here for the `SPARKLEBIOS_ULTRA_VOLUME` override.
+pub fn resolve_ultra_volume(config_value: f64, env: Option<&str>) -> f64 {
+    match env {
+        Some(value) => parse_ultra_volume(value),
+        None => config_value,
     }
 }
 
@@ -97,8 +148,12 @@ checks = true
 project_dirs = []
 
 # Sprinkles: optional effects during the once-a-day animated boot.
-# \"off\", \"light\" (text effects) or \"full\" (text effects and sound).
+# \"off\", \"light\" (text effects), \"full\" (text effects and sound) or \"ultra\" (the whole day).
 sprinkles = \"off\"
+# Ultra: how often the everyday commands get a reaction, in percent.
+ultra_chance = 20
+# Ultra: sound volume, 0 to 1. 0 keeps the visuals and mutes the sound.
+ultra_volume = 0.5
 
 # The master switch. False means a new tab prints nothing at all, the same as setting
 # SPARKLEBIOS_BOOT=0, but for every shell rather than one.
@@ -169,6 +224,8 @@ struct RawConfig {
     project_dirs: Option<Vec<String>>,
     graphics: Option<String>,
     sprinkles: Option<String>,
+    ultra_chance: Option<i64>,
+    ultra_volume: Option<f64>,
     boot: Option<bool>,
     presence: Option<bool>,
     presence_after: Option<u64>,
@@ -203,6 +260,15 @@ pub fn load(dir: Option<&std::path::Path>) -> Config {
             .as_deref()
             .map(crate::sprinkles::Level::parse)
             .unwrap_or(default.sprinkles),
+        ultra_chance: raw
+            .ultra_chance
+            .filter(|v| (0..=100).contains(v))
+            .map(|v| v as u8)
+            .unwrap_or(default.ultra_chance),
+        ultra_volume: raw
+            .ultra_volume
+            .filter(|v| (0.0..=1.0).contains(v))
+            .unwrap_or(default.ultra_volume),
         boot: raw.boot.unwrap_or(default.boot),
         presence: raw.presence.unwrap_or(default.presence),
         presence_after: raw.presence_after.unwrap_or(default.presence_after),
@@ -295,6 +361,8 @@ mod tests {
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
+                ultra_chance: DEFAULT_ULTRA_CHANCE,
+                ultra_volume: DEFAULT_ULTRA_VOLUME,
                 boot: true,
                 presence: true,
                 presence_after: 10,
@@ -382,6 +450,8 @@ mod tests {
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
+                ultra_chance: DEFAULT_ULTRA_CHANCE,
+                ultra_volume: DEFAULT_ULTRA_VOLUME,
                 boot: true,
                 presence: true,
                 presence_after: 10,
@@ -413,6 +483,8 @@ mod tests {
                 project_dirs: Vec::new(),
                 graphics: GraphicsPref::Auto,
                 sprinkles: crate::sprinkles::Level::Off,
+                ultra_chance: DEFAULT_ULTRA_CHANCE,
+                ultra_volume: DEFAULT_ULTRA_VOLUME,
                 boot: true,
                 presence: true,
                 presence_after: 10,
@@ -537,6 +609,7 @@ mod tests {
             ("off", Level::Off),
             ("light", Level::Light),
             ("full", Level::Full),
+            ("ultra", Level::Ultra),
         ] {
             let dir = tempfile::tempdir().unwrap();
             std::fs::write(
@@ -556,6 +629,62 @@ mod tests {
             load(Some(dir.path())).sprinkles,
             crate::sprinkles::Level::Off
         );
+    }
+
+    #[test]
+    fn ultra_chance_defaults_to_twenty_and_is_read() {
+        assert_eq!(Config::default().ultra_chance, 20);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "ultra_chance = 42\n").unwrap();
+        assert_eq!(load(Some(dir.path())).ultra_chance, 42);
+    }
+
+    #[test]
+    fn ultra_chance_out_of_range_falls_back_to_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "ultra_chance = 150\n").unwrap();
+        assert_eq!(load(Some(dir.path())).ultra_chance, 20);
+        std::fs::write(dir.path().join("config.toml"), "ultra_chance = -5\n").unwrap();
+        assert_eq!(load(Some(dir.path())).ultra_chance, 20);
+    }
+
+    #[test]
+    fn ultra_volume_defaults_to_a_half_and_is_read() {
+        assert_eq!(Config::default().ultra_volume, 0.5);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "ultra_volume = 0.9\n").unwrap();
+        assert_eq!(load(Some(dir.path())).ultra_volume, 0.9);
+    }
+
+    #[test]
+    fn ultra_volume_out_of_range_falls_back_to_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), "ultra_volume = 1.5\n").unwrap();
+        assert_eq!(load(Some(dir.path())).ultra_volume, 0.5);
+        std::fs::write(dir.path().join("config.toml"), "ultra_volume = -0.1\n").unwrap();
+        assert_eq!(load(Some(dir.path())).ultra_volume, 0.5);
+    }
+
+    #[test]
+    fn resolve_ultra_chance_falls_back_to_config_with_no_env_and_env_wins_including_when_garbage() {
+        assert_eq!(resolve_ultra_chance(42, None), 42);
+        assert_eq!(resolve_ultra_chance(20, Some("77")), 77);
+        assert_eq!(
+            resolve_ultra_chance(77, Some("banana")),
+            DEFAULT_ULTRA_CHANCE
+        );
+        assert_eq!(resolve_ultra_chance(77, Some("150")), DEFAULT_ULTRA_CHANCE);
+    }
+
+    #[test]
+    fn resolve_ultra_volume_falls_back_to_config_with_no_env_and_env_wins_including_when_garbage() {
+        assert_eq!(resolve_ultra_volume(0.9, None), 0.9);
+        assert_eq!(resolve_ultra_volume(0.5, Some("0.1")), 0.1);
+        assert_eq!(
+            resolve_ultra_volume(0.1, Some("banana")),
+            DEFAULT_ULTRA_VOLUME
+        );
+        assert_eq!(resolve_ultra_volume(0.1, Some("2.0")), DEFAULT_ULTRA_VOLUME);
     }
 
     #[test]

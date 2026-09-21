@@ -21,9 +21,12 @@ Everyday:
   flavours           List the personalities you can boot as
   use <FLAVOUR>      Boot as that flavour from now on
   flavour new <ID>   Start your own flavour from a working template
-  sprinkles [LEVEL]  Optional effects: off, light or full
+  sprinkles [LEVEL]  Optional effects: off, light, full or ultra
   theme list         List the matching Ghostty themes
   theme use <NAME>   Install the themes and switch Ghostty to one
+  turbo              Toggle the Turbo button. It does nothing.
+  screensaver        Bounce the logo around until you press a key
+  defrag [PATH]      Defragment a folder. It was never fragmented.
 
 Install:
   init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
@@ -92,6 +95,12 @@ enum Command {
     },
     /// Show or set the sprinkles level.
     Sprinkles(SprinklesCliArgs),
+    /// Toggle the Turbo button. It does nothing.
+    Turbo,
+    /// Bounce the wordmark around the screen until a key is pressed.
+    Screensaver,
+    /// Defragment a folder. It was never fragmented.
+    Defrag(DefragCliArgs),
     /// Print the current flavour's line for a moment. For tests and for shells we do not emit.
     #[command(hide = true)]
     Say(SayCliArgs),
@@ -195,8 +204,14 @@ struct FlavourNewCliArgs {
 
 #[derive(Debug, Args)]
 struct SprinklesCliArgs {
-    /// The level to use from now on: off, light or full. Omit to print the current one.
+    /// The level to use from now on: off, light, full or ultra. Omit to print the current one.
     level: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct DefragCliArgs {
+    /// The directory to defragment. Defaults to the current directory.
+    path: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -293,6 +308,9 @@ pub fn run() -> i32 {
             command: FlavourCommand::New(args),
         } => flavour_new(&args.id),
         Command::Sprinkles(args) => sprinkles(args),
+        Command::Turbo => turbo(),
+        Command::Screensaver => crate::screensaver::run(),
+        Command::Defrag(args) => crate::defrag::run(args.path.as_deref()),
         Command::Theme {
             command: ThemeCommand::Install { dir },
         } => install_theme(dir),
@@ -426,18 +444,74 @@ fn print_cache(cache: &crate::cache::Cache) {
 /// flavour has nothing to say, or a slot it needs was not supplied.
 /// Prints a shell's hook with the current flavour's lines written into it. Everything the shell
 /// will say is decided here, once, so the shell itself never spawns `bios` to speak.
+///
+/// The effective sprinkles level, `ultra_chance` and `ultra_volume` are resolved against their
+/// environment overrides here, the same way `bios boot` resolves them for the animated show
+/// (see `resolve_ultra_config`): whichever is in effect when a shell starts is what that shell's
+/// hook is baked with, for that shell's lifetime, the same rule the mascot and the boot streak
+/// already follow.
 fn init(shell: shell::Shell) -> i32 {
-    let config = crate::config::load(crate::paths::config_dir().as_deref());
+    let config = resolve_ultra_config(crate::config::load(crate::paths::config_dir().as_deref()));
     let flavour = crate::flavour::find(
         &config.flavour,
         crate::paths::user_flavours_dir().as_deref(),
     );
     let mascot = mascot_for(flavour.as_ref(), shell.wrap());
+    let turbo = turbo_on();
+    let sounds_dir = crate::paths::sounds_dir().unwrap_or_default();
+    if config.sprinkles == crate::sprinkles::Level::Ultra {
+        // Generates whichever of the fifteen ULTRA sounds are missing; a no-op, just fifteen
+        // `stat` calls, once they all already exist. The other place this happens is
+        // `bios sprinkles ultra` itself, so a shell started right after switching to ultra
+        // does not have to wait for the very first `bios init` to hear anything.
+        let _ = crate::sound::ensure(&sounds_dir);
+    }
     print!(
         "{}",
-        shell::render(shell, &config, flavour.as_ref(), mascot)
+        shell::render_hook(
+            shell,
+            &config,
+            flavour.as_ref(),
+            mascot,
+            turbo,
+            &sounds_dir.to_string_lossy(),
+        )
     );
     0
+}
+
+/// `config`, with `sprinkles`, `ultra_chance` and `ultra_volume` resolved against their
+/// environment overrides (`SPARKLEBIOS_SPRINKLES`, `SPARKLEBIOS_ULTRA_CHANCE` and
+/// `SPARKLEBIOS_ULTRA_VOLUME`), the same way `bios boot` resolves `sprinkles` for the animated
+/// show. Every other key is left as `config` had it.
+fn resolve_ultra_config(config: crate::config::Config) -> crate::config::Config {
+    let sprinkles = crate::sprinkles::resolve(
+        config.sprinkles,
+        std::env::var("SPARKLEBIOS_SPRINKLES").ok().as_deref(),
+    );
+    let ultra_chance = crate::config::resolve_ultra_chance(
+        config.ultra_chance,
+        std::env::var("SPARKLEBIOS_ULTRA_CHANCE").ok().as_deref(),
+    );
+    let ultra_volume = crate::config::resolve_ultra_volume(
+        config.ultra_volume,
+        std::env::var("SPARKLEBIOS_ULTRA_VOLUME").ok().as_deref(),
+    );
+    crate::config::Config {
+        sprinkles,
+        ultra_chance,
+        ultra_volume,
+        ..config
+    }
+}
+
+/// The Turbo flag's value at the moment the hook is generated (see `state::State::turbo`),
+/// baked into the hook the same way the boot streak is: read once, fixed for that shell's
+/// lifetime. Missing state reads as off, the same as everywhere else `State::load` is used.
+fn turbo_on() -> bool {
+    crate::paths::state_dir()
+        .map(|dir| crate::state::State::load(&dir))
+        .is_some_and(|state| state.turbo)
 }
 
 /// What goes in front of the prompt: the mascot where the terminal can draw one, and the boot
@@ -646,12 +720,13 @@ fn flavour_new(id: &str) -> i32 {
 
 /// `level`, strictly: unlike `sprinkles::Level::parse`, which reads anything unknown as `Off` for
 /// the config file and the environment override, a level typed on the command line either is one
-/// of the three or is rejected outright.
+/// of the four or is rejected outright.
 fn parse_sprinkle_level(level: &str) -> Option<crate::sprinkles::Level> {
     match level {
         "off" => Some(crate::sprinkles::Level::Off),
         "light" => Some(crate::sprinkles::Level::Light),
         "full" => Some(crate::sprinkles::Level::Full),
+        "ultra" => Some(crate::sprinkles::Level::Ultra),
         _ => None,
     }
 }
@@ -664,6 +739,7 @@ fn sprinkles_set_message(level: crate::sprinkles::Level) -> &'static str {
         }
         crate::sprinkles::Level::Light => "Sprinkles : light. Tasteful.",
         crate::sprinkles::Level::Full => "Sprinkles : full. You asked for this.",
+        crate::sprinkles::Level::Ultra => "Sprinkles : ultra. Nobody asked for this. Here it is.",
     }
 }
 
@@ -679,16 +755,26 @@ fn sprinkles(args: SprinklesCliArgs) -> i32 {
 
     if let Some(level) = &args.level {
         let Some(parsed) = parse_sprinkle_level(level) else {
-            eprintln!("bios: no sprinkle level called {level}. Try: off, light, full");
+            eprintln!("bios: no sprinkle level called {level}. Try: off, light, full, ultra");
             return 1;
         };
         if crate::config::set_sprinkles(&dir, parsed).is_err() {
             return 1;
         }
+        if parsed == crate::sprinkles::Level::Ultra {
+            // The other place the ULTRA sounds are generated, besides `bios init`: switching
+            // to ultra should not leave the very first shell that starts afterward waiting on
+            // it. A no-op, just fifteen `stat` calls, once they already exist.
+            if let Some(sounds_dir) = crate::paths::sounds_dir() {
+                let _ = crate::sound::ensure(&sounds_dir);
+            }
+        }
         println!("{}", sprinkles_set_message(parsed));
         if matches!(
             parsed,
-            crate::sprinkles::Level::Light | crate::sprinkles::Level::Full
+            crate::sprinkles::Level::Light
+                | crate::sprinkles::Level::Full
+                | crate::sprinkles::Level::Ultra
         ) {
             println!("Preview it now: bios boot");
         }
@@ -697,6 +783,27 @@ fn sprinkles(args: SprinklesCliArgs) -> i32 {
 
     let config = crate::config::load(Some(&dir));
     println!("Sprinkles : {}", config.sprinkles.as_str());
+    0
+}
+
+/// Toggles the Turbo flag in `state.json` and prints which speed it landed on. Engages nothing:
+/// it is traditional. This is the one Turbo that persists; `bios setup`'s own Turbo row reads and
+/// writes the same flag, but only at F10, like every other row there.
+fn turbo() -> i32 {
+    let Some(dir) = crate::paths::state_dir() else {
+        eprintln!("bios: cannot find a state directory");
+        return 1;
+    };
+    let mut state = crate::state::State::load(&dir);
+    state.turbo = !state.turbo;
+    if state.save(&dir).is_err() {
+        return 1;
+    }
+    if state.turbo {
+        println!("Turbo on. 66 MHz. No measurable difference.");
+    } else {
+        println!("Turbo off. 33 MHz. No measurable difference.");
+    }
     0
 }
 
