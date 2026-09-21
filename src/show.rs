@@ -27,9 +27,10 @@ pub struct ShowOutcome {
 }
 
 /// The ULTRA `memory_count` sound `play` is to start, detached, the moment the memory count's
-/// `Count` step begins. Built only by `boot::run_shell_boot`, and only for a real `Full` daily
-/// boot at sprinkles `ultra` with a player named and a sound file in place; see `play`'s own doc
-/// comment for the full gate. Everyone else hands `play` `None`.
+/// `Count` step begins. Built only by `boot::run_shell_boot` and `boot::run_preview`, and only for
+/// a real `Full` daily boot or a hand typed `bios boot`, at sprinkles `ultra` with a player named
+/// and a sound file in place; see `play`'s own doc comment for the full gate. Everyone else hands
+/// `play` `None`.
 pub struct MemoryCountSound {
     /// The player command named by `$SPARKLEBIOS_ULTRA_PLAYER`.
     pub player: String,
@@ -199,10 +200,11 @@ fn frames_for(step: &render::AnimatedStep) -> Vec<(&Vec<Span>, u64)> {
 ///
 /// `memory_count_sound`, when `Some`, is started (`sound::play_detached`) the moment the memory
 /// count's `Count` step begins, and never touched again afterward: not waited on, not stopped
-/// early by a skip. `boot::run_shell_boot` is the only caller that ever builds one, and only for a
-/// real `Full` daily boot at sprinkles `ultra` with a player and a sound file to hand it; every
-/// other caller, including every test in this module, passes `None`, so the sound never plays for
-/// a preview, a Fast or Quiet boot, or anywhere `$SPARKLEBIOS_ULTRA_PLAYER` is unset.
+/// early by a skip. `boot::run_shell_boot` and `boot::run_preview` are the only callers that ever
+/// build one, and only for a real `Full` daily boot, or a hand typed `bios boot`, at sprinkles
+/// `ultra` with a player and a sound file to hand it; every other caller, including every test in
+/// this module, passes `None`, so the sound never plays for a Fast or Quiet boot, or anywhere
+/// `$SPARKLEBIOS_ULTRA_PLAYER` is unset.
 #[allow(clippy::too_many_arguments)]
 pub fn play(
     machine: &Machine,

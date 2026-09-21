@@ -188,11 +188,19 @@ fn run_text<W: Write>(screen: &mut Screen<W>, fd: i32, cols: u16, rows: u16, no_
     }
 }
 
-/// The image mode loop: transmits all fourteen images once, then every frame moves the
-/// placement to whichever of them is current, rather than sending a picture again. Unlike text
-/// mode this never redraws the whole screen, so a twinkle is drawn and, once it ends, cleared as
-/// its own small escape; `last_twinkle` is what tells this loop the twinkle just ended, since by
-/// then the model has already forgotten it.
+/// The image mode loop: transmits all fourteen images once, then every frame deletes whichever
+/// image the previous frame placed and places the current one in its stead, rather than sending
+/// a picture again. The delete is load bearing, not tidiness: Ghostty does not replace a
+/// placement just because a later one names the same placement id (see `view::PLACEMENT_ID`), so
+/// without it every frame's wordmark stayed on screen, several of them smeared across the
+/// terminal in different colours at once. `last_placed` is what this loop deletes next frame,
+/// since a ripple changes image every frame and the delete has to name whichever one is actually
+/// up, not assume it is still the last one this loop placed itself.
+///
+/// Unlike text mode this never redraws the whole screen, so a twinkle is drawn, and cleared, as
+/// its own small escapes too; `last_twinkle` is the cells this loop clears, either once the model
+/// has dropped the twinkle entirely or, if a fresh one starts in a different spot before the old
+/// one's three frames are up, right away, so the old cells are never left lit under the new ones.
 fn run_image<W: Write>(screen: &mut Screen<W>, fd: i32, cols: u16, rows: u16) {
     let (width, height) = view::image_size(cols);
     let mut model = Model::new(
@@ -209,24 +217,37 @@ fn run_image<W: Write>(screen: &mut Screen<W>, fd: i32, cols: u16, rows: u16) {
             image_id(image),
         ));
     }
-    let mut last_twinkle = None;
+    let mut last_placed = None;
+    let mut last_twinkle: Option<[(i32, i32); 3]> = None;
     loop {
+        let current = model.current_image();
+        screen.write(&view::image_delete(image_id(
+            last_placed.unwrap_or(current),
+        )));
         screen.write(&view::image_move(
-            image_id(model.current_image()),
+            image_id(current),
             width,
             height,
             model.x as u16,
             model.y as u16,
         ));
+        last_placed = Some(current);
         match model.twinkle {
-            Some(twinkle) => screen.write(&view::twinkle_frame_image(&twinkle)),
+            Some(twinkle) => {
+                if let Some(old) = last_twinkle {
+                    if old != twinkle.cells {
+                        screen.write(&view::twinkle_clear_image(old));
+                    }
+                }
+                screen.write(&view::twinkle_frame_image(&twinkle));
+                last_twinkle = Some(twinkle.cells);
+            }
             None => {
-                if let Some(ended) = last_twinkle {
+                if let Some(ended) = last_twinkle.take() {
                     screen.write(&view::twinkle_clear_image(ended));
                 }
             }
         }
-        last_twinkle = model.twinkle.map(|t| t.cells);
         if !crate::tty::wait_for_key(fd, FRAME_MS).is_empty() {
             return;
         }
@@ -318,16 +339,18 @@ mod tests {
         run_image(&mut screen, read_fd, 80, 24);
         drop(screen);
         let out = String::from_utf8_lossy(&buf.lock().unwrap()).to_string();
-        // `a=t` transmits and stores an image; `a=p` places one. Only one frame is drawn here
-        // (the key was already waiting), so fourteen transmits (one per image) and a single
-        // placement is expected; the point of the test is that the transmits are not part of the
-        // per frame path at all (see `run_image`: the `kitty_transmit` calls sit before the
-        // loop, the `image_move` call inside it).
+        // `a=t` transmits and stores an image; `a=d` deletes one; `a=p` places one. Only one
+        // frame is drawn here (the key was already waiting), so fourteen transmits (one per
+        // image) and a single delete and placement is expected; the point of the test is that
+        // the transmits are not part of the per frame path at all (see `run_image`: the
+        // `kitty_transmit` calls sit before the loop, the `image_delete` and `image_move` calls
+        // inside it).
         assert_eq!(
             out.matches("a=t").count(),
             14,
             "transmitted a different number of images than fourteen: {out:?}"
         );
+        assert_eq!(out.matches("a=d").count(), 1);
         assert_eq!(out.matches("a=p").count(), 1);
         close_pipe(read_fd, write_fd);
     }
@@ -360,6 +383,78 @@ mod tests {
             out.matches("a=p").count() > 1,
             "should have drawn more than one frame while waiting for the key: {out:?}"
         );
+        close_pipe(read_fd, write_fd);
+    }
+
+    /// The `a=d,d=i,i=<id>` and `a=p,i=<id>` events an image mode run wrote, in the order they
+    /// appeared, each tagged `"d"` or `"p"` and carrying the image id it named.
+    fn delete_and_placement_events(out: &str) -> Vec<(&'static str, u32)> {
+        fn ids_after<'a>(out: &'a str, needle: &'a str) -> impl Iterator<Item = (usize, u32)> + 'a {
+            let needle_len = needle.len();
+            out.match_indices(needle).map(move |(pos, _)| {
+                let rest = &out[pos + needle_len..];
+                let end = rest
+                    .find(|c: char| !c.is_ascii_digit())
+                    .unwrap_or(rest.len());
+                (pos, rest[..end].parse().unwrap())
+            })
+        }
+        let mut events: Vec<(usize, &'static str, u32)> = ids_after(out, "a=d,d=i,i=")
+            .map(|(pos, id)| (pos, "d", id))
+            .chain(ids_after(out, "a=p,i=").map(|(pos, id)| (pos, "p", id)))
+            .collect();
+        events.sort_by_key(|&(pos, ..)| pos);
+        events.into_iter().map(|(_, kind, id)| (kind, id)).collect()
+    }
+
+    #[test]
+    fn every_frame_deletes_the_image_the_previous_frame_placed_before_placing_the_new_one() {
+        // Ghostty does not honour the placement id replacement the Kitty spec promises: without
+        // an explicit delete first, older frames' wordmarks stayed on screen. This locks the
+        // fix's actual escape sequence in place: exactly one delete then one placement a frame,
+        // the delete naming whichever image the previous frame placed, not a fixed one, since a
+        // ripple changes image every frame.
+        let (read_fd, write_fd) = make_pipe();
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let mut screen = Screen::enter(SharedBuf(buf.clone()));
+        let key_after_a_few_frames = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(FRAME_MS * 5));
+            // SAFETY: `write_fd` is a valid, open, writable fd from the pipe created above, and
+            // this thread is joined, below, before the test closes it.
+            unsafe {
+                libc::write(write_fd, b"x".as_ptr() as *const libc::c_void, 1);
+            }
+        });
+        run_image(&mut screen, read_fd, 80, 24);
+        key_after_a_few_frames.join().unwrap();
+        drop(screen);
+        let out = String::from_utf8_lossy(&buf.lock().unwrap()).to_string();
+
+        let events = delete_and_placement_events(&out);
+        assert!(
+            events.len() >= 4,
+            "expected several frames' worth of events: {events:?}"
+        );
+        assert_eq!(
+            events.len() % 2,
+            0,
+            "deletes and placements should come in pairs: {events:?}"
+        );
+        let mut previously_placed: Option<u32> = None;
+        for pair in events.chunks(2) {
+            let [(delete_kind, deleted_id), (place_kind, placed_id)] = pair else {
+                unreachable!("chunks(2) over an even length always yields pairs")
+            };
+            assert_eq!(*delete_kind, "d", "expected a delete first: {events:?}");
+            assert_eq!(*place_kind, "p", "expected a placement second: {events:?}");
+            if let Some(previous) = previously_placed {
+                assert_eq!(
+                    *deleted_id, previous,
+                    "the delete should name whichever image the previous frame placed: {events:?}"
+                );
+            }
+            previously_placed = Some(*placed_id);
+        }
         close_pipe(read_fd, write_fd);
     }
 }

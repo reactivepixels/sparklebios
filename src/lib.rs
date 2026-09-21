@@ -17,6 +17,7 @@ pub mod presence;
 pub mod render;
 pub mod screensaver;
 pub mod setup;
+pub mod shaders;
 // Owned by another agent during this pass; excluded from the missing-docs
 // survey below so this file can enforce doc coverage on the modules we do own.
 #[allow(missing_docs)]

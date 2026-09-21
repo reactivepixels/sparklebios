@@ -7,7 +7,6 @@ and none of them are on by default.
 |---|---|
 | [shaders/cursor-trail.glsl](shaders/cursor-trail.glsl) | A Ghostty shader. When the cursor jumps it leaves a short six-stripe trail that retracts into it |
 | [shaders/scanlines.glsl](shaders/scanlines.glsl) | A Ghostty shader. Scanlines and nothing else. Two numbers at the top set the strength and the spacing |
-| [shaders/crt.glsl](shaders/crt.glsl) | A Ghostty shader. The whole tube: scanlines, a slight curve, a soft glow on bright text and a vignette |
 | [tools/colours.zsh](tools/colours.zsh) | Makes `ls`, `eza`, `bat`, `fzf`, `man`, `less`, `grep` and zsh completion follow the terminal's sixteen colours |
 | [tools/delta.gitconfig](tools/delta.gitconfig) | Git diffs through `delta`, drawn from the same sixteen colours |
 | [starship-palette.toml](starship-palette.toml) | Four palettes for starship's Gruvbox Rainbow preset: `rainbows_and_unicorns`, `rainbows_and_unicorns_mane`, `rainbows_and_unicorns_auto` and `rainbows_and_unicorns_paper`. `bios theme use` switches an opted-in prompt between `_auto`, which uses the terminal's own colours by number so it follows whichever theme variant is active, and `_paper`, for Paper White alone |
@@ -22,9 +21,12 @@ theme you run, and it changes when you change variant.
 
 ## Turning things on
 
-The cursor trail, in your Ghostty config:
+`bios sprinkles ultra` installs the scanlines and the cursor trail on its own and
+adds both to your Ghostty config; see [sprinkles.md](../docs/sprinkles.md). To add
+either by hand instead, in your Ghostty config:
 
 ```
+custom-shader = /path/to/extras/shaders/scanlines.glsl
 custom-shader = /path/to/extras/shaders/cursor-trail.glsl
 ```
 

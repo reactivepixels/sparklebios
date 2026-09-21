@@ -12,7 +12,7 @@ One key, `sprinkles`, four values:
 | `off` (default) | No sprinkle code runs. |
 | `light` | Text effects: a shimmer, a twinkle, and (only on a streak milestone) a stripe sweep. |
 | `full` | Everything `light` does, plus sound: the POST beep and the beep codes. |
-| `ultra` | Everything `full` does, plus a whole day of it: sound, reactions to everyday commands and a screensaver. See [ultra](#ultra) below. |
+| `ultra` | Everything `full` does, plus a whole day of it: a jingle at start, the finish beep, folder remarks on `cd`, a shutdown click, and a screensaver. See [ultra](#ultra) below. |
 
 Set it with `bios sprinkles <off\|light\|full\|ultra>`, or run `bios
 sprinkles` with no argument to print the level currently in effect.
@@ -74,25 +74,64 @@ leave them there; a shell that already has every file pays for fifteen
 `stat` calls to notice that, and generating a missing one from scratch takes
 well under 200ms for all fifteen together.
 
-- `post_ok`, `post_fail`: the finish line's own beep, good and bad.
-- `floppy_seek`: a short seek, for `cd` and for a look around.
-- `hdd_chatter`: the drive thinking, for a command that is taking a while.
-- `hdd_spindown`: the drive settling, for a command that just finished.
-- `modem`: the network noise, for anything that reaches outside the machine.
+Of the fifteen, only these still play on their own, and each one answers
+something you just did rather than arriving out of nowhere:
+
+- `post_ok`, `post_fail`: the finish line's own beep, good and bad, once a
+  command has run long enough to earn one (see "A long command" below).
 - `power_off`: the shutdown click, played once the shell exits.
 - `jingle_<flavour>`: one small tune per built-in flavour (`unicorn`, `sumo`,
   `ninja`, `viking`, `luchador`, `yeti`, `raccoon`, `wizard`), played once a
   shell starts. A flavour you write yourself gets no jingle.
+
+The other four are generated the same way and kept in the cache, but nothing
+triggers them right now: `floppy_seek`, `hdd_chatter`, `hdd_spindown` and
+`modem` all used to fire while you were in the middle of something else, at
+random or on an everyday command like `cd` or `git status`, and that is
+exactly the sort of unprompted noise that got pulled. Wiring one back to a
+trigger is a small change to the shell hook, not a re-port, if it's ever
+wanted again.
 
 Playing one costs nothing running per prompt beyond starting the system's
 own audio player, detached: `afplay` on macOS, or the first of `pw-play`,
 `paplay` or `aplay` found on Linux. If none of those exist, nothing plays
 and nothing complains either. The shell never waits on it.
 
+A sixteenth sound, `memory_count`, is generated alongside the fifteen above
+but is never reached through `_sparklebios_ultra_sound`: `bios` itself starts
+it, timed to the memory count digits it is already drawing, on a real Full
+daily boot, and on a hand typed `bios boot` too, since typing the command is
+a request, the same reasoning that lets a hand typed `bios boot` ignore
+`SPARKLEBIOS_BOOT=0`. Both still need `ultra` and still need a player, found
+through `SPARKLEBIOS_ULTRA_PLAYER` exactly as everything else on this page,
+so a terminal with no hook installed stays silent either way.
+
+### Ghostty shaders
+
+`ultra` also turns on two Ghostty shaders: scanlines, and a cursor trail.
+Both `bios sprinkles ultra` and a `bios setup` save that lands on Ultra do
+the same two things: write `scanlines.glsl` and `cursor-trail.glsl` into
+`$XDG_CONFIG_HOME/sparklebios/shaders/`, then add a `custom-shader` line for
+each into your Ghostty config. Ghostty only picks up a `custom-shader`
+change on a reload, not a new tab, so reload Ghostty (or restart it) to see
+them; a new tab is enough for the sound above, but not for this.
+
+Dropping `sprinkles` below `ultra`, from either surface, removes exactly
+those two lines again and leaves everything else in the config alone. A
+`custom-shader` line you added yourself, pointing at a shader of your own,
+is never touched in either direction.
+
+This only happens when a Ghostty config is found at all, in the same
+locations `bios theme use` already looks in; with none found, nothing is
+written and nothing complains. On the command line, `--no-shaders` (on
+`bios sprinkles <level>`, any level) skips this step entirely, in either
+direction, for anyone who wants the sound but not the shaders; there is no
+equivalent switch in `bios setup`, which always does both.
+
 ### The two config keys
 
 ```toml
-ultra_chance = 20   # how often an everyday command earns a reaction, in percent
+ultra_chance = 20   # how often a cd earns a folder remark, in percent
 ultra_volume = 0.5  # 0 to 1; 0 keeps the visuals and mutes the sound
 ```
 
@@ -104,28 +143,16 @@ than failing. See [config.md](config.md).
 ### What keeps happening
 
 - **A jingle**, once, right after a shell starts.
-- **Everyday commands** earn a sound at `ultra_chance` percent, unless a
-  different figure is named here: `cd` into a git repository plays
-  `floppy_seek` at 60 percent, `cd` anywhere else at 25 percent; `ls`, `la`,
-  `ll` and `tree` at 10 percent; `git status`, `git log` and `git diff` at 30
-  percent; `git pull`, `git fetch`, `curl`, `wget`, `npm i`, `pnpm i`,
-  `cargo build` and `make` play `modem` at 50 percent; `rm`, `mv`, `cp`,
-  `mkdir` and `touch` play `hdd_spindown` at 15 percent; `git push`, `ssh`,
-  `scp` and `rsync` play `modem` every time.
-- **A long command** plays `hdd_spindown` once it finishes, if it ran two
-  seconds or more, and `post_ok` or `post_fail` instead once it has run long
+- **A long command** plays `post_ok` or `post_fail` once it has run long
   enough for the finish line itself to print (`presence_after` seconds, and
-  only when `presence` is on; with `presence` off a long command still gets
-  `hdd_spindown`, never the beep). In zsh, which can wait on a timer without
-  spawning a process for it, a command still running after two seconds also
-  starts `hdd_chatter` in the background while it thinks. bash and fish have
-  no such builtin wait, so that one sound, and only that one, is zsh only;
-  everything else on this page runs the same in all three shells.
+  only when `presence` is on). With `presence` off, or before that threshold,
+  a long command is silent: there is no fallback sound for it any more. This
+  runs the same in all three shells.
 - **A folder remark**, at `ultra_chance` percent on any `cd`: one dim line,
   chosen at random from four, and always a real fact about the directory you
   landed in (an entry count, the age of its last write, its git branch and
-  uncommitted count, or that it is empty). Skipped under `NO_COLOR`, along
-  with every other visual effect below; the sound is not.
+  uncommitted count, or that it is empty). Text only, and skipped under
+  `NO_COLOR` like every other visual effect below.
 - **Two ceremonies**: `Saving to CMOS... done.`, in cyan, after a `git
   commit` that succeeds, and the screen filling with falling glyphs for 1.2
   seconds after a `git push` that succeeds, or for 1.6 seconds the first

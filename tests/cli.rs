@@ -58,45 +58,28 @@ fn help_and_bare_invocation_print_the_exact_top_level_help() {
     let version = env!("CARGO_PKG_VERSION");
     let expected = format!(
         r#"SparkleBIOS {version}
-Boot every terminal tab like a 1995 PC. It counts your RAM, detects a unicorn,
-and runs a real health check.
+Boot every terminal tab like a 1995 PC. It counts your RAM, detects a
+unicorn, and runs a real health check.
 
 Usage: bios <COMMAND>
 
-Everyday:
-  boot               Play the boot screen now
-  fetch              Show your machine at a glance
-  resume             Change to the project you left work in
-  refresh            Run the health checks again now
-  flavours           List the personalities you can boot as
-  use <FLAVOUR>      Boot as that flavour from now on
-  flavour new <ID>   Start your own flavour from a working template
-  sprinkles [LEVEL]  Optional effects: off, light, full or ultra
-  theme list         List the matching Ghostty themes
-  theme use <NAME>   Install the themes and switch Ghostty to one
-  turbo              Toggle the Turbo button. It does nothing.
-  screensaver        Bounce the logo around until you press a key
+  boot                 Play the boot screen now
+  fetch                Show your machine at a glance
+  resume               Change to the project you left work in
+  refresh              Run the health checks again now
+  use <FLAVOUR>        Boot as that flavour from now on
+  flavours             List the personalities you can boot as
+  theme use <NAME>     Switch Ghostty to a matching theme
+  sprinkles [LEVEL]    Optional effects: off, light, full or ultra
+  setup                Every setting, in one blue screen
+  init zsh|bash|fish   Print the shell hook
 
-Install:
-  init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
-                     command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
-  theme install      Install the theme files without switching
-  setup              The CMOS Setup Utility. Blue. Arrow keys. You remember.
-  config edit        Open the config file in your editor
-  config path        Print where the config file lives
-  config reset       Factory defaults. The unicorn will be notified.
-
-Try:
-  bios boot --flavour sumo     Preview a flavour without changing anything
-  bios use sumo                Make it permanent
-  bios resume                  Go back to the project you left work in
-  bios use                     Show which flavour is set
-  bios theme use mane          Switch Ghostty to the Mane theme
-  SPARKLEBIOS_BOOT=0           Set this in a shell to stop it booting there
+Add the hook once, at the end of ~/.zshrc:
+  command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
 
 Options:
-  -h, --help         Print help
-  -V, --version      Print version
+  -h, --help           Print help
+  -V, --version        Print version
 "#
     );
     for args in [vec!["--help"], vec!["help"], Vec::<&str>::new()] {
@@ -108,13 +91,13 @@ Options:
     }
 }
 
-/// Every command the top level help advertises must actually exist: this parses the Everyday
-/// and Install blocks straight out of `bios --help`'s own output, for the leading word of each
-/// row, and runs each one with `--help`. A command that reaches the help block without being
-/// wired into the `Command` enum makes clap print "unrecognized subcommand", which this test
-/// catches in the same run rather than someone finding it by hand (as `screensaver` and
-/// `defrag` was, once). `say` and `prompt` are hidden by design and are not in the block at
-/// all, so there is nothing to skip for them here.
+/// Every command the top level help advertises must actually exist: this parses the command
+/// rows straight out of `bios --help`'s own output, for the leading word of each row, and runs
+/// each one with `--help`. A command that reaches the help block without being wired into the
+/// `Command` enum makes clap print "unrecognized subcommand", which this test catches in the
+/// same run rather than someone finding it by hand (as `screensaver` and `defrag` was, once).
+/// `say` and `prompt` are hidden by design and are not in the block at all, so there is nothing
+/// to skip for them here.
 #[test]
 fn every_command_named_in_the_help_block_actually_exists() {
     let output = bios().arg("--help").output().unwrap();
@@ -123,18 +106,18 @@ fn every_command_named_in_the_help_block_actually_exists() {
     let mut words: Vec<String> = Vec::new();
     let mut in_block = false;
     for line in help.lines() {
-        if line == "Everyday:" || line == "Install:" {
+        if line == "Usage: bios <COMMAND>" {
             in_block = true;
             continue;
         }
-        if in_block && line.is_empty() {
+        if in_block && line == "Add the hook once, at the end of ~/.zshrc:" {
             in_block = false;
             continue;
         }
         if !in_block {
             continue;
         }
-        // A row starts with exactly two leading spaces then the command's own name; the
+        // A row starts with exactly two leading spaces followed by a lowercase letter. The
         // continuation line under `init zsh|bash|fish` has many more spaces before its text
         // and is skipped by the second check.
         let Some(rest) = line.strip_prefix("  ") else {
@@ -143,13 +126,16 @@ fn every_command_named_in_the_help_block_actually_exists() {
         if rest.starts_with(' ') {
             continue;
         }
+        if !rest.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
+            continue;
+        }
         let word = rest.split_whitespace().next().unwrap().to_string();
         if !words.contains(&word) {
             words.push(word);
         }
     }
     assert!(
-        words.len() >= 10,
+        words.len() >= 9,
         "parsed too few commands out of the help block: {words:?}"
     );
 

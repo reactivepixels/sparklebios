@@ -35,43 +35,28 @@ help`) is hand written rather than clap generated:
 
 ```
 SparkleBIOS {version}
-Boot every terminal tab like a 1995 PC. It counts your RAM, detects a unicorn,
-and runs a real health check.
+Boot every terminal tab like a 1995 PC. It counts your RAM, detects a
+unicorn, and runs a real health check.
 
 Usage: bios <COMMAND>
 
-Everyday:
-  boot               Play the boot screen now
-  fetch              Show your machine at a glance
-  resume             Change to the project you left work in
-  refresh            Run the health checks again now
-  flavours           List the personalities you can boot as
-  use <FLAVOUR>      Boot as that flavour from now on
-  flavour new <ID>   Start your own flavour from a working template
-  sprinkles [LEVEL]  Optional effects: off, light or full
-  theme list         List the matching Ghostty themes
-  theme use <NAME>   Install the themes and switch Ghostty to one
+  boot                 Play the boot screen now
+  fetch                Show your machine at a glance
+  resume               Change to the project you left work in
+  refresh              Run the health checks again now
+  use <FLAVOUR>        Boot as that flavour from now on
+  flavours             List the personalities you can boot as
+  theme use <NAME>     Switch Ghostty to a matching theme
+  sprinkles [LEVEL]    Optional effects: off, light, full or ultra
+  setup                Every setting, in one blue screen
+  init zsh|bash|fish   Print the shell hook
 
-Install:
-  init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
-                     command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
-  theme install      Install the theme files without switching
-  setup              The CMOS Setup Utility. Blue. Arrow keys. You remember.
-  config edit        Open the config file in your editor
-  config path        Print where the config file lives
-  config reset       Factory defaults. The unicorn will be notified.
-
-Try:
-  bios boot --flavour sumo     Preview a flavour without changing anything
-  bios use sumo                Make it permanent
-  bios resume                  Go back to the project you left work in
-  bios use                     Show which flavour is set
-  bios theme use mane          Switch Ghostty to the Mane theme
-  SPARKLEBIOS_BOOT=0           Set this in a shell to stop it booting there
+Add the hook once, at the end of ~/.zshrc:
+  command -v bios >/dev/null 2>&1 && eval "$(bios init zsh)"
 
 Options:
-  -h, --help         Print help
-  -V, --version      Print version
+  -h, --help           Print help
+  -V, --version        Print version
 ```
 
 Two commands and one flag stay off this screen on purpose: `bios say` and

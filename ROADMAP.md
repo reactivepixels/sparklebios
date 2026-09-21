@@ -19,7 +19,6 @@ this is in [docs/design.md](docs/design.md).
 - **neigh**, the rainbow pipe
 - **stable**: a unicorn that lives in your prompt, with commit streaks and opinions about your commands
 - Exit code theatre
-- An optional CRT shader for Ghostty
 - A jingle per flavour. Deferred until it can be done without shipping audio files or spawning a player, which may be never.
 - **Horn Check**, a second game
 

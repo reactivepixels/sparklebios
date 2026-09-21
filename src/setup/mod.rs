@@ -519,26 +519,35 @@ fn save(state: &State) -> i32 {
         eprintln!("bios: cannot find a config directory");
         return 1;
     };
+    let ghostty_config = crate::theme::pick_config_path(&crate::paths::ghostty_config_candidates());
     save_to(
         &dir,
         crate::paths::state_dir().as_deref(),
         crate::paths::sounds_dir().as_deref(),
+        ghostty_config.as_deref(),
+        crate::paths::shaders_dir().as_deref(),
         state,
     )
 }
 
-/// `save`'s actual work, against explicit config, state and sounds directories rather than the
-/// real ones, so a test can point it at sandboxed directories instead of the user's own. Every
-/// row but Turbo writes into `dir`'s config file; Turbo writes into `state_dir`'s state file
-/// instead, the same flag `bios turbo` toggles, so a missing `state_dir` (no state directory
-/// could be found) silently skips that one write rather than erroring, the same way a missing
-/// config directory is handled everywhere else in this crate. `sounds_dir`, similarly, is only
-/// ever read when the Sprinkles row is saved at Ultra (see `cli::ensure_ultra_sounds`), and a
-/// missing one just as silently means no sound is generated.
+/// `save`'s actual work, against explicit config, state, sounds, Ghostty config and shaders
+/// directories rather than the real ones, so a test can point it at sandboxed locations instead
+/// of the user's own. Every row but Turbo writes into `dir`'s config file; Turbo writes into
+/// `state_dir`'s state file instead, the same flag `bios turbo` toggles, so a missing `state_dir`
+/// (no state directory could be found) silently skips that one write rather than erroring, the
+/// same way a missing config directory is handled everywhere else in this crate. `sounds_dir`,
+/// similarly, is only ever read when the Sprinkles row is saved at Ultra (see
+/// `cli::ensure_ultra_sounds`), and a missing one just as silently means no sound is generated.
+/// `ghostty_config` and `shaders_dir` are only ever read when the Sprinkles row is saved at all,
+/// in either direction (see `cli::sync_shaders`, the same function `bios sprinkles <level>` calls
+/// for the shaders), and a missing either one just as silently means nothing in the Ghostty
+/// config changes.
 fn save_to(
     dir: &std::path::Path,
     state_dir: Option<&std::path::Path>,
     sounds_dir: Option<&std::path::Path>,
+    ghostty_config: Option<&std::path::Path>,
+    shaders_dir: Option<&std::path::Path>,
     state: &State,
 ) -> i32 {
     let user_dir = crate::paths::user_flavours_dir();
@@ -561,14 +570,30 @@ fn save_to(
             Setting::Sprinkles => {
                 let level = value.to_lowercase();
                 let wrote = crate::config::set_key(dir, "sprinkles", &format!("\"{level}\""));
-                // Generate the sounds right away, through the same path `bios sprinkles ultra`
-                // uses: switching to ultra in here should not leave the maintainer's next tab
-                // silent just because that tab's own `bios init` is the first thing to ever ask
-                // for the sounds. Around 40ms in a release build, and only when the files are
-                // missing (see `cli::ensure_ultra_sounds`); silent either way, since the "CMOS
-                // updated" line below already says the save happened.
-                if wrote.is_ok() && level == "ultra" {
-                    crate::cli::ensure_ultra_sounds(sounds_dir);
+                if wrote.is_ok() {
+                    let parsed = crate::sprinkles::Level::parse(&level);
+                    // Generate the sounds right away, through the same path `bios sprinkles
+                    // ultra` uses: switching to ultra in here should not leave the maintainer's
+                    // next tab silent just because that tab's own `bios init` is the first thing
+                    // to ever ask for the sounds. Around 40ms in a release build, and only when
+                    // the files are missing (see `cli::ensure_ultra_sounds`); silent either way,
+                    // since the "CMOS updated" line below already says the save happened.
+                    if parsed == crate::sprinkles::Level::Ultra {
+                        crate::cli::ensure_ultra_sounds(sounds_dir);
+                    }
+                    // Toggle the two Ghostty shaders the same way, through the same function
+                    // `bios sprinkles <level>` calls in both directions (`cli::sync_shaders`):
+                    // landing on Ultra installs them and adds their `custom-shader` lines,
+                    // landing anywhere else takes those two lines back out, and a `custom-shader`
+                    // line of the user's own is never touched either way. Silent, same as the
+                    // sounds above: the shader change needs a Ghostty reload rather than a new
+                    // tab, a difference this screen's own "next boot" line does not need to
+                    // explain.
+                    let _ = crate::cli::sync_shaders(
+                        parsed,
+                        ghostty_config.map(std::path::Path::to_path_buf),
+                        shaders_dir.map(std::path::Path::to_path_buf),
+                    );
                 }
                 wrote
             }
@@ -672,7 +697,7 @@ mod tests {
         let state = State::new(rows_for(&config, false));
         assert!(state.changes().is_empty());
 
-        assert_eq!(save_to(dir.path(), None, None, &state), 0);
+        assert_eq!(save_to(dir.path(), None, None, None, None, &state), 0);
 
         let after = std::fs::read(dir.path().join("config.toml")).unwrap();
         assert_eq!(before, after);
@@ -705,7 +730,7 @@ mod tests {
         state.key(model::Key::Right);
         assert!(state.current().changed());
 
-        assert_eq!(save_to(dir.path(), None, None, &state), 0);
+        assert_eq!(save_to(dir.path(), None, None, None, None, &state), 0);
 
         let contents = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
         assert!(contents.contains("future_field = true"));
@@ -908,7 +933,10 @@ mod tests {
         state.key(model::Key::Right); // Off -> On
         assert!(state.current().changed());
 
-        assert_eq!(save_to(dir.path(), Some(state_dir.path()), None, &state), 0);
+        assert_eq!(
+            save_to(dir.path(), Some(state_dir.path()), None, None, None, &state),
+            0
+        );
 
         assert!(crate::state::State::load(state_dir.path()).turbo);
     }
@@ -940,7 +968,10 @@ mod tests {
         move_to(&mut state, Setting::Turbo);
         state.key(model::Key::Right); // Off -> On
 
-        assert_eq!(save_to(dir.path(), Some(state_dir.path()), None, &state), 0);
+        assert_eq!(
+            save_to(dir.path(), Some(state_dir.path()), None, None, None, &state),
+            0
+        );
 
         let after = std::fs::read(dir.path().join("config.toml")).unwrap();
         assert_eq!(before, after, "turbo must never touch config.toml");
@@ -970,7 +1001,14 @@ mod tests {
         step_sprinkles_to(&mut state, "Ultra");
 
         assert_eq!(
-            save_to(dir.path(), None, Some(sounds_dir.path()), &state),
+            save_to(
+                dir.path(),
+                None,
+                Some(sounds_dir.path()),
+                None,
+                None,
+                &state
+            ),
             0
         );
 
@@ -992,7 +1030,14 @@ mod tests {
             step_sprinkles_to(&mut state, target);
 
             assert_eq!(
-                save_to(dir.path(), None, Some(sounds_dir.path()), &state),
+                save_to(
+                    dir.path(),
+                    None,
+                    Some(sounds_dir.path()),
+                    None,
+                    None,
+                    &state
+                ),
                 0
             );
 
@@ -1018,10 +1063,163 @@ mod tests {
         assert!(state.changes().is_empty());
 
         assert_eq!(
-            save_to(dir.path(), None, Some(sounds_dir.path()), &state),
+            save_to(
+                dir.path(),
+                None,
+                Some(sounds_dir.path()),
+                None,
+                None,
+                &state
+            ),
             0
         );
 
         assert_eq!(std::fs::read_dir(sounds_dir.path()).unwrap().count(), 0);
+    }
+
+    /// The gap this guards against: `bios sprinkles ultra` adds the two `custom-shader` lines to
+    /// a Ghostty config through `cli::sync_shaders`, but a save that lands on Ultra from `bios
+    /// setup` never called it, so the sounds worked and the scanlines did not. A save that lands
+    /// on Ultra must install the two shaders and add both lines, through the same function.
+    #[test]
+    fn saving_with_sprinkles_set_to_ultra_also_installs_and_enables_the_shaders() {
+        let dir = tempfile::tempdir().unwrap();
+        let shaders_dir = tempfile::tempdir().unwrap();
+        let ghostty_dir = tempfile::tempdir().unwrap();
+        let ghostty_config = ghostty_dir.path().join("config");
+        std::fs::write(&ghostty_config, "font-size = 14\n").unwrap();
+
+        let mut state = State::new(rows_for(&crate::config::Config::default(), false));
+        step_sprinkles_to(&mut state, "Ultra");
+
+        assert_eq!(
+            save_to(
+                dir.path(),
+                None,
+                None,
+                Some(&ghostty_config),
+                Some(shaders_dir.path()),
+                &state,
+            ),
+            0
+        );
+
+        let contents = std::fs::read_to_string(&ghostty_config).unwrap();
+        assert!(contents.starts_with("font-size = 14\n"));
+        assert_eq!(contents.matches("custom-shader = ").count(), 2);
+        assert_eq!(std::fs::read_dir(shaders_dir.path()).unwrap().count(), 2);
+    }
+
+    /// The other direction of the same gap: dropping Sprinkles below Ultra from `bios setup`
+    /// must remove the two `custom-shader` lines again, the same as `bios sprinkles <level>`.
+    #[test]
+    fn saving_with_sprinkles_dropped_below_ultra_removes_the_shader_lines_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let shaders_dir = tempfile::tempdir().unwrap();
+        let ghostty_dir = tempfile::tempdir().unwrap();
+        let ghostty_config = ghostty_dir.path().join("config");
+        std::fs::write(&ghostty_config, "font-size = 14\n").unwrap();
+
+        let mut state = State::new(rows_for(&crate::config::Config::default(), false));
+        step_sprinkles_to(&mut state, "Ultra");
+        assert_eq!(
+            save_to(
+                dir.path(),
+                None,
+                None,
+                Some(&ghostty_config),
+                Some(shaders_dir.path()),
+                &state,
+            ),
+            0
+        );
+
+        let config = crate::config::Config {
+            sprinkles: crate::sprinkles::Level::Ultra,
+            ..crate::config::Config::default()
+        };
+        let mut state = State::new(rows_for(&config, false));
+        step_sprinkles_to(&mut state, "Light");
+        assert_eq!(
+            save_to(
+                dir.path(),
+                None,
+                None,
+                Some(&ghostty_config),
+                Some(shaders_dir.path()),
+                &state,
+            ),
+            0
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(&ghostty_config).unwrap(),
+            "font-size = 14\n"
+        );
+    }
+
+    /// A `custom-shader` line the user added themselves, pointing at a shader of their own, must
+    /// survive both directions: setup's toggle only ever touches the two lines it wrote itself
+    /// (see `shaders::is_shader_line_for`).
+    #[test]
+    fn a_users_own_custom_shader_line_survives_saving_ultra_then_a_lower_level_from_setup() {
+        let dir = tempfile::tempdir().unwrap();
+        let shaders_dir = tempfile::tempdir().unwrap();
+        let ghostty_dir = tempfile::tempdir().unwrap();
+        let ghostty_config = ghostty_dir.path().join("config");
+        std::fs::write(&ghostty_config, "custom-shader = /mine/own.glsl\n").unwrap();
+
+        let mut state = State::new(rows_for(&crate::config::Config::default(), false));
+        step_sprinkles_to(&mut state, "Ultra");
+        assert_eq!(
+            save_to(
+                dir.path(),
+                None,
+                None,
+                Some(&ghostty_config),
+                Some(shaders_dir.path()),
+                &state,
+            ),
+            0
+        );
+        let with_ultra = std::fs::read_to_string(&ghostty_config).unwrap();
+        assert!(with_ultra.contains("custom-shader = /mine/own.glsl"));
+        assert_eq!(with_ultra.matches("custom-shader = ").count(), 3);
+
+        let config = crate::config::Config {
+            sprinkles: crate::sprinkles::Level::Ultra,
+            ..crate::config::Config::default()
+        };
+        let mut state = State::new(rows_for(&config, false));
+        step_sprinkles_to(&mut state, "Full");
+        assert_eq!(
+            save_to(
+                dir.path(),
+                None,
+                None,
+                Some(&ghostty_config),
+                Some(shaders_dir.path()),
+                &state,
+            ),
+            0
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(&ghostty_config).unwrap(),
+            "custom-shader = /mine/own.glsl\n"
+        );
+    }
+
+    /// No Ghostty config found (here, simply none given) means the shader toggle does nothing,
+    /// the same as `bios sprinkles <level>` with no config anywhere in its search order, and the
+    /// save still succeeds: a person on another terminal should not see the save itself fail
+    /// just because there is no Ghostty config to edit.
+    #[test]
+    fn saving_ultra_with_no_ghostty_config_does_nothing_and_the_save_still_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = State::new(rows_for(&crate::config::Config::default(), false));
+        step_sprinkles_to(&mut state, "Ultra");
+
+        assert_eq!(save_to(dir.path(), None, None, None, None, &state), 0);
     }
 }

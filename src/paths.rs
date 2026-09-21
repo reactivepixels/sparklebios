@@ -68,6 +68,13 @@ pub fn user_flavours_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("flavours"))
 }
 
+/// Where the two `ultra` shader files are installed, under `config_dir`. Not a Ghostty directory:
+/// unlike a Ghostty theme, a `custom-shader` line takes an absolute path to any file, so this only
+/// needs to be somewhere of our own that does not move.
+pub fn shaders_dir() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("shaders"))
+}
+
 /// `$XDG_CONFIG_HOME/ghostty/themes`, falling back to `~/.config/ghostty/themes`.
 pub fn ghostty_themes_dir() -> Option<PathBuf> {
     resolve(

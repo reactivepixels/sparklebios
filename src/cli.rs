@@ -8,45 +8,28 @@ use crate::shell;
 
 const TOP_LEVEL_HELP_TEMPLATE: &str = "\
 SparkleBIOS {version}
-Boot every terminal tab like a 1995 PC. It counts your RAM, detects a unicorn,
-and runs a real health check.
+Boot every terminal tab like a 1995 PC. It counts your RAM, detects a
+unicorn, and runs a real health check.
 
 Usage: bios <COMMAND>
 
-Everyday:
-  boot               Play the boot screen now
-  fetch              Show your machine at a glance
-  resume             Change to the project you left work in
-  refresh            Run the health checks again now
-  flavours           List the personalities you can boot as
-  use <FLAVOUR>      Boot as that flavour from now on
-  flavour new <ID>   Start your own flavour from a working template
-  sprinkles [LEVEL]  Optional effects: off, light, full or ultra
-  theme list         List the matching Ghostty themes
-  theme use <NAME>   Install the themes and switch Ghostty to one
-  turbo              Toggle the Turbo button. It does nothing.
-  screensaver        Bounce the logo around until you press a key
+  boot                 Play the boot screen now
+  fetch                Show your machine at a glance
+  resume               Change to the project you left work in
+  refresh              Run the health checks again now
+  use <FLAVOUR>        Boot as that flavour from now on
+  flavours             List the personalities you can boot as
+  theme use <NAME>     Switch Ghostty to a matching theme
+  sprinkles [LEVEL]    Optional effects: off, light, full or ultra
+  setup                Every setting, in one blue screen
+  init zsh|bash|fish   Print the shell hook
 
-Install:
-  init zsh|bash|fish Print the hook. For zsh, add this to the end of ~/.zshrc:
-                     command -v bios >/dev/null 2>&1 && eval \"$(bios init zsh)\"
-  theme install      Install the theme files without switching
-  setup              The CMOS Setup Utility. Blue. Arrow keys. You remember.
-  config edit        Open the config file in your editor
-  config path        Print where the config file lives
-  config reset       Factory defaults. The unicorn will be notified.
-
-Try:
-  bios boot --flavour sumo     Preview a flavour without changing anything
-  bios use sumo                Make it permanent
-  bios resume                  Go back to the project you left work in
-  bios use                     Show which flavour is set
-  bios theme use mane          Switch Ghostty to the Mane theme
-  SPARKLEBIOS_BOOT=0           Set this in a shell to stop it booting there
+Add the hook once, at the end of ~/.zshrc:
+  command -v bios >/dev/null 2>&1 && eval \"$(bios init zsh)\"
 
 Options:
-  -h, --help         Print help
-  -V, --version      Print version
+  -h, --help           Print help
+  -V, --version        Print version
 ";
 
 /// The hand-written top-level help text, with the crate version substituted in. Replaces clap's
@@ -203,6 +186,12 @@ struct FlavourNewCliArgs {
 struct SprinklesCliArgs {
     /// The level to use from now on: off, light, full or ultra. Omit to print the current one.
     level: Option<String>,
+    /// Skip adding or removing the ultra shaders in your Ghostty config, in either direction.
+    #[arg(long)]
+    no_shaders: bool,
+    /// Ghostty config file to edit for the ultra shaders, overriding the usual search order.
+    #[arg(long, hide = true)]
+    ghostty_config: Option<PathBuf>,
     /// Diagnose ULTRA sound: print the effective level, the player found, and the sounds
     /// directory, then play post_ok through the same detached path the shell hook uses. Hidden:
     /// a command a person runs deliberately once something seems wrong, not part of the everyday
@@ -772,6 +761,46 @@ pub(crate) fn ensure_ultra_sounds(sounds_dir: Option<&std::path::Path>) {
     }
 }
 
+/// The line `bios sprinkles ultra` prints once the two shaders (see `shaders::SHADERS`) are in the
+/// user's Ghostty config.
+const SHADERS_ENABLED_LINE: &str =
+    "Scanlines and a cursor trail are in your Ghostty config. Reload it to see them.";
+
+/// The line `bios sprinkles off`, `light` or `full` prints once the two shaders are out of the
+/// user's Ghostty config again.
+const SHADERS_DISABLED_LINE: &str =
+    "Scanlines and the cursor trail are out of your Ghostty config.";
+
+/// Turns the two ultra shaders on in `ghostty_config` when `level` is `Ultra`, off for every other
+/// level, and returns the line to print for whichever happened. `None`, doing nothing, when either
+/// `ghostty_config` or `shaders_dir` is `None`: a person on another terminal should not be told
+/// about a file they do not have, and there is nothing to install into without a shaders
+/// directory. Both are taken already resolved, rather than searched for in here, which is what
+/// makes this the one function both `bios sprinkles <level>` (see `sprinkles`, which resolves
+/// them from `--ghostty-config`/`--no-shaders` or the real search order via
+/// `theme::pick_config_path`) and a `bios setup` save that changes the Sprinkles row (see
+/// `setup::save_to`, which resolves them the same way in real use, or from a test's own sandboxed
+/// directories) call to do the actual toggling, the same way `ensure_ultra_sounds` is the one
+/// function both call for the sounds. Installing the shader files themselves (at `Ultra`) follows
+/// the same shape `bios theme use` installs theme files in; see `shaders::install`.
+pub(crate) fn sync_shaders(
+    level: crate::sprinkles::Level,
+    ghostty_config: Option<PathBuf>,
+    shaders_dir: Option<PathBuf>,
+) -> Option<&'static str> {
+    let config_path = ghostty_config?;
+    let shaders_dir = shaders_dir?;
+    if level == crate::sprinkles::Level::Ultra {
+        let paths = crate::shaders::install(&shaders_dir).ok()?;
+        crate::shaders::enable(&config_path, &paths).ok()?;
+        Some(SHADERS_ENABLED_LINE)
+    } else {
+        let paths = crate::shaders::paths_in(&shaders_dir);
+        crate::shaders::disable(&config_path, &paths).ok()?;
+        Some(SHADERS_DISABLED_LINE)
+    }
+}
+
 /// Shows or sets the sprinkles level, the same shape `use_flavour` follows for the flavour: no
 /// argument prints the effective level, an argument sets it (preserving every other config key)
 /// and prints the level-specific line, and an unknown level is rejected, exit 1, with nothing
@@ -805,6 +834,17 @@ fn sprinkles(args: SprinklesCliArgs) -> i32 {
             println!("Preview it now: bios boot");
         }
         if let Some(line) = sprinkles_set_ultra_sound_line(parsed) {
+            println!("{line}");
+        }
+        let (ghostty_config, shaders_dir) = if args.no_shaders {
+            (None, None)
+        } else {
+            let ghostty_config = args.ghostty_config.or_else(|| {
+                crate::theme::pick_config_path(&crate::paths::ghostty_config_candidates())
+            });
+            (ghostty_config, crate::paths::shaders_dir())
+        };
+        if let Some(line) = sync_shaders(parsed, ghostty_config, shaders_dir) {
             println!("{line}");
         }
         return 0;

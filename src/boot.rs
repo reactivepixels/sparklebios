@@ -251,15 +251,17 @@ fn resolve_sprinkles(
     crate::sprinkles::resolve(config_sprinkles, sprinkles_env)
 }
 
-/// The ULTRA `memory_count` sound to hand `show::play`, or `None`. Built only for a real `Full`
-/// daily boot (`decision`) at sprinkles `ultra`: never for Fast or Quiet, and never for a preview,
-/// since `run_preview` never calls this at all. Beyond that gate, it still needs somewhere to find
-/// a player: `player_env` (the raw `$SPARKLEBIOS_ULTRA_PLAYER`, set by the shell hook) must name
-/// one, or there is no sound. The boot path never searches `PATH` for one itself (that search
-/// exists for a person to run deliberately, in `bios sprinkles --check`, not for every boot to pay
-/// for), so an unset or empty value reads the same as no player at all. `sounds_dir` must resolve
-/// too, to find `memory_count.wav` in; taken as a parameter, like `player_env`, rather than read
-/// from `paths::sounds_dir()` directly, so both can be fed fixed values in a test.
+/// The ULTRA `memory_count` sound to hand `show::play`, or `None`. Built for a real `Full` daily
+/// boot (`decision`) at sprinkles `ultra`, never for Fast or Quiet, and, since typing the command
+/// is a request, for a hand typed `bios boot` too: `run_preview` always plays the `Full` show, so
+/// it calls this with `decision` fixed to `BootMode::Full`, the same way it lets a hand typed `bios
+/// boot` ignore `SPARKLEBIOS_BOOT=0`. Beyond that gate, it still needs somewhere to find a player:
+/// `player_env` (the raw `$SPARKLEBIOS_ULTRA_PLAYER`, set by the shell hook) must name one, or
+/// there is no sound. The boot path never searches `PATH` for one itself (that search exists for a
+/// person to run deliberately, in `bios sprinkles --check`, not for every boot to pay for), so an
+/// unset or empty value reads the same as no player at all. `sounds_dir` must resolve too, to find
+/// `memory_count.wav` in; taken as a parameter, like `player_env`, rather than read from
+/// `paths::sounds_dir()` directly, so both can be fed fixed values in a test.
 fn memory_count_sound_for(
     decision: BootMode,
     sprinkles: crate::sprinkles::Level,
@@ -379,8 +381,18 @@ fn run_preview(args: &BootArgs) {
     let (year, month, day) = crate::clock::local_ymd(now as i64);
     let calendar_line = calendar_line_for(&machine, true, year, month, day);
     let mut stdout = std::io::stdout();
-    // A preview is never the real daily boot, so the ULTRA memory count sound never plays here,
-    // whatever the level: see `memory_count_sound_for`, which only `run_shell_boot` calls.
+    // A hand typed `bios boot` always plays the `Full` show, so it earns the ULTRA memory count
+    // tick the same way a real Full daily boot does: `decision` is fixed to `Full` here rather
+    // than threaded through from anywhere, since a preview has no boot decision of its own. See
+    // `memory_count_sound_for`'s doc comment for the rest of the gate (ultra, a player, a sound
+    // file), all of which still applies.
+    let memory_count_sound = memory_count_sound_for(
+        BootMode::Full,
+        sprinkles,
+        env_var("SPARKLEBIOS_ULTRA_PLAYER").as_deref(),
+        crate::paths::sounds_dir(),
+        config.ultra_volume,
+    );
     play_or_render(
         &machine,
         &facts,
@@ -395,7 +407,7 @@ fn run_preview(args: &BootArgs) {
         &mut stdout,
         key_fd,
         sprinkles,
-        None,
+        memory_count_sound,
     );
 
     refresh_if_stale(cache.as_ref(), now);
@@ -657,6 +669,26 @@ mod tests {
         let dir = Some(std::path::PathBuf::from("/sounds"));
         let sound = memory_count_sound_for(BootMode::Full, Level::Ultra, Some("afplay"), dir, 0.5)
             .expect("Full, ultra, a player and a sounds dir should build a sound");
+        assert_eq!(sound.player, "afplay");
+        assert_eq!(
+            sound.sound_path,
+            std::path::Path::new("/sounds/memory_count.wav")
+        );
+        assert_eq!(sound.volume, 0.5);
+    }
+
+    /// `run_preview` (a hand typed `bios boot`) always plays the `Full` show, so it hands this
+    /// function `BootMode::Full` explicitly, the same way `run_shell_boot` does for a real daily
+    /// boot: typing the command is a request, the same reasoning that lets a hand typed `bios
+    /// boot` ignore `SPARKLEBIOS_BOOT=0`. From this function's point of view a preview and a real
+    /// Full daily boot are indistinguishable, which is exactly the point: nothing here needs to
+    /// know which one it is.
+    #[test]
+    fn memory_count_sound_builds_for_a_hand_typed_preview_the_same_way_as_a_real_full_boot() {
+        use crate::sprinkles::Level;
+        let dir = Some(std::path::PathBuf::from("/sounds"));
+        let sound = memory_count_sound_for(BootMode::Full, Level::Ultra, Some("afplay"), dir, 0.5)
+            .expect("a hand typed `bios boot` at ultra with a player should build the tick");
         assert_eq!(sound.player, "afplay");
         assert_eq!(
             sound.sound_path,

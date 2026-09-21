@@ -22,6 +22,8 @@ include = [
     "themes/**",
     "shell/**",
     "extras/starship-palette.toml",
+    "extras/shaders/scanlines.glsl",
+    "extras/shaders/cursor-trail.glsl",
     "/Cargo.toml",
     "/LICENSE-APACHE",
     "/LICENSE-MIT",

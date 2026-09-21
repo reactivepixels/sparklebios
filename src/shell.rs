@@ -395,10 +395,9 @@ fn fill_ultra_vars(template: &str, vars: &UltraVars) -> String {
 
 /// The ULTRA block for zsh: moments 1 through 9 in full, since zsh's `zselect` gives it a true
 /// builtin wait with no external `sleep` and `add-zsh-hook` lets several hooks share one event,
-/// so the block can sit on its own, ahead of the title and presence blocks, and every moment in
-/// the plan is reachable. Registered first (see the placement in `shell/init.zsh`) so its own
-/// `precmd` sees the real `$?` before title's or presence's own hooks have a chance to run a
-/// command of their own and overwrite it.
+/// so the block can sit on its own, ahead of the title and presence blocks. Registered first (see
+/// the placement in `shell/init.zsh`) so its own `precmd` sees the real `$?` before title's or
+/// presence's own hooks have a chance to run a command of their own and overwrite it.
 fn ultra_block_zsh(vars: &UltraVars) -> String {
     fill_ultra_vars(
         r##"if [[ -z "${SSH_CONNECTION:-}" ]]; then
@@ -441,27 +440,9 @@ fn ultra_block_zsh(vars: &UltraVars) -> String {
 
     _sparklebios_ultra_maybe() { (( RANDOM % 100 < ${1:-$_sparklebios_ultra_chance} )) }
 
-    _sparklebios_ultra_everyday() {
-      case $1 in
-        (git\ push*|ssh\ *|scp\ *|rsync\ *) _sparklebios_ultra_sound modem ;;
-        (git\ pull*|git\ fetch*|curl\ *|wget\ *|npm\ i*|pnpm\ i*|cargo\ build*|make*)
-          _sparklebios_ultra_maybe 50 && _sparklebios_ultra_sound modem ;;
-        (ls|ls\ *|la|la\ *|ll|ll\ *|tree|tree\ *)
-          _sparklebios_ultra_maybe 10 && _sparklebios_ultra_sound floppy_seek ;;
-        (git\ status*|git\ log*|git\ diff*)
-          _sparklebios_ultra_maybe 30 && _sparklebios_ultra_sound floppy_seek ;;
-        (rm\ *|mv\ *|cp\ *|mkdir\ *|touch\ *)
-          _sparklebios_ultra_maybe 15 && _sparklebios_ultra_sound hdd_spindown ;;
-      esac
-      return 0
-    }
-
     _sparklebios_ultra_preexec() {
       _sparklebios_ultra_t0=$EPOCHREALTIME
       _sparklebios_ultra_cmd=$1
-      _sparklebios_ultra_everyday "$1"
-      (( _sparklebios_ultra_sound_on )) || return 0
-      ( zselect -t 200; _sparklebios_ultra_play "$_sparklebios_ultra_sounds/hdd_chatter.wav" ) &>/dev/null &!
     }
 
     _sparklebios_ultra_rain() {
@@ -505,8 +486,6 @@ fn ultra_block_zsh(vars: &UltraVars) -> String {
       local -F ultra_took=$(( EPOCHREALTIME - _sparklebios_ultra_t0 ))
       if (( ultra_took >= @@AFTER@@ )) && [[ @@PRESENCE@@ == 1 ]]; then
         (( ultra_status == 0 )) && _sparklebios_ultra_sound post_ok || _sparklebios_ultra_sound post_fail
-      elif (( ultra_took >= 2 )); then
-        _sparklebios_ultra_sound hdd_spindown
       fi
       if (( ultra_status == 0 )); then
         case $_sparklebios_ultra_cmd in
@@ -529,11 +508,6 @@ fn ultra_block_zsh(vars: &UltraVars) -> String {
     }
 
     _sparklebios_ultra_chpwd() {
-      if [[ -d .git ]]; then
-        _sparklebios_ultra_maybe 60 && _sparklebios_ultra_sound floppy_seek
-      else
-        _sparklebios_ultra_maybe 25 && _sparklebios_ultra_sound floppy_seek
-      fi
       _sparklebios_ultra_maybe || return 0
       [[ -n "${NO_COLOR:-}" ]] && return 0
       local -a entries; entries=( *(DN) )
@@ -613,12 +587,6 @@ fn ultra_block_zsh(vars: &UltraVars) -> String {
 /// clobbering presence's, this captures whatever is already trapped (with `trap -p`) and chains
 /// it in, unwrapping its own previous chain first so a second `eval "$(bios init bash)"` does
 /// not nest a copy of itself into the trap string every time.
-///
-/// bash has no builtin wait, so unlike zsh this cannot start `hdd_chatter` two seconds into a
-/// still-running command without spawning `sleep` for the wait itself, which would spawn on
-/// every long command rather than only at the detached player; that half of moment 2 is left
-/// out here. The rest of moment 2 (the sounds once a command has already finished) does not
-/// need a mid-command timer and is included.
 fn ultra_block_bash(vars: &UltraVars) -> String {
     fill_ultra_vars(
         r##"if [[ -z "${SSH_CONNECTION:-}" ]]; then
@@ -687,21 +655,6 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
       (( RANDOM % 100 < chance ))
     }
 
-    _sparklebios_ultra_everyday() {
-      case $1 in
-        git\ push*|ssh\ *|scp\ *|rsync\ *) _sparklebios_ultra_sound modem ;;
-        git\ pull*|git\ fetch*|curl\ *|wget\ *|npm\ i*|pnpm\ i*|cargo\ build*|make*)
-          _sparklebios_ultra_maybe 50 && _sparklebios_ultra_sound modem ;;
-        ls|ls\ *|la|la\ *|ll|ll\ *|tree|tree\ *)
-          _sparklebios_ultra_maybe 10 && _sparklebios_ultra_sound floppy_seek ;;
-        git\ status*|git\ log*|git\ diff*)
-          _sparklebios_ultra_maybe 30 && _sparklebios_ultra_sound floppy_seek ;;
-        rm\ *|mv\ *|cp\ *|mkdir\ *|touch\ *)
-          _sparklebios_ultra_maybe 15 && _sparklebios_ultra_sound hdd_spindown ;;
-      esac
-      return 0
-    }
-
     _sparklebios_ultra_rain() {
       [[ -t 1 ]] || return 0
       [[ -n "${NO_COLOR:-}" ]] && return 0
@@ -746,11 +699,6 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
     }
 
     _sparklebios_ultra_chpwd() {
-      if [[ -d .git ]]; then
-        _sparklebios_ultra_maybe 60 && _sparklebios_ultra_sound floppy_seek
-      else
-        _sparklebios_ultra_maybe 25 && _sparklebios_ultra_sound floppy_seek
-      fi
       _sparklebios_ultra_maybe || return 0
       [[ -n "${NO_COLOR:-}" ]] && return 0
       shopt -s dotglob nullglob
@@ -800,8 +748,6 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
         local ultra_took=$(( SECONDS - _sparklebios_ultra_started ))
         if (( ultra_took >= @@AFTER@@ )) && [[ @@PRESENCE@@ == 1 ]]; then
           if (( ultra_status == 0 )); then _sparklebios_ultra_sound post_ok; else _sparklebios_ultra_sound post_fail; fi
-        elif (( ultra_took >= 2 )); then
-          _sparklebios_ultra_sound hdd_spindown
         fi
         if (( ultra_status == 0 )); then
           case $_sparklebios_ultra_cmd in
@@ -855,7 +801,6 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
       [[ -z "${_sparklebios_ultra_started:-}" ]] || return
       _sparklebios_ultra_started=$SECONDS
       _sparklebios_ultra_cmd="$BASH_COMMAND"
-      _sparklebios_ultra_everyday "$BASH_COMMAND"
     }
     trap "eval $_sparklebios_ultra_prior_debug; _sparklebios_ultra_preexec" DEBUG
 
@@ -901,9 +846,6 @@ fn ultra_block_bash(vars: &UltraVars) -> String {
 /// handler read `$status` before title's or presence's own handler runs a command of its own.
 /// fish's events (`--on-event`, `--on-variable`) allow any number of independent handlers, so
 /// unlike bash there is no trap to chain.
-///
-/// fish has no builtin wait either, so the same half of moment 2 (starting `hdd_chatter` while
-/// a command is still running) is left out here for the same reason as bash.
 fn ultra_block_fish(vars: &UltraVars) -> String {
     fill_ultra_vars(
         r##"if not set -q SSH_CONNECTION
@@ -951,21 +893,6 @@ fn ultra_block_fish(vars: &UltraVars) -> String {
             set -l chance $_sparklebios_ultra_chance
             test (count $argv) -gt 0; and set chance $argv[1]
             test (random 0 99) -lt $chance
-        end
-
-        function _sparklebios_ultra_everyday
-            switch $argv[1]
-                case 'git push*' 'ssh *' 'scp *' 'rsync *'
-                    _sparklebios_ultra_sound modem
-                case 'git pull*' 'git fetch*' 'curl *' 'wget *' 'npm i*' 'pnpm i*' 'cargo build*' 'make*'
-                    _sparklebios_ultra_maybe 50; and _sparklebios_ultra_sound modem
-                case 'ls' 'ls *' 'la' 'la *' 'll' 'll *' 'tree' 'tree *'
-                    _sparklebios_ultra_maybe 10; and _sparklebios_ultra_sound floppy_seek
-                case 'git status*' 'git log*' 'git diff*'
-                    _sparklebios_ultra_maybe 30; and _sparklebios_ultra_sound floppy_seek
-                case 'rm *' 'mv *' 'cp *' 'mkdir *' 'touch *'
-                    _sparklebios_ultra_maybe 15; and _sparklebios_ultra_sound hdd_spindown
-            end
         end
 
         function _sparklebios_ultra_rain
@@ -1019,11 +946,6 @@ fn ultra_block_fish(vars: &UltraVars) -> String {
         end
 
         function _sparklebios_ultra_chpwd --on-variable PWD
-            if test -d .git
-                _sparklebios_ultra_maybe 60; and _sparklebios_ultra_sound floppy_seek
-            else
-                _sparklebios_ultra_maybe 25; and _sparklebios_ultra_sound floppy_seek
-            end
             _sparklebios_ultra_maybe; or return 0
             test -n "$NO_COLOR"; and return 0
             set -l entries *
@@ -1085,8 +1007,6 @@ fn ultra_block_fish(vars: &UltraVars) -> String {
                     else
                         _sparklebios_ultra_sound post_fail
                     end
-                else if test $ultra_took -ge 2
-                    _sparklebios_ultra_sound hdd_spindown
                 end
                 if test $ultra_status -eq 0
                     switch $_sparklebios_ultra_cmd
@@ -1113,7 +1033,6 @@ fn ultra_block_fish(vars: &UltraVars) -> String {
         function _sparklebios_ultra_preexec --on-event fish_preexec
             set -g _sparklebios_ultra_started (date +%s)
             set -g _sparklebios_ultra_cmd $argv[1]
-            _sparklebios_ultra_everyday $argv[1]
         end
 
         function _sparklebios_ultra_exit --on-event fish_exit

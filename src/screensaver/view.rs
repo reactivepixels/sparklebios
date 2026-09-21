@@ -123,20 +123,32 @@ pub fn image_size(cols: u16) -> (u16, u16) {
     (width, height)
 }
 
-/// The placement id every frame's move reuses. Fixed, not one per frame: the Kitty graphics
-/// protocol replaces an existing placement, rather than stacking a new one on top of it, when a
-/// later placement command names the same image id and the same placement id. Without naming one
-/// explicitly a bare `a=p` defaults to placement 0 every time, which is the same replacement in
-/// practice on a spec correct terminal, but naming it is what actually says "this is the same
-/// placement, moved" rather than leaving that to a default nobody reading the escape can see.
+/// The placement id every frame's move reuses. Named, not left to the `a=p` default of
+/// placement 0, so a reader of the escape can see this is meant as the same placement moved
+/// rather than a new one. The spec says naming it is enough on its own to replace rather than
+/// stack; Ghostty does not honour that (several wordmarks stayed on screen at once, in different
+/// colours, when this shipped without `image_delete`), so `run_image` now deletes the previous
+/// frame's image outright before every placement, and this id is closer to documentation than a
+/// load bearing part of the fix.
 const PLACEMENT_ID: u32 = 1;
 
 /// The escape that moves an already transmitted Kitty image `id` to `(x, y)`, sized `cols` by
 /// `rows` cells. This is the whole point of transmitting once: every frame after the first costs
-/// only this, a few dozen bytes, never the image itself again. Reusing `PLACEMENT_ID` every time
-/// is what makes this a move rather than a new picture stacking on the last one.
+/// only this, a few dozen bytes, never the image itself again.
 pub fn image_move(id: u32, cols: u16, rows: u16, x: u16, y: u16) -> String {
     format!("\x1b[{y};{x}H\x1b_Ga=p,i={id},p={PLACEMENT_ID},c={cols},r={rows},q=2,C=1\x1b\\")
+}
+
+/// Deletes every placement of Kitty image `id`, wherever it currently sits (`d=i`: by image id,
+/// not a placement id or a cell). `run_image` writes this immediately before every frame's
+/// `image_move`, naming whichever image the previous frame actually placed: relying on
+/// `image_move`'s own placement id to replace rather than stack does not hold in Ghostty (see
+/// `PLACEMENT_ID`), so without this, older frames stayed on screen and the wordmark smeared
+/// across several positions and colours at once. Deleting by image id, rather than assuming the
+/// same image is still showing, is what still clears the old picture on a frame that also
+/// switches to a different one, a ripple's own every frame.
+pub fn image_delete(id: u32) -> String {
+    format!("\x1b_Ga=d,d=i,i={id}\x1b\\")
 }
 
 /// One row of the text mode frame, `cols` cells wide, with the wordmark spliced in wherever
@@ -341,6 +353,16 @@ mod tests {
         assert_ne!(first, second, "the two frames should move the box");
         assert!(first.contains(&format!("p={PLACEMENT_ID}")));
         assert!(second.contains(&format!("p={PLACEMENT_ID}")));
+    }
+
+    #[test]
+    fn image_delete_names_the_image_id_and_carries_no_cursor_move() {
+        let out = image_delete(9990);
+        assert_eq!(out, "\x1b_Ga=d,d=i,i=9990\x1b\\");
+        assert!(
+            !out.contains('['),
+            "a delete needs no cell, so it should carry no cursor move"
+        );
     }
 
     #[test]
