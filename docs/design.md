@@ -374,8 +374,9 @@ documented in `docs/speed.md`.
 
 Repository: `reactivepixels/sparklebios`. One binary, `bios`; `neigh` is
 parked, see `ROADMAP.md`'s Later, maybe list. Local install is `cargo
-install --path .`. Prebuilt binaries, a Homebrew tap, `cargo binstall` and a
-shell installer remain: see `ROADMAP.md` M8. macOS and Linux both have real
+install --path .`. Published on crates.io, prebuilt binaries for macOS and
+Linux on each release, and a Homebrew tap at `reactivepixels/tap`. `cargo
+binstall` and a shell installer remain: see `ROADMAP.md` M8. macOS and Linux both have real
 fact probes today. Windows is out of scope. License: MIT OR Apache-2.0.
 
 ## 12. Milestones

@@ -27,15 +27,24 @@ Sparkle Corp shipped its first BIOS in 1985. The one on your screen is the 1995 
   <img src="docs/assets/boot.gif" alt="The daily boot: a memory count, four detections and a health check, in about three seconds" width="880">
 </p>
 
-> **Status: 0.1.0 is being prepared.** Everything on this page works today on macOS and Linux, built from source. Prebuilt binaries and a Homebrew tap arrive with the first tag.
-
 ## Install
 
-Until the first release ships binaries, this needs a Rust toolchain.
+Homebrew, on macOS or Linux:
 
 ```
-cargo install --git https://github.com/reactivepixels/sparklebios
+brew install reactivepixels/tap/sparklebios
 ```
+
+With a Rust toolchain:
+
+```
+cargo install sparklebios
+```
+
+Or take a prebuilt binary for your platform from the
+[latest release](https://github.com/reactivepixels/sparklebios/releases/latest).
+Every release ships macOS and Linux builds for both Intel and ARM, with
+checksums.
 
 Try it first, without touching your shell: `bios boot --flavour sumo`.
 
@@ -243,9 +252,9 @@ the BIOS should detect.
 ## Questions people ask
 
 **Will it slow my shell?** It has a time budget, and CI measures it against that
-budget on every push. On an Apple M3 Pro a new tab costs under 5ms, process
-start included, and about half of that is what starting any program at all
-costs. It spawns nothing and waits for nothing. The measurements are in
+budget on every push. On an Apple M3 Pro a new tab costs four to six
+milliseconds, process start included, and roughly half of that is what starting
+any program at all costs. The budget CI enforces is 30ms. It spawns nothing and waits for nothing. The measurements are in
 [docs/speed.md](docs/speed.md).
 
 **Does it phone home?** No. See principle 7. In 1985 there was nothing to phone.
