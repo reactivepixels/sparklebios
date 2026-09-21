@@ -67,6 +67,15 @@ if [[ $- == *i* ]] && command -v bios >/dev/null 2>&1; then
 
     _sparklebios_precmd() {
       local status_was=$?
+      # The DEBUG trap is installed part way through your rc file, so anything the rest of that
+      # file runs arms the timer before you have typed anything. Without this, the first prompt
+      # of every session reports starting the shell as a command that finished. zsh has no such
+      # problem because it has a real preexec.
+      if [[ -z "${_sparklebios_ready:-}" ]]; then
+        _sparklebios_ready=1
+        unset _sparklebios_started
+        return $status_was
+      fi
       if [[ -n "${_sparklebios_started:-}" ]]; then
         local elapsed=$(( SECONDS - _sparklebios_started ))
         unset _sparklebios_started
