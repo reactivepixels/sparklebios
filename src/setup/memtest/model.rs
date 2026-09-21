@@ -38,6 +38,17 @@ pub const FIELD_WIDTH_MARGIN: usize = 4;
 /// Rows subtracted from the terminal's height to get the field's inner height: the header, the
 /// top frame, the bottom frame, the help line, and one spare row.
 pub const FIELD_HEIGHT_MARGIN: usize = 5;
+/// The field's inner width and height the game was tuned for, and the most either one will ever
+/// grow to. Arcade Breakout had one fixed screen; letting this one grow with the terminal was the
+/// actual bug, since a terminal only ever delivers key presses, never a key being held, so the
+/// paddle's real speed is whatever the user's own key repeat happens to be, not anything this
+/// game can scale to match a wider field. A bigger terminal now gets more of its own background
+/// around the same size field instead, centred by `view::render`, rather than a bigger field a
+/// fixed key repeat cannot keep up with. 80x24, the smallest terminal `setup::run` allows, so a
+/// bigger terminal never gives the game less than it was already handling.
+pub const MAX_FIELD_COLS: usize = 80 - FIELD_WIDTH_MARGIN;
+/// See `MAX_FIELD_COLS`.
+pub const MAX_FIELD_ROWS: usize = 24 - FIELD_HEIGHT_MARGIN;
 /// How many rows of bricks the field starts with.
 pub const BRICK_ROWS: usize = 5;
 /// How many bricks make up one row.
@@ -169,8 +180,12 @@ impl Game {
         term_cols: u16,
         term_rows: u16,
     ) -> Game {
-        let field_cols = (term_cols as usize).saturating_sub(FIELD_WIDTH_MARGIN);
-        let field_rows = (term_rows as usize).saturating_sub(FIELD_HEIGHT_MARGIN);
+        let field_cols = (term_cols as usize)
+            .saturating_sub(FIELD_WIDTH_MARGIN)
+            .min(MAX_FIELD_COLS);
+        let field_rows = (term_rows as usize)
+            .saturating_sub(FIELD_HEIGHT_MARGIN)
+            .min(MAX_FIELD_ROWS);
         let paddle_col = (field_cols - PADDLE_WIDTH) / 2;
         let mut game = Game {
             bricks: build_bricks(mem_kb),
@@ -274,6 +289,30 @@ impl Game {
         if self.phase == Phase::Ready {
             self.place_ball_on_paddle();
         }
+    }
+
+    /// Moves the paddle so its centre sits under `field_col`, a column in the field's own
+    /// coordinates rather than the terminal's, clamped so the paddle never leaves the field
+    /// whatever the pointer itself is over. This is how the mouse controls the paddle: an
+    /// absolute position on every report, not the fixed nudge a key press gives it. A mouse
+    /// report always carries where the pointer actually is, which is the whole point of reading
+    /// one at all: a terminal cannot tell a real held key from its own repeat, but it never has
+    /// to guess about a pointer.
+    pub fn mouse_move(&mut self, field_col: i32) -> Effect {
+        if !matches!(self.phase, Phase::Ready | Phase::Playing) {
+            return Effect::Nothing;
+        }
+        let max_col = (self.field_cols - PADDLE_WIDTH) as i32;
+        let half_width = (PADDLE_WIDTH / 2) as i32;
+        let new_col = (field_col - half_width).clamp(0, max_col) as usize;
+        if new_col == self.paddle_col {
+            return Effect::Nothing;
+        }
+        self.paddle_col = new_col;
+        if self.phase == Phase::Ready {
+            self.place_ball_on_paddle();
+        }
+        Effect::Redraw
     }
 
     fn place_ball_on_paddle(&mut self) {
@@ -504,14 +543,25 @@ mod tests {
     }
 
     #[test]
-    fn the_field_fills_the_terminal_in_both_directions() {
-        let g = Game::new(100, 0, false, 1, COLS, ROWS);
-        assert_eq!(g.field_cols, 76);
-        assert_eq!(g.field_rows, 19);
+    fn the_field_is_capped_at_the_size_it_was_tuned_for_however_big_the_terminal_is() {
+        let baseline = Game::new(100, 0, false, 1, COLS, ROWS);
+        assert_eq!(baseline.field_cols, 76);
+        assert_eq!(baseline.field_rows, 19);
 
-        let bigger = Game::new(100, 0, false, 1, 120, 40);
-        assert_eq!(bigger.field_cols, 116);
-        assert_eq!(bigger.field_rows, 35);
+        for (cols, rows) in [(120u16, 40u16), (160, 50), (500, 200)] {
+            let g = Game::new(100, 0, false, 1, cols, rows);
+            assert_eq!(g.field_cols, baseline.field_cols, "{cols}x{rows}");
+            assert_eq!(g.field_rows, baseline.field_rows, "{cols}x{rows}");
+        }
+    }
+
+    #[test]
+    fn a_terminal_smaller_than_the_cap_still_shrinks_to_fit() {
+        // Below the cap, the field still shrinks with the terminal, the same as it always did;
+        // only growing past the size the game was tuned for is capped.
+        let g = Game::new(100, 0, false, 1, 70, 20);
+        assert_eq!(g.field_cols, 70 - FIELD_WIDTH_MARGIN);
+        assert_eq!(g.field_rows, 20 - FIELD_HEIGHT_MARGIN);
     }
 
     #[test]
@@ -811,19 +861,82 @@ mod tests {
         }
     }
 
-    /// Plays the model with a paddle that simply keeps itself under the ball, and reports the
-    /// bricks broken and the balls left. This is the playability check in miniature: a field the
-    /// ball cannot reach, or physics that trap it in a band, shows up here as a brick count that
-    /// barely moves, which is exactly how the first version of this screen shipped.
+    /// How long macOS waits, at its own default, before a held key starts repeating: "roughly a
+    /// third of a second", per the maintainer's own diagnosis.
+    const KEY_REPEAT_INITIAL_DELAY_MS: f64 = 333.0;
+    /// How often a held key then repeats, at that same default: "about eleven a second".
+    const KEY_REPEAT_INTERVAL_MS: f64 = 1000.0 / 11.0;
+    /// One tick, in milliseconds, at the rate the game itself runs: what `HeldKey` counts down in.
+    const TICK_MS: f64 = 1000.0 / TICKS_PER_SECOND;
+
+    /// Models one real key the way a terminal actually delivers it, held or released fresh each
+    /// tick: an immediate press the instant it goes down, then nothing until the OS's own repeat
+    /// delay has passed, then a press every repeat interval for as long as it stays down.
+    /// Switching to a different direction, or letting go, starts the delay over, the same as
+    /// releasing a real key and pressing another (or the same one again) for real. This is what
+    /// the old version of this test did not model: it pressed a key every tick, thirty times a
+    /// second with no delay at all, which no human keyboard has ever done.
+    struct HeldKey {
+        direction: Option<i32>,
+        ms_until_next_press: f64,
+    }
+
+    impl HeldKey {
+        fn new() -> HeldKey {
+            HeldKey {
+                direction: None,
+                ms_until_next_press: 0.0,
+            }
+        }
+
+        /// One tick: `desired` is which way the auto pilot below wants to be moving this tick, or
+        /// `None` to let go. Returns the key to feed the game this tick, if the real terminal
+        /// this models would have delivered one.
+        fn tick(&mut self, desired: Option<i32>) -> Option<Key> {
+            if desired != self.direction {
+                self.direction = desired;
+                self.ms_until_next_press = KEY_REPEAT_INITIAL_DELAY_MS;
+                return desired.map(Self::key_for);
+            }
+            let direction = self.direction?;
+            self.ms_until_next_press -= TICK_MS;
+            if self.ms_until_next_press > 0.0 {
+                return None;
+            }
+            self.ms_until_next_press += KEY_REPEAT_INTERVAL_MS;
+            Some(Self::key_for(direction))
+        }
+
+        fn key_for(direction: i32) -> Key {
+            if direction < 0 {
+                Key::Left
+            } else {
+                Key::Right
+            }
+        }
+    }
+
+    /// Plays the model with a paddle that simply keeps itself under the ball, fed through
+    /// `HeldKey` so it moves at a real terminal's key repeat rather than a press a tick, and
+    /// reports the bricks broken and the balls left. This is the playability check in miniature:
+    /// a field the ball cannot reach, or physics that trap it in a band, or a paddle whose real
+    /// speed cannot beat the repeat delay, shows up here as a brick count that barely moves,
+    /// which is exactly how the first version of this screen shipped.
     fn follow_the_ball(cols: u16, rows: u16, ticks: usize) -> (u32, u8) {
         let mut g = Game::new(18_874_368, 0, false, 1, cols, rows);
         g.key(Key::Space);
+        let mut held = HeldKey::new();
         for _ in 0..ticks {
             let centre = g.paddle_col as f64 + PADDLE_WIDTH as f64 / 2.0;
-            if g.ball_x < centre - 1.0 {
-                g.key(Key::Left);
+            let desired = if g.ball_x < centre - 1.0 {
+                Some(-1)
             } else if g.ball_x > centre + 1.0 {
-                g.key(Key::Right);
+                Some(1)
+            } else {
+                None
+            };
+            if let Some(key) = held.tick(desired) {
+                g.key(key);
             }
             if g.tick() == Effect::Ended {
                 break;
@@ -837,10 +950,10 @@ mod tests {
 
     #[test]
     fn a_minute_of_following_the_ball_clears_ten_bricks_and_loses_none_at_any_size() {
-        // The bar the maintainer set after the first version proved unplayable: a bat that only
-        // tracks the ball has to manage ten bricks on one ball, in a minute, however big the
-        // terminal is: the whole point of scaling the ball's speed to the field. Measured here at
-        // 19 a minute at 80x24, 22 at 120x40, 23 at 160x50.
+        // The bar the maintainer set after the first version proved unplayable, now driven by a
+        // paddle whose key presses arrive the way a real terminal actually delivers them (see
+        // `HeldKey`): ten bricks on one ball, in a minute, at 80x24, at 120x40 (now a capped and
+        // centred field, not a wider one), and at 160x50 (same again).
         for (cols, rows) in [(80u16, 24u16), (120, 40), (160, 50)] {
             let (broken, balls) = follow_the_ball(cols, rows, 30 * 60);
             assert!(
@@ -883,5 +996,49 @@ mod tests {
         assert!(!g.is_new_record());
         g.remaining_kb = g.mem_kb - 200;
         assert!(g.is_new_record());
+    }
+
+    #[test]
+    fn mouse_move_centres_the_paddle_under_the_given_field_column() {
+        let mut g = Game::new(100, 0, false, 1, COLS, ROWS);
+        assert_eq!(g.mouse_move(40), Effect::Redraw);
+        assert_eq!(g.paddle_col, 40 - PADDLE_WIDTH / 2);
+    }
+
+    #[test]
+    fn mouse_move_is_clamped_so_the_paddle_never_leaves_the_field() {
+        let mut g = Game::new(100, 0, false, 1, COLS, ROWS);
+        g.mouse_move(-50);
+        assert_eq!(g.paddle_col, 0, "off the left edge clamps to zero");
+
+        g.mouse_move((g.field_cols + 50) as i32);
+        assert_eq!(
+            g.paddle_col,
+            g.field_cols - PADDLE_WIDTH,
+            "off the right edge clamps to the last column that fits"
+        );
+    }
+
+    #[test]
+    fn mouse_move_does_nothing_once_the_game_has_ended() {
+        let mut g = Game::new(100, 0, false, 1, COLS, ROWS);
+        assert_eq!(g.key(Key::Esc), Effect::Ended);
+        let before = g.paddle_col;
+        assert_eq!(g.mouse_move(5), Effect::Nothing);
+        assert_eq!(g.paddle_col, before);
+    }
+
+    #[test]
+    fn mouse_move_keeps_the_attached_ball_above_the_paddles_new_centre() {
+        let mut g = Game::new(100, 0, false, 1, COLS, ROWS);
+        g.mouse_move(50);
+        assert_eq!(g.ball_x, (g.paddle_col + PADDLE_WIDTH / 2) as f64);
+    }
+
+    #[test]
+    fn mouse_move_reports_nothing_when_the_paddle_was_already_there() {
+        let mut g = Game::new(100, 0, false, 1, COLS, ROWS);
+        assert_eq!(g.mouse_move(40), Effect::Redraw);
+        assert_eq!(g.mouse_move(40), Effect::Nothing, "already centred there");
     }
 }

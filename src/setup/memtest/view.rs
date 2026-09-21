@@ -57,23 +57,43 @@ pub fn render(game: &Game, cols: usize, rows: usize, no_color: bool) -> String {
     let width = game.field_cols + FIELD_WIDTH_MARGIN;
     let height = game.field_rows + FIELD_HEIGHT_MARGIN;
     let body = screen(game, width, height, no_color);
+    // `width` and `height` are the field's own box; `cols` and `rows` are the terminal's. The
+    // field is capped, so a bigger terminal than it was tuned for leaves real background on every
+    // side, not only above and to the left: the whole block below is always exactly `cols` by
+    // `rows`, with the box centred inside it, never a corner of it left shorter than the rest.
     let pad_left = cols.saturating_sub(width) / 2;
+    let pad_right = cols.saturating_sub(width) - pad_left;
     let pad_top = rows.saturating_sub(height) / 2;
+    let pad_bottom = rows.saturating_sub(height) - pad_top;
     let indent = " ".repeat(pad_left);
-    let mut out = String::new();
+    let trailing = " ".repeat(pad_right);
+    let blank_line = " ".repeat(cols);
+    let mut lines: Vec<String> = Vec::with_capacity(pad_top + body.len() + pad_bottom);
     for _ in 0..pad_top {
-        out.push('\n');
+        lines.push(blank_line.clone());
+    }
+    for line in &body {
+        lines.push(format!("{indent}{line}{trailing}"));
+    }
+    for _ in 0..pad_bottom {
+        lines.push(blank_line.clone());
     }
     // Joined, never terminated: a trailing newline scrolls a terminal exactly as tall as the
     // screen, the same reason setup's own render avoids it.
-    for (i, line) in body.iter().enumerate() {
-        if i > 0 {
-            out.push('\n');
-        }
-        out.push_str(&indent);
-        out.push_str(line);
-    }
-    out
+    lines.join("\n")
+}
+
+/// The 0 indexed column and row, in the terminal's own coordinates, of the field's own top left
+/// playable cell: the same `pad_left`/`pad_top` centring `render` above works out, plus the two
+/// columns (the outer margin, then the frame character) and the two rows (the header, then the
+/// top border) `content_lines` always puts in front of the field itself. The Memory Test's mouse
+/// handling uses this to turn an SGR mouse report's absolute column back into the field's own.
+pub fn field_origin(game: &Game, cols: usize, rows: usize) -> (usize, usize) {
+    let width = game.field_cols + FIELD_WIDTH_MARGIN;
+    let height = game.field_rows + FIELD_HEIGHT_MARGIN;
+    let pad_left = cols.saturating_sub(width) / 2;
+    let pad_top = rows.saturating_sub(height) / 2;
+    (pad_left + 2, pad_top + 2)
 }
 
 fn screen(game: &Game, width: usize, height: usize, no_color: bool) -> Vec<String> {
@@ -179,7 +199,7 @@ fn brick_row_core(game: &Game, row: usize, no_color: bool) -> String {
     format!("|{inner}|")
 }
 
-const HELP_LINE: &str = "Left/Right or A/D: move   Space: launch   Esc: give up";
+const HELP_LINE: &str = "Left/Right or A/D: move   Drag: steer   Space: launch   Esc: give up";
 
 fn footer_or_result_row(game: &Game, width: usize) -> String {
     let text = match game.phase {
@@ -240,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn a_taller_wider_terminal_grows_the_field_rather_than_stretching_a_fixed_one() {
+    fn a_bigger_terminal_centres_the_capped_field_rather_than_growing_it() {
         let g = Game::new(18874368, 18874368, true, 1, 120, 40);
         let out = render(&g, 120, 40, false);
         let lines = visible_lines(&out);
@@ -248,10 +268,75 @@ mod tests {
         for (i, line) in lines.iter().enumerate() {
             assert_eq!(line.chars().count(), 120, "line {i}: {line:?}");
         }
-        // The field fills almost the whole terminal: five brick rows plus thirty of open space
-        // above a bat sitting one row from the very bottom.
-        assert_eq!(g.field_cols, 116);
-        assert_eq!(g.field_rows, 35);
+        // The field itself stays exactly the size the game was tuned for: a bigger terminal gets
+        // more of its own background around it instead, not a wider field.
+        assert_eq!(g.field_cols, 76);
+        assert_eq!(g.field_rows, 19);
+        let (origin_col, origin_row) = field_origin(&g, 120, 40);
+        assert!(
+            origin_col > 2,
+            "a wider terminal should leave background to the field's left"
+        );
+        assert!(
+            origin_row > 2,
+            "a taller terminal should leave background above the field"
+        );
+    }
+
+    #[test]
+    fn the_bricks_and_the_bat_never_draw_outside_the_capped_fields_own_bounds() {
+        // '#' and '=' only ever come from bricks and the bat: unlike 'o', the ball's own glyph,
+        // neither one can also turn up inside the header or footer's own text ("Memory Testing",
+        // "Best"), so checking for them here cannot mistake a word for the game itself.
+        for (cols, rows) in [(80u16, 24u16), (120, 40), (160, 50), (500, 200)] {
+            let g = Game::new(18874368, 0, false, 1, cols, rows);
+            let out = render(&g, cols as usize, rows as usize, false);
+            let (origin_col, origin_row) = field_origin(&g, cols as usize, rows as usize);
+            for (row, line) in visible_lines(&out).iter().enumerate() {
+                for (col, ch) in line.chars().enumerate() {
+                    if !matches!(ch, '#' | '=') {
+                        continue;
+                    }
+                    assert!(
+                        row >= origin_row && row < origin_row + g.field_rows,
+                        "{cols}x{rows}: {ch:?} at row {row} is outside the field"
+                    );
+                    assert!(
+                        col >= origin_col && col < origin_col + g.field_cols,
+                        "{cols}x{rows}: {ch:?} at col {col} is outside the field"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nothing_is_ever_painted_outside_the_capped_fields_own_background() {
+        // The stronger check: every cell outside the field's own box, the background a bigger
+        // terminal now gets around it, is blank, not merely free of game glyphs.
+        for (cols, rows) in [(80u16, 24u16), (120, 40), (160, 50), (500, 200)] {
+            let g = Game::new(18874368, 0, false, 1, cols, rows);
+            let out = render(&g, cols as usize, rows as usize, false);
+            let lines = visible_lines(&out);
+            let (origin_col, origin_row) = field_origin(&g, cols as usize, rows as usize);
+            let pad_left = origin_col - 2;
+            let pad_top = origin_row - 2;
+            let width = g.field_cols + FIELD_WIDTH_MARGIN;
+            let height = g.field_rows + FIELD_HEIGHT_MARGIN;
+            for (row, line) in lines.iter().enumerate() {
+                let in_content_row = row >= pad_top && row < pad_top + height;
+                for (col, ch) in line.chars().enumerate() {
+                    let in_content_col = col >= pad_left && col < pad_left + width;
+                    if in_content_row && in_content_col {
+                        continue;
+                    }
+                    assert_eq!(
+                        ch, ' ',
+                        "{cols}x{rows}: {ch:?} at row {row} col {col} is outside the field's box"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -266,8 +351,10 @@ mod tests {
         );
         let out = render(&g, 120, 40, false);
         let lines: Vec<&str> = out.lines().collect();
+        // The block is always the terminal's own full size now: background on every side of the
+        // capped field, not merely a shorter screen left un-padded at the bottom.
+        assert_eq!(lines.len(), 40);
         let pad_top = (40 - MIN_ROWS) / 2;
-        assert_eq!(lines.len(), pad_top + MIN_ROWS);
         let blank_top = lines.iter().take_while(|l| l.trim().is_empty()).count();
         // The screen's own content is itself centred inside the field's nominal height, so the
         // blank run at the top is that inner padding as well as the outer one.
