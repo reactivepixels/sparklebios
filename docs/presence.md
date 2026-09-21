@@ -13,6 +13,19 @@ answer. None of it costs a process launch, because none of it launches a
 process. The one exception is the mascot in a starship prompt, covered below,
 and even that only runs if you choose to wire it in.
 
+## ultra shares this hook
+
+`sprinkles = "ultra"` (see [sprinkles.md](sprinkles.md#ultra)) writes its own
+block into the same hook `bios init` prints, and the two features lean on
+each other in a couple of places worth knowing about. Ultra's own beep for a
+long command, `post_ok` or `post_fail`, only plays alongside moment 3's
+finish line below: it needs `presence_after` seconds to have passed and
+`presence` to be turned on, the same as the finish line itself. With
+`presence` off, a long command under `ultra` still gets a sound, just not
+that one: `hdd_spindown` instead, with no beep. Turn `presence` off and
+`ultra`'s everyday reactions, its jingle, its ceremonies and its power-off
+still run; only the piece that rides on the finish line changes.
+
 ## The six moments
 
 1. **Tab title.** The window title becomes `{title} {cwd}`, for example

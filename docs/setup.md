@@ -18,13 +18,26 @@ written until you save.
 | Flavour | Every flavour by name | `flavour` |
 | Theme | Unchanged, then every Ghostty theme by name | Switches Ghostty's theme on save; not a `config.toml` key |
 | Mascot | Shown, Hidden | `graphics` (`auto` or `off`) |
-| Sprinkles | Off, Light, Full | `sprinkles` |
+| Sprinkles | Off, Light, Full, Ultra | `sprinkles` |
 | Daily Show | Enabled, Disabled | `animate` |
 | Boot Screen | Enabled, Disabled | `boot` |
-| Turbo | On, Off | None. It does nothing. It never did |
+| Turbo | On, Off | None. It does nothing, but the choice is saved anyway, into `state.json` rather than `config.toml`, the same flag `bios turbo` toggles |
 
 Theme starts on Unchanged rather than assuming the terminal's active theme,
 since that is not something `bios setup` can read back.
+
+## Item Help
+
+The right hand pane shows the selected row's own explanation, straight from
+the binary. Sprinkles reads:
+
+> Optional effects during the daily show. Ultra keeps going after it: sound,
+> reactions and a screensaver. Off by default, because not everyone wants
+> sprinkles.
+
+Turbo reads:
+
+> Does nothing. It never did. Saved anyway, so the prompt can say 66 MHz.
 
 ## Keys
 

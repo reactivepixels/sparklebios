@@ -161,11 +161,26 @@ for it, and the rest of the screen sits flush left in its place.
 
 ## Sprinkles
 
-Off by default, because not everyone wants sprinkles. Turn it on with `bios
-sprinkles light` (a shimmer, a twinkle, and a stripe sweep on a streak
-milestone) or `bios sprinkles full` (the same, plus the POST beep and beep
-codes). Sprinkles only ever run in the animated show, never flash, and cost
-nothing when off. See [docs/sprinkles.md](docs/sprinkles.md).
+Off by default, because not everyone wants sprinkles.
+
+```
+bios sprinkles light     # a shimmer, a twinkle, a stripe sweep on a streak
+bios sprinkles full      # light, plus the POST beep and beep codes
+bios sprinkles ultra     # full, plus sound and reactions all day long
+```
+
+`ultra` keeps going after the boot: sound, a screensaver, a defrag, and the
+flavour reacting to your day. Off unless you ask. Two commands come with it:
+
+```
+bios screensaver         # bounce the logo around until you press a key
+bios defrag [PATH]       # a folder's real disk usage, drawn as a block map
+```
+
+`bios turbo` toggles the Turbo button. It does nothing. It never did.
+
+`light` and `full` only ever run in the once-a-day animated show, and
+sprinkles never flash. See [docs/sprinkles.md](docs/sprinkles.md).
 
 ## It stays in character
 
