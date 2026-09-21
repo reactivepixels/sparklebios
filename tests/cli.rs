@@ -792,12 +792,24 @@ fn the_check_never_claims_to_have_played_when_the_sounds_are_missing() {
     // Claiming a sound was played here is the one answer that sends him looking in the wrong
     // place.
     let empty = tempfile::tempdir().unwrap();
+    // Supply the player rather than hoping for one: macOS always has afplay and a Linux runner
+    // has none, so a test that relies on the host tests a different branch on each.
+    let bin = empty.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let player = bin.join("afplay");
+    std::fs::write(&player, "#!/bin/sh\nexit 0\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&player, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     bios()
         .args(["sprinkles", "--check"])
         .env("XDG_CONFIG_HOME", empty.path())
         .env("XDG_CACHE_HOME", empty.path().join("cache"))
+        .env("PATH", &bin)
         .assert()
         .success()
+        .stdout(predicate::str::contains("Player          : afplay"))
         .stdout(predicate::str::contains(
             "Nothing was played: the sounds have not been generated yet. Run bios sprinkles ultra.",
         ))
