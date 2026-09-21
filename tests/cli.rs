@@ -23,7 +23,7 @@ fn version_prints_crate_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.1.0"));
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
 /// `main.rs`'s whole panic policy: a panic anywhere prints nothing and exits 0, so a bug on the

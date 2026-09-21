@@ -6,6 +6,13 @@ log kept in a binder next to the machine.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-21
+
+### Removed
+
+- The click when a shell exits. Closing a tab or a window is silent again. The
+  shutdown picture stays, it was only ever the sound that was wrong.
+
 ## [0.1.0] - 2026-09-21
 
 Grouped by part, since there is no earlier version to compare against.
