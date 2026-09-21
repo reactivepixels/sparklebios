@@ -240,7 +240,7 @@ the BIOS should detect.
 ## Questions people ask
 
 **Will it slow my shell?** It has a time budget, and CI measures it against that
-budget on every push. On an Apple M3 Pro a new tab costs about 4ms, process
+budget on every push. On an Apple M3 Pro a new tab costs under 5ms, process
 start included, and about half of that is what starting any program at all
 costs. It spawns nothing and waits for nothing. The measurements are in
 [docs/speed.md](docs/speed.md).

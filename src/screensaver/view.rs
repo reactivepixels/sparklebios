@@ -2,7 +2,7 @@
 //! as a full screen of rows, or the small escape that moves an already transmitted image. Nothing
 //! here touches a terminal or a clock, so every frame can be snapshot tested.
 
-use super::model::Model;
+use super::model::{Image, Model, Twinkle};
 
 /// The smallest terminal the screensaver runs in, same floor as `bios setup`.
 pub const MIN_WIDTH: usize = 80;
@@ -41,18 +41,77 @@ fn sgr_foreground(n: u8) -> u8 {
 /// stripe colours cycle across the eleven letters only: the spaces that space them out are never
 /// coloured, so they never eat a turn out of the cycle. Without this, half the six colours (the
 /// ones that would only ever land on a space) would never be seen at all.
-fn letter_styles() -> [Option<u8>; 21] {
+///
+/// `offset` rotates the starting colour: `0` is the ordinary striping, and a ripple in progress
+/// (see `Model::ripple_color_offset`) passes `1` through `7`, one step further each frame, so the
+/// stripe itself seems to travel along the letters while the ripple plays.
+fn letter_styles(offset: usize) -> [Option<u8>; 21] {
     let mut styles = [None; 21];
     let mut letter_index = 0usize;
     for (i, ch) in WORDMARK_TEXT.chars().enumerate() {
         if ch != ' ' {
             styles[i] = Some(sgr_foreground(
-                LETTER_COLOURS[letter_index % LETTER_COLOURS.len()],
+                LETTER_COLOURS[(letter_index + offset) % LETTER_COLOURS.len()],
             ));
             letter_index += 1;
         }
     }
     styles
+}
+
+/// The single SGR foreground code a solid tint colours every letter, or `None` for
+/// `Image::Rainbow`, which keeps the ordinary six colour stripe instead (see `tint_letter_styles`
+/// and `letter_styles`). The six drawn straight from `sprinkles::STRIPE_PALETTE`, in the same
+/// order `Model`'s own `TINTS` lists them, plus plain white for the one tint the stripe palette
+/// does not itself carry. Ripple frames never reach this: `render` only calls it once
+/// `Model::ripple_color_offset` is `None`.
+fn tint_color(tint: Image) -> Option<u8> {
+    match tint {
+        Image::Rainbow => None,
+        Image::Red => Some(crate::sprinkles::STRIPE_PALETTE[0]),
+        Image::Yellow => Some(crate::sprinkles::STRIPE_PALETTE[1]),
+        Image::Green => Some(crate::sprinkles::STRIPE_PALETTE[2]),
+        Image::Cyan => Some(crate::sprinkles::STRIPE_PALETTE[3]),
+        Image::Blue => Some(crate::sprinkles::STRIPE_PALETTE[4]),
+        Image::Magenta => Some(crate::sprinkles::STRIPE_PALETTE[5]),
+        Image::White => Some(37),
+        Image::Ripple1
+        | Image::Ripple2
+        | Image::Ripple3
+        | Image::Ripple4
+        | Image::Ripple5
+        | Image::Ripple6 => None,
+    }
+}
+
+/// The letters' styling when nothing is rippling: image mode's own tint switch, drawn in text.
+/// `Model::tint` is the very same decision either mode reads (see `mod.rs`'s `run_image`, which
+/// draws it as a solid picture instead), so this needed no sparkle logic of its own, only a way
+/// to draw a tint: the ordinary six colour stripe for `Image::Rainbow`, every letter in one
+/// colour otherwise. Without this the text fallback bounced, twinkled and occasionally rippled,
+/// but never did the one thing that happens on most bounces, which was exactly the "no sparkle"
+/// complaint that started this for the terminals (iTerm2, WezTerm) that only ever see this path.
+fn tint_letter_styles(tint: Image) -> [Option<u8>; 21] {
+    match tint_color(tint) {
+        None => letter_styles(0),
+        Some(code) => {
+            let mut styles = [None; 21];
+            for (i, ch) in WORDMARK_TEXT.chars().enumerate() {
+                if ch != ' ' {
+                    styles[i] = Some(code);
+                }
+            }
+            styles
+        }
+    }
+}
+
+/// The glyph a twinkle shows on its `frame` (`0`, `1` or `2`): a star, then a plus, then a full
+/// stop. Shared by the text mode overlay in `row` and the image mode escapes below; any other
+/// frame draws nothing, though `Model` itself never asks for one.
+fn twinkle_glyph(frame: u8) -> Option<char> {
+    const GLYPHS: [char; 3] = ['*', '+', '.'];
+    GLYPHS.get(frame as usize).copied()
 }
 
 /// The box's cell size in image mode: about sixty percent of the terminal's width, tall enough
@@ -81,8 +140,9 @@ pub fn image_move(id: u32, cols: u16, rows: u16, x: u16, y: u16) -> String {
 }
 
 /// One row of the text mode frame, `cols` cells wide, with the wordmark spliced in wherever
-/// `model.x` currently places it on this row. `no_color` draws the wordmark in plain text; the
-/// six stripe colours never appear.
+/// `model.x` currently places it on this row, and `model.twinkle`, if one is showing, spliced in
+/// over whatever would otherwise be there. `no_color` draws the wordmark in plain text; the six
+/// stripe colours never appear, on the wordmark or the twinkle.
 fn row(
     model: &Model,
     row_index: i32,
@@ -90,12 +150,35 @@ fn row(
     no_color: bool,
     styles: &[Option<u8>; 21],
 ) -> String {
-    if row_index != model.y - 1 {
-        return " ".repeat(cols);
-    }
     let text: Vec<char> = WORDMARK_TEXT.chars().collect();
+    let on_wordmark_row = row_index == model.y - 1;
     let mut out = String::with_capacity(cols * 5);
     for col in 0..cols as i32 {
+        // `model.twinkle`'s cells are one indexed, like `model.x` and `model.y`; `col` and
+        // `row_index` here are zero indexed, so both gain one before the comparison.
+        let twinkle_here = model
+            .twinkle
+            .and_then(|t| {
+                t.cells
+                    .iter()
+                    .position(|&cell| cell == (col + 1, row_index + 1))
+                    .map(|i| (i, t.frame))
+            })
+            .and_then(|(i, frame)| twinkle_glyph(frame).map(|glyph| (i, glyph)));
+        if let Some((i, glyph)) = twinkle_here {
+            if no_color {
+                out.push(glyph);
+            } else {
+                let code =
+                    crate::sprinkles::STRIPE_PALETTE[i % crate::sprinkles::STRIPE_PALETTE.len()];
+                out.push_str(&format!("\x1b[{code}m{glyph}{RESET}"));
+            }
+            continue;
+        }
+        if !on_wordmark_row {
+            out.push(' ');
+            continue;
+        }
         let offset = col - (model.x - 1);
         if offset >= 0 && (offset as usize) < text.len() {
             let ch = text[offset as usize];
@@ -113,16 +196,52 @@ fn row(
 /// The whole text mode frame: `rows` lines, each exactly `cols` visible characters. Callers must
 /// have already checked `cols >= MIN_WIDTH` and `rows >= MIN_HEIGHT`.
 pub fn render(model: &Model, cols: usize, rows: usize, no_color: bool) -> String {
-    let styles = letter_styles();
+    let styles = match model.ripple_color_offset() {
+        Some(offset) => letter_styles(offset as usize),
+        None => tint_letter_styles(model.tint),
+    };
     (0..rows as i32)
         .map(|r| row(model, r, cols, no_color, &styles))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
+/// One frame of a twinkle, drawn as its own small escape rather than folded into a full redraw:
+/// image mode never redraws the whole screen (see `mod.rs`'s `run_image`), only moves the image
+/// and now, on a bounce, lights the twinkle beside it. `None` once the twinkle has shown all its
+/// frames; see `twinkle_clear_image` for what erases it then.
+pub fn twinkle_frame_image(twinkle: &Twinkle) -> String {
+    let Some(glyph) = twinkle_glyph(twinkle.frame) else {
+        return String::new();
+    };
+    let mut out = String::new();
+    for (i, (col, row)) in twinkle.cells.iter().enumerate() {
+        let code = crate::sprinkles::STRIPE_PALETTE[i % crate::sprinkles::STRIPE_PALETTE.len()];
+        out.push_str(&format!("\x1b[{row};{col}H\x1b[{code}m{glyph}{RESET}"));
+    }
+    out
+}
+
+/// Blanks the three cells a twinkle just finished lighting in image mode. See
+/// `twinkle_frame_image`.
+pub fn twinkle_clear_image(cells: [(i32, i32); 3]) -> String {
+    let mut out = String::new();
+    for (col, row) in cells {
+        out.push_str(&format!("\x1b[{row};{col}H "));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::model::Kind;
     use super::*;
+
+    /// A text mode model, seeded arbitrarily: none of the tests in this file trigger a bounce,
+    /// so the seed and the sparkle it drives never come into play.
+    fn text_model(cols: i32, rows: i32) -> Model {
+        Model::new(cols, rows, 21, 1, Kind::Text, 1)
+    }
 
     fn strip_sgr(s: &str) -> String {
         let chars: Vec<char> = s.chars().collect();
@@ -144,7 +263,7 @@ mod tests {
 
     #[test]
     fn every_row_is_exactly_the_terminal_width() {
-        let model = Model::new(80, 24, 21, 1);
+        let model = text_model(80, 24);
         let out = render(&model, 80, 24, false);
         for (i, line) in strip_sgr(&out).lines().enumerate() {
             assert_eq!(line.chars().count(), 80, "row {i}");
@@ -154,7 +273,7 @@ mod tests {
 
     #[test]
     fn the_wordmark_sits_on_the_models_own_row_and_column() {
-        let model = Model::new(80, 24, 21, 1);
+        let model = text_model(80, 24);
         let out = render(&model, 80, 24, false);
         let plain = strip_sgr(&out);
         let target_row = plain.lines().nth((model.y - 1) as usize).unwrap();
@@ -163,7 +282,7 @@ mod tests {
 
     #[test]
     fn no_color_draws_the_same_text_with_no_escape_sequence() {
-        let model = Model::new(80, 24, 21, 1);
+        let model = text_model(80, 24);
         let out = render(&model, 80, 24, true);
         assert!(!out.contains('\x1b'));
         assert!(out.contains(WORDMARK_TEXT));
@@ -171,7 +290,7 @@ mod tests {
 
     #[test]
     fn colour_mode_stripes_the_letters_in_the_six_ansi_colours() {
-        let model = Model::new(80, 24, 21, 1);
+        let model = text_model(80, 24);
         let out = render(&model, 80, 24, false);
         // The first letter, S, is coloured with ANSI 2 (green): SGR 32.
         assert!(out.contains("\x1b[32mS\x1b[0m"));
@@ -181,7 +300,7 @@ mod tests {
 
     #[test]
     fn a_frame_the_wordmark_has_moved_off_of_is_blank_on_that_row() {
-        let mut model = Model::new(80, 24, 21, 1);
+        let mut model = text_model(80, 24);
         model.y = 10;
         let out = render(&model, 80, 24, false);
         let plain = strip_sgr(&out);
@@ -222,5 +341,80 @@ mod tests {
         assert_ne!(first, second, "the two frames should move the box");
         assert!(first.contains(&format!("p={PLACEMENT_ID}")));
         assert!(second.contains(&format!("p={PLACEMENT_ID}")));
+    }
+
+    #[test]
+    fn a_snapshot_of_an_80_by_24_text_frame_with_a_twinkle_showing() {
+        // The twinkle sits just left of the box (column 1, the box's own left edge being
+        // column 2): row 1 catches it alone, row 2 catches it beside the wordmark, row 3 catches
+        // it alone again, exactly as a left wall bounce's own twinkle would land.
+        let mut model = text_model(80, 24);
+        model.twinkle = Some(Twinkle {
+            cells: [(1, 1), (1, 2), (1, 3)],
+            frame: 0,
+        });
+
+        let plain = render(&model, 80, 24, true);
+        let mut expected = vec![" ".repeat(80); 24];
+        expected[0].replace_range(0..1, "*");
+        expected[1] = format!(
+            "*{WORDMARK_TEXT}{}",
+            " ".repeat(80 - 1 - WORDMARK_TEXT.len())
+        );
+        expected[2].replace_range(0..1, "*");
+        assert_eq!(plain, expected.join("\n"));
+
+        // The same frame in colour: each of the twinkle's three cells is one of the six stripe
+        // colours, red, yellow and green here, distinct from the letters' own six colour stripe.
+        let coloured = render(&model, 80, 24, false);
+        assert!(
+            coloured.contains("\x1b[31m*\x1b[0m"),
+            "row 1's twinkle cell"
+        );
+        assert!(
+            coloured.contains("\x1b[33m*\x1b[0m"),
+            "row 2's twinkle cell"
+        );
+        assert!(
+            coloured.contains("\x1b[32m*\x1b[0m"),
+            "row 3's twinkle cell"
+        );
+    }
+
+    #[test]
+    fn image_mode_twinkle_frame_lights_its_three_cells_in_the_stripe_colours() {
+        let twinkle = Twinkle {
+            cells: [(10, 5), (20, 5), (30, 5)],
+            frame: 1,
+        };
+        let out = twinkle_frame_image(&twinkle);
+        assert!(out.contains("\x1b[5;10H\x1b[31m+\x1b[0m"));
+        assert!(out.contains("\x1b[5;20H\x1b[33m+\x1b[0m"));
+        assert!(out.contains("\x1b[5;30H\x1b[32m+\x1b[0m"));
+    }
+
+    #[test]
+    fn image_mode_twinkle_clear_blanks_its_three_cells() {
+        let out = twinkle_clear_image([(10, 5), (20, 5), (30, 5)]);
+        assert_eq!(out, "\x1b[5;10H \x1b[5;20H \x1b[5;30H ");
+    }
+
+    #[test]
+    fn a_text_mode_bounce_changes_the_letters_colouring_and_never_repeats_the_previous_one() {
+        // The same `random_tint_excluding` a bounce itself calls (see `Model::step`), and the
+        // same guarantee `model::tests::a_tint_is_never_chosen_twice_in_a_row` checks for image
+        // mode: every possible outgoing tint, including `Rainbow`, over many draws each, must
+        // never hand back a colouring equal to the one it replaced.
+        let mut m = text_model(80, 24);
+        for current in Image::ALL {
+            for _ in 0..50 {
+                let next = m.random_tint_excluding(current);
+                assert_ne!(
+                    tint_letter_styles(next),
+                    tint_letter_styles(current),
+                    "the letters' colouring repeated after a bounce"
+                );
+            }
+        }
     }
 }
