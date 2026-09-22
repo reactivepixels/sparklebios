@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/reactivepixels/sparklebios/actions/workflows/post.yml"><img src="https://github.com/reactivepixels/sparklebios/actions/workflows/post.yml/badge.svg" alt="POST status"></a>
+  <a href="https://crates.io/crates/sparklebios"><img src="https://img.shields.io/crates/v/sparklebios?style=flat-square&color=E8833A&label=crates.io" alt="crates.io version"></a>
   <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-1D9BE3?style=flat-square" alt="License: MIT OR Apache-2.0">
   <img src="https://img.shields.io/badge/network%20calls-0-62BB47?style=flat-square" alt="Network calls: 0">
   <img src="https://img.shields.io/badge/horns-1-FCB827?style=flat-square" alt="Horns: 1">
