@@ -27,6 +27,14 @@ Sparkle Corp shipped its first BIOS in 1985. The one on your screen is the 1995 
   <img src="docs/assets/boot.gif" alt="The daily boot: a memory count, four detections and a health check, in about three seconds" width="880">
 </p>
 
+## Why
+
+- **Every line is true.** Your real processor, memory, disk and shell, plus checks that find uncommitted work, ports held by forgotten dev servers, and secrets tracked by git.
+- **It is fast.** A new tab costs 4 to 6ms on an Apple M3 Pro. CI fails any push that goes over a 30ms budget.
+- **It cannot break your shell.** The hook is guarded, a failure prints nothing and exits 0, and `SPARKLEBIOS_BOOT=0` turns it all off.
+- **No network code.** Nothing to update in the background, nothing to phone.
+- **Content is data.** A new mascot is one TOML file and one sprite. No Rust required.
+
 ## Install
 
 Homebrew, on macOS or Linux:
@@ -248,6 +256,14 @@ with is not on the list, it should be. The format is in
 [docs/voice.md](docs/voice.md), and [CONTRIBUTING.md](CONTRIBUTING.md) has the
 house rules. If you would rather not write TOML, open an issue and tell me what
 the BIOS should detect.
+
+## Contributing
+
+New flavours, quips and boot screen reports are the most useful contributions
+right now. Issues labelled
+[good first issue](https://github.com/reactivepixels/sparklebios/labels/good%20first%20issue)
+are a sensible place to start. [CONTRIBUTING.md](CONTRIBUTING.md) has the house
+rules and the four commands that must pass before a pull request is reviewed.
 
 ## Questions people ask
 

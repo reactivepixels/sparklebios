@@ -12,7 +12,7 @@ this is in [docs/design.md](docs/design.md).
 | M4 | **Sprinkles** | The optional effects layer, off by default: `light` (text effects), `full` (the same, plus the POST beep and beep codes), and `ultra` (all of that plus a jingle per flavour, synthesised at runtime rather than shipped as files, folder remarks on `cd`, two git ceremonies, the Ghostty scanline and cursor trail shaders, and `bios screensaver`). `bios sprinkles`, `bios config path`, `bios config edit` and `bios config reset` |
 | M5 | **Setup** | `bios setup`, the CMOS Setup Utility: arrow keys, Enter to preview, F10 to save, Esc to leave, nothing written until you save |
 | M6 | **Project POST** | Still to build: `bios trust`, and a full mini POST on entering a repo, running its own checks. Distinct from ultra's one line folder remark, which ships |
-| M8 | **Launch readiness** | Still to build: the shutdown screen and a Homebrew tap. Prebuilt binaries ship with every tagged release |
+| M8 | **Launch readiness** | Still to build: the painted shutdown screen. The Homebrew tap ships (`brew install reactivepixels/tap/sparklebios`), and prebuilt binaries ship with every tagged release |
 
 ## Later, maybe
 
