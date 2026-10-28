@@ -6,6 +6,12 @@ log kept in a binder next to the machine.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `sparklebios.plugin.zsh`, so oh-my-zsh, antidote, zinit and other zsh plugin managers can load the hook. It runs `bios init zsh` when `bios` is on the PATH and is silent when it is not. The binary is still installed separately.
+
 ## [0.1.1] - 2026-09-21
 
 ### Removed

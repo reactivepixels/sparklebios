@@ -576,3 +576,76 @@ fn the_hook_does_nothing_in_a_noninteractive_shell() {
         );
     }
 }
+
+/// The zsh plugin file at the repo root, which oh-my-zsh, antidote, zinit and friends source
+/// from a function rather than at the top level of `.zshrc`.
+fn plugin_file() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("sparklebios.plugin.zsh")
+}
+
+/// Starts an interactive zsh over a sandbox whose `.zshrc` sources the plugin file from inside
+/// a function (the way a plugin manager does) and returns what an `exit`-terminated session
+/// printed after a probe for the hook's own functions and hooks. `path` replaces the sandbox
+/// `PATH` when given, so a test can take `bios` off it.
+fn plugin_session(path: Option<&str>) -> Option<String> {
+    let zsh = find_shell("zsh")?;
+    let sandbox = tempfile::tempdir().unwrap();
+    std::fs::write(
+        sandbox.path().join(".zshrc"),
+        format!(
+            "_load_plugin() {{ source '{}'; }}\n_load_plugin\n",
+            plugin_file().display()
+        ),
+    )
+    .unwrap();
+    let mut env = sandbox_env(sandbox.path(), Shell::Zsh);
+    if let Some(path) = path {
+        for (k, v) in env.iter_mut() {
+            if k == "PATH" {
+                *v = path.to_string();
+            }
+        }
+    }
+    let mut session = Session::spawn(&zsh, &["-i"], &env, sandbox);
+    session.send(
+        r#"print "PLUGIN[bios=${+functions[bios]} precmd=${+functions[_sparklebios_precmd]} hooked=$(( ${precmd_functions[(Ie)_sparklebios_precmd]:-0} > 0 )) exit=$(( ${zshexit_functions[(Ie)_sparklebios_exit]:-0} > 0 )) shell=${SPARKLEBIOS_HOOK_SHELL-unset}]""#,
+    );
+    Some(session.run_to_exit(DEADLINE))
+}
+
+/// The plugin file installs the same hook as the eval line: `bios` the wrapper function and the
+/// presence hooks registered on precmd and zshexit, with no error output, even when it is
+/// sourced from inside a function.
+#[test]
+fn the_zsh_plugin_file_installs_the_hook() {
+    let Some(out) = plugin_session(None) else {
+        return;
+    };
+    assert!(
+        out.contains("PLUGIN[bios=1 precmd=1 hooked=1 exit=1 shell=zsh]"),
+        "the plugin file did not install the zsh hook:\n{out}"
+    );
+    let lower = out.to_lowercase();
+    assert!(
+        !lower.contains("error") && !lower.contains("not found") && !lower.contains("no such"),
+        "the plugin file printed an error:\n{out}"
+    );
+}
+
+/// With `bios` off `PATH` the plugin file is a silent no-op: no hook, no message, nothing
+/// installed, and the shell carries on.
+#[test]
+fn the_zsh_plugin_file_is_silent_without_bios() {
+    let Some(out) = plugin_session(Some("/usr/bin:/bin")) else {
+        return;
+    };
+    assert!(
+        out.contains("PLUGIN[bios=0 precmd=0 hooked=0 exit=0 shell=unset]"),
+        "the plugin file installed something without bios on PATH:\n{out}"
+    );
+    let lower = out.to_lowercase();
+    assert!(
+        !lower.contains("error") && !lower.contains("not found") && !lower.contains("no such"),
+        "the plugin file made noise without bios on PATH:\n{out}"
+    );
+}

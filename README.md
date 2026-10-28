@@ -75,6 +75,37 @@ Fish, in `~/.config/fish/config.fish`:
 command -v bios >/dev/null 2>&1; and bios init fish | source
 ```
 
+### With a plugin manager
+
+zsh only. The repo ships `sparklebios.plugin.zsh`, which does exactly what the
+line above does and does nothing at all when `bios` is not installed. It adds
+the hook, not the binary, so install `bios` first (Homebrew, cargo or a release,
+above).
+
+List it last, after your prompt theme, for the same reason the eval line goes
+at the END of `~/.zshrc`: it sets `$SPARKLEBIOS_MASCOT` and draws the boot
+screen as it loads.
+
+oh-my-zsh:
+
+```
+git clone https://github.com/reactivepixels/sparklebios ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/sparklebios
+```
+
+Then put `sparklebios` last in `plugins=(...)` in `~/.zshrc`.
+
+antidote, last line of `~/.zsh_plugins.txt`:
+
+```
+reactivepixels/sparklebios
+```
+
+zinit, last in `~/.zshrc`:
+
+```
+zinit light reactivepixels/sparklebios
+```
+
 ## Flavours
 
 One screen, swappable personality. A flavour supplies the mascot, the firmware,
