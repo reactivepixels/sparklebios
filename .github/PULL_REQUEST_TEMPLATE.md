@@ -1,6 +1,6 @@
 ## What this changes
 
-<!-- One or two sentences. What and why. -->
+<!-- One or two sentences. What and why. The maintainer writes the CHANGELOG entry from this at release, so there is no need to edit CHANGELOG.md. -->
 
 ## POST checklist
 
@@ -10,7 +10,6 @@
 - [ ] Nothing on the boot path spawns a process, touches the network, or can return a non-zero exit code
 - [ ] Every new line a screen can show follows `docs/voice.md`, and anything that reads like a diagnostic is true
 - [ ] New wording and art are original: no real logos, wordmarks or copied copyright strings
-- [ ] `CHANGELOG.md` has an entry under Unreleased
 
 ## Screens
 
