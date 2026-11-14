@@ -95,8 +95,10 @@ fn bios_bin_dir() -> PathBuf {
 
 /// The full, explicit environment for a sandboxed shell: a throwaway `HOME` and the four XDG
 /// directories under it (never the real ones), `SPARKLEBIOS_BOOT=0` so the boot show itself
-/// never runs and pollutes the captured bytes, and nothing inherited from the ambient
-/// environment. Built fresh, in the same call that spawns the shell, per the sandboxing rule.
+/// never runs and pollutes the captured bytes, and no ambient variables beyond `PATH` (whose
+/// stock locations are kept first so ordinary commands like `sleep` resolve, with the ambient
+/// value last so a Nix sandbox, where a shell and coreutils live outside `/usr/bin`, still works).
+/// Built fresh, in the same call that spawns the shell, per the sandboxing rule.
 ///
 /// `TERM` is chosen per shell rather than one value for all three: fish (as of the version this
 /// was written against) probes the terminal for colour and OS-name support with escape sequence
@@ -107,8 +109,9 @@ fn bios_bin_dir() -> PathBuf {
 /// then trips `nounset` inside the rain animation's own bare `$COLUMNS` reference at exit, a
 /// failure that has nothing to do with what this suite is trying to pin.
 fn sandbox_env(sandbox: &Path, shell: Shell) -> Vec<(String, String)> {
+    let ambient_path = std::env::var("PATH").unwrap_or_default();
     let path = format!(
-        "{}:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin",
+        "{}:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:{ambient_path}",
         bios_bin_dir().display()
     );
     let term = match shell {

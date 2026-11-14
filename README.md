@@ -50,6 +50,12 @@ With a Rust toolchain:
 cargo install sparklebios
 ```
 
+With Nix/NixOS:
+
+```
+nix run github:reactivepixels/sparklebios
+```
+
 Or take a prebuilt binary for your platform from the
 [latest release](https://github.com/reactivepixels/sparklebios/releases/latest).
 Every release ships macOS and Linux builds for both Intel and ARM, with

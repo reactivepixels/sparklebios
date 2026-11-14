@@ -29,7 +29,8 @@ fn version_prints_crate_version() {
 /// `main.rs`'s whole panic policy: a panic anywhere prints nothing and exits 0, so a bug on the
 /// boot path never breaks or slows somebody's shell. Triggered here through
 /// `SPARKLEBIOS_PANIC_TEST`, a debug-only test hatch documented on `cli::run`; it does not exist
-/// in a release build.
+/// in a release build, so these two only run in a debug-profile test build.
+#[cfg(debug_assertions)]
 #[test]
 fn a_panic_prints_nothing_and_exits_zero_without_debug() {
     bios()
@@ -42,6 +43,7 @@ fn a_panic_prints_nothing_and_exits_zero_without_debug() {
 
 /// The other half of the same policy: with `SPARKLEBIOS_DEBUG=1`, the panic message reaches
 /// stderr instead of being swallowed, so a developer can see what broke.
+#[cfg(debug_assertions)]
 #[test]
 fn a_panic_reaches_stderr_under_debug() {
     bios()
@@ -1949,7 +1951,7 @@ fn config_edit_creates_the_file_from_the_template_when_absent() {
     bios()
         .args(["config", "edit"])
         .env("XDG_CONFIG_HOME", config.path())
-        .env("VISUAL", "/usr/bin/true")
+        .env("VISUAL", "true")
         .assert()
         .success();
     let contents = std::fs::read_to_string(config.path().join("sparklebios/config.toml")).unwrap();
@@ -1965,7 +1967,7 @@ fn config_edit_does_not_overwrite_an_existing_files_contents() {
     bios()
         .args(["config", "edit"])
         .env("XDG_CONFIG_HOME", config.path())
-        .env("VISUAL", "/usr/bin/true")
+        .env("VISUAL", "true")
         .assert()
         .success();
     let contents = std::fs::read_to_string(dir.join("config.toml")).unwrap();
@@ -1978,8 +1980,8 @@ fn config_edit_prefers_visual_over_editor() {
     bios()
         .args(["config", "edit"])
         .env("XDG_CONFIG_HOME", config.path())
-        .env("VISUAL", "/usr/bin/true")
-        .env("EDITOR", "/usr/bin/false")
+        .env("VISUAL", "true")
+        .env("EDITOR", "false")
         .assert()
         .success();
 }
@@ -1990,7 +1992,7 @@ fn config_edit_returns_non_zero_when_the_editor_exits_non_zero() {
     bios()
         .args(["config", "edit"])
         .env("XDG_CONFIG_HOME", config.path())
-        .env("VISUAL", "/usr/bin/false")
+        .env("VISUAL", "false")
         .assert()
         .failure()
         .code(1);
